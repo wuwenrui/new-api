@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getTopupInfo } from '../api'
 import {
   generatePresetAmounts,
@@ -29,6 +29,7 @@ import type {
   CreemProduct,
   PaymentMethod,
   WaffoPayMethod,
+  TopupInfoResponse,
 } from '../types'
 
 // ============================================================================
@@ -161,66 +162,95 @@ function parseDiscountMap(data: unknown): Record<number, number> {
   )
 }
 
+function buildTopupState(data: TopupInfo): {
+  topupInfo: TopupInfo
+  presetAmounts: PresetAmount[]
+} {
+  const processedData: TopupInfo = {
+    ...data,
+    pay_methods: parsePaymentMethods(data.pay_methods, data.stripe_min_topup),
+    amount_options: parseAmountOptions(data.amount_options),
+    discount: parseDiscountMap(data.discount),
+    creem_products: parseCreemProducts(data.creem_products),
+    waffo_pay_methods: parseWaffoPayMethods(data.waffo_pay_methods),
+  }
+
+  if (processedData.amount_options.length > 0) {
+    return {
+      topupInfo: processedData,
+      presetAmounts: mergePresetAmounts(
+        processedData.amount_options,
+        processedData.discount || {}
+      ),
+    }
+  }
+
+  return {
+    topupInfo: processedData,
+    presetAmounts: generatePresetAmounts(getMinTopupAmount(processedData)),
+  }
+}
+
 export function useTopupInfo() {
   const [topupInfo, setTopupInfo] = useState<TopupInfo | null>(null)
   const [presetAmounts, setPresetAmounts] = useState<PresetAmount[]>([])
   const [loading, setLoading] = useState(true)
 
-  const fetchTopupInfo = async () => {
+  const applyTopupInfoResponse = useCallback((response: TopupInfoResponse) => {
+    if (!response.success || !response.data) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to fetch topup info:', response.message)
+      return
+    }
+
+    const nextState = buildTopupState(response.data)
+    setTopupInfo(nextState.topupInfo)
+    setPresetAmounts(nextState.presetAmounts)
+  }, [])
+
+  const refetchTopupInfo = useCallback(async () => {
+    setLoading(true)
     try {
-      setLoading(true)
-
       const response = await getTopupInfo()
-
-      if (!response.success || !response.data) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to fetch topup info:', response.message)
-        return
-      }
-
-      const processedData: TopupInfo = {
-        ...response.data,
-        pay_methods: parsePaymentMethods(
-          response.data.pay_methods,
-          response.data.stripe_min_topup
-        ),
-        amount_options: parseAmountOptions(response.data.amount_options),
-        discount: parseDiscountMap(response.data.discount),
-        creem_products: parseCreemProducts(response.data.creem_products),
-        waffo_pay_methods: parseWaffoPayMethods(
-          response.data.waffo_pay_methods
-        ),
-      }
-
-      setTopupInfo(processedData)
-
-      if (processedData.amount_options.length > 0) {
-        const customPresets = mergePresetAmounts(
-          processedData.amount_options,
-          processedData.discount || {}
-        )
-        setPresetAmounts(customPresets)
-      } else {
-        const minTopup = getMinTopupAmount(processedData)
-        const defaultPresets = generatePresetAmounts(minTopup)
-        setPresetAmounts(defaultPresets)
-      }
+      applyTopupInfoResponse(response)
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch topup info:', err)
     } finally {
       setLoading(false)
     }
-  }
+  }, [applyTopupInfoResponse])
 
   useEffect(() => {
-    fetchTopupInfo()
-  }, [])
+    let active = true
+
+    getTopupInfo()
+      .then((response) => {
+        if (active) {
+          applyTopupInfoResponse(response)
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          // eslint-disable-next-line no-console
+          console.error('Failed to fetch topup info:', err)
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [applyTopupInfoResponse])
 
   return {
     topupInfo,
     presetAmounts,
     loading,
-    refetch: fetchTopupInfo,
+    refetch: refetchTopupInfo,
   }
 }

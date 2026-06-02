@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect } from 'react'
 import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatNumber } from '@/lib/format'
@@ -110,14 +109,8 @@ export function RechargeFormCard({
   enableWaffoPancakeTopup,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
-  const [localAmount, setLocalAmount] = useState(topupAmount.toString())
-
-  useEffect(() => {
-    setLocalAmount(topupAmount.toString())
-  }, [topupAmount])
 
   const handleAmountChange = (value: string) => {
-    setLocalAmount(value)
     const numValue = parseInt(value) || 0
     if (numValue >= 0) {
       onTopupAmountChange(numValue)
@@ -285,7 +278,7 @@ export function RechargeFormCard({
                   <Input
                     id='topup-amount'
                     type='number'
-                    value={localAmount}
+                    value={topupAmount.toString()}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     min={minTopup}
                     placeholder={`Minimum ${minTopup}`}
