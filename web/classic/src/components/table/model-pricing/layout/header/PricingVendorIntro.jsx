@@ -152,6 +152,7 @@ const PricingVendorIntro = memo(
     setCurrency,
     showRatio,
     setShowRatio,
+    canViewInternalBilling,
     viewMode,
     setViewMode,
     tokenUnit,
@@ -287,6 +288,7 @@ const PricingVendorIntro = memo(
           setCurrency={setCurrency}
           showRatio={showRatio}
           setShowRatio={setShowRatio}
+          canViewInternalBilling={canViewInternalBilling}
           viewMode={viewMode}
           setViewMode={setViewMode}
           tokenUnit={tokenUnit}
@@ -309,6 +311,7 @@ const PricingVendorIntro = memo(
         setCurrency,
         showRatio,
         setShowRatio,
+        canViewInternalBilling,
         viewMode,
         setViewMode,
         tokenUnit,

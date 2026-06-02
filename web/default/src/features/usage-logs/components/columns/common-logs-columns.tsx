@@ -54,6 +54,7 @@ import {
   getLogTypeConfig,
   isPerCallBilling,
 } from '../../lib/utils'
+import { getVisibleGroupRatioText } from '../../lib/internal-billing-visibility'
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
 import { ModelBadge } from '../model-badge'
@@ -65,31 +66,6 @@ interface DetailSegment {
   danger?: boolean
 }
 
-function formatRatioCompact(ratio: number | undefined): string {
-  if (ratio == null || !Number.isFinite(ratio)) return '-'
-  return ratio % 1 === 0
-    ? String(ratio)
-    : ratio.toFixed(4).replace(/\.?0+$/, '')
-}
-
-function getGroupRatioText(other: LogOtherData | null): string | null {
-  const userGroupRatio = other?.user_group_ratio
-  if (
-    userGroupRatio != null &&
-    userGroupRatio !== -1 &&
-    Number.isFinite(userGroupRatio)
-  ) {
-    return `${formatRatioCompact(userGroupRatio)}x`
-  }
-
-  const groupRatio = other?.group_ratio
-  if (groupRatio != null && groupRatio !== 1 && Number.isFinite(groupRatio)) {
-    return `${formatRatioCompact(groupRatio)}x`
-  }
-
-  return null
-}
-
 function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
   const match = value.match(/^([^0-9+\-.,\s]+)(.+)$/)
   if (!match) return { prefix: '', amount: value }
@@ -99,6 +75,7 @@ function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
 function buildDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
+  canViewInternalBilling: boolean,
   t: (key: string, opts?: Record<string, unknown>) => string
 ): DetailSegment[] {
   if (log.type === 6) {
@@ -241,10 +218,14 @@ function buildDetailSegments(
       const ratioLabel = isUserGroup
         ? t('User Exclusive Ratio')
         : t('Group Ratio')
+      const ratioText = getVisibleGroupRatioText(
+        other,
+        canViewInternalBilling
+      )
 
-      if (effectiveRatio != null && Number.isFinite(effectiveRatio)) {
+      if (effectiveRatio != null && Number.isFinite(effectiveRatio) && ratioText) {
         segments.push({
-          text: `${ratioLabel} ${formatRatioCompact(effectiveRatio)}x`,
+          text: `${ratioLabel} ${ratioText}`,
         })
       }
     }
@@ -484,7 +465,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       if (!group) group = other?.group || ''
 
       const metaParts: string[] = []
-      const groupRatioText = getGroupRatioText(other)
+      const groupRatioText = getVisibleGroupRatioText(other, isAdmin)
       if (group) {
         metaParts.push(sensitiveVisible ? group : '••••')
       }
@@ -772,7 +753,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const log = row.original
         const other = parseLogOther(log.other)
 
-        const segments = buildDetailSegments(log, other, t)
+        const segments = buildDetailSegments(log, other, isAdmin, t)
         const primary = segments[0]
         const hasMore = segments.length > 1
 

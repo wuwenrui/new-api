@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import i18next from 'i18next';
 import { Modal, Tag, Typography, Avatar } from '@douyinfe/semi-ui';
-import { copy, showSuccess } from './utils';
+import { copy, isAdmin, showSuccess } from './utils';
 import { MOBILE_BREAKPOINT } from '../hooks/common/useIsMobile';
 import {
   BILLING_PRICING_VARS,
@@ -827,6 +827,10 @@ export function renderGroup(group) {
 }
 
 export function renderRatio(ratio) {
+  if (!isAdmin()) {
+    return null;
+  }
+
   let color = 'green';
   if (ratio > 5) {
     color = 'red';
@@ -1246,6 +1250,10 @@ function joinBillingSummary(parts) {
 }
 
 function getGroupRatioText(groupRatio, user_group_ratio) {
+  if (!isAdmin()) {
+    return null;
+  }
+
   const { ratio, label } = getEffectiveRatio(groupRatio, user_group_ratio);
   return i18next.t('{{ratioType}} {{ratio}}x', {
     ratioType: label,

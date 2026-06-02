@@ -28,6 +28,7 @@ const PricingDisplaySettings = ({
   siteDisplayType,
   showRatio,
   setShowRatio,
+  canViewInternalBilling = false,
   viewMode,
   setViewMode,
   tokenUnit,
@@ -46,10 +47,14 @@ const PricingDisplaySettings = ({
           },
         ]
       : []),
-    {
-      value: 'ratio',
-      label: t('显示倍率'),
-    },
+    ...(canViewInternalBilling
+      ? [
+          {
+            value: 'ratio',
+            label: t('显示倍率'),
+          },
+        ]
+      : []),
     {
       value: 'tableView',
       label: t('表格视图'),
@@ -86,7 +91,7 @@ const PricingDisplaySettings = ({
   const getActiveValues = () => {
     const activeValues = [];
     if (supportsCurrencyDisplay && showWithRecharge) activeValues.push('recharge');
-    if (showRatio) activeValues.push('ratio');
+    if (canViewInternalBilling && showRatio) activeValues.push('ratio');
     if (viewMode === 'table') activeValues.push('tableView');
     if (tokenUnit === 'K') activeValues.push('tokenUnit');
     return activeValues;

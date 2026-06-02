@@ -24,17 +24,20 @@ import PricingContent from './content/PricingContent';
 import ModelDetailSideSheet from '../modal/ModelDetailSideSheet';
 import { useModelPricingData } from '../../../../hooks/model-pricing/useModelPricingData';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
+import { isAdmin } from '../../../../helpers';
 
 const PricingPage = () => {
   const pricingData = useModelPricingData();
   const { Sider, Content } = Layout;
   const isMobile = useIsMobile();
+  const canViewInternalBilling = isAdmin();
   const [showRatio, setShowRatio] = React.useState(false);
   const [viewMode, setViewMode] = React.useState('card');
   const allProps = {
     ...pricingData,
-    showRatio,
+    showRatio: canViewInternalBilling && showRatio,
     setShowRatio,
+    canViewInternalBilling,
     viewMode,
     setViewMode,
   };

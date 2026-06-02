@@ -35,6 +35,7 @@ const PricingGroups = ({
   setFilterGroup,
   usableGroup = {},
   groupRatio = {},
+  canViewInternalBilling = false,
   models = [],
   loading = false,
   t,
@@ -54,11 +55,13 @@ const PricingGroups = ({
     if (g === 'all') {
       // ratioDisplay = t('全部');
     } else {
-      const ratio = groupRatio[g];
-      if (ratio !== undefined && ratio !== null) {
-        ratioDisplay = `${ratio}x`;
-      } else {
-        ratioDisplay = '1x';
+      if (canViewInternalBilling) {
+        const ratio = groupRatio[g];
+        if (ratio !== undefined && ratio !== null) {
+          ratioDisplay = `${ratio}x`;
+        } else {
+          ratioDisplay = '1x';
+        }
       }
     }
     return {

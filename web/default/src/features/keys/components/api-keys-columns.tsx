@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { getUserGroups } from '@/lib/api'
 import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -47,10 +48,11 @@ function getQuotaProgressColor(percentage: number): string {
   return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
-function useGroupRatios(): Record<string, number> {
+function useGroupRatios(enabled: boolean): Record<string, number> {
   const { data } = useQuery({
     queryKey: ['user-self-groups'],
     queryFn: getUserGroups,
+    enabled,
     staleTime: 5 * 60 * 1000,
     select: (res) => {
       if (!res.success || !res.data) return {}
@@ -69,7 +71,8 @@ function useGroupRatios(): Record<string, number> {
 
 export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
   const { t } = useTranslation()
-  const groupRatios = useGroupRatios()
+  const isAdmin = useIsAdmin()
+  const groupRatios = useGroupRatios(isAdmin)
   return [
     {
       id: 'select',
@@ -199,7 +202,8 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
       cell: ({ row }) => {
         const apiKey = row.original
         const group = row.getValue('group') as string
-        const ratio = group && group !== 'auto' ? groupRatios[group] : undefined
+        const ratio =
+          isAdmin && group && group !== 'auto' ? groupRatios[group] : undefined
 
         if (group === 'auto') {
           return (
