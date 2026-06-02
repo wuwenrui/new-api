@@ -26,6 +26,7 @@ import {
   showSuccess,
   renderQuota,
   renderQuotaWithAmount,
+  getCurrencyConfig,
   copy,
   getQuotaPerUnit,
 } from '../../helpers';
@@ -39,6 +40,12 @@ import InvitationCard from './InvitationCard';
 import TransferModal from './modals/TransferModal';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
+import {
+  formatTopupDisplayAmount,
+  shouldConvertTopupDisplay,
+  toTopupDisplayAmount,
+  toTopupRequestAmount,
+} from './topupCurrency';
 
 const { Text } = Typography;
 
@@ -158,6 +165,30 @@ const TopUp = () => {
       : minTopUp;
   };
 
+  const topupCurrencyConfig = getCurrencyConfig();
+  const topupUsesConvertedDisplay =
+    shouldConvertTopupDisplay(topupCurrencyConfig);
+  const topupAmountLabel = topupUsesConvertedDisplay
+    ? t('充值金额')
+    : t('充值数量');
+  const topUpDisplayAmount = toTopupDisplayAmount(
+    topUpCount,
+    topupCurrencyConfig,
+  );
+  const minTopUpDisplayAmount = toTopupDisplayAmount(
+    minTopUp,
+    topupCurrencyConfig,
+  );
+  const renderTopupDisplayAmount = (displayAmount) =>
+    formatTopupDisplayAmount(displayAmount, topupCurrencyConfig);
+  const normalizeTopupRequestAmount = (value = topUpCount) => {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) return 0;
+    return Math.max(0, Math.round(amount));
+  };
+  const convertTopupDisplayToRequestAmount = (displayAmount) =>
+    toTopupRequestAmount(displayAmount, topupCurrencyConfig);
+
   const requestAmountByPayment = async (payment, value) => {
     if (payment === 'stripe') {
       return getStripeAmount(value);
@@ -175,7 +206,7 @@ const TopUp = () => {
     setConfirmLoading(true);
     try {
       const res = await API.post('/api/user/manual-topup/pay', {
-        amount: parseInt(topUpCount),
+        amount: normalizeTopupRequestAmount(),
         payment_method: payWay,
       });
       const { message, data } = res.data;
@@ -225,7 +256,12 @@ const TopUp = () => {
         okText: t('我已付款'),
       });
     } catch (err) {
-      showError(t('支付请求失败'));
+      showError(
+        err?.response?.data?.data ||
+          err?.response?.data?.message ||
+          err?.message ||
+          t('支付请求失败'),
+      );
     } finally {
       setOpen(false);
       setConfirmLoading(false);
@@ -311,7 +347,11 @@ const TopUp = () => {
       await requestAmountByPayment(payment);
 
       if (topUpCount < selectedMinTopUp) {
-        showError(t('充值数量不能小于') + selectedMinTopUp);
+        showError(
+          `${topupAmountLabel}${t('不能小于')}${renderTopupDisplayAmount(
+            toTopupDisplayAmount(selectedMinTopUp, topupCurrencyConfig),
+          )}`,
+        );
         return;
       }
       setOpen(true);
@@ -364,7 +404,11 @@ const TopUp = () => {
     }
 
     if (topUpCount < minTopUp) {
-      showError('充值数量不能小于' + minTopUp);
+      showError(
+        `${topupAmountLabel}${t('不能小于')}${renderTopupDisplayAmount(
+          toTopupDisplayAmount(minTopUp, topupCurrencyConfig),
+        )}`,
+      );
       return;
     }
     setConfirmLoading(true);
@@ -373,13 +417,13 @@ const TopUp = () => {
       if (payWay === 'stripe') {
         // Stripe 支付请求
         res = await API.post('/api/user/stripe/pay', {
-          amount: parseInt(topUpCount),
+          amount: normalizeTopupRequestAmount(),
           payment_method: 'stripe',
         });
       } else {
         // 普通支付请求
         res = await API.post('/api/user/pay', {
-          amount: parseInt(topUpCount),
+          amount: normalizeTopupRequestAmount(),
           payment_method: payWay,
         });
       }
@@ -478,12 +522,16 @@ const TopUp = () => {
   const waffoTopUp = async (payMethodIndex) => {
     try {
       if (topUpCount < waffoMinTopUp) {
-        showError(t('充值数量不能小于') + waffoMinTopUp);
+        showError(
+          `${topupAmountLabel}${t('不能小于')}${renderTopupDisplayAmount(
+            toTopupDisplayAmount(waffoMinTopUp, topupCurrencyConfig),
+          )}`,
+        );
         return;
       }
       setPaymentLoading(true);
       const requestBody = {
-        amount: parseInt(topUpCount),
+        amount: normalizeTopupRequestAmount(),
       };
       if (payMethodIndex != null) {
         requestBody.pay_method_index = payMethodIndex;
@@ -513,7 +561,7 @@ const TopUp = () => {
     setAmountLoading(true);
     try {
       const res = await API.post('/api/user/waffo/amount', {
-        amount: parseInt(value),
+        amount: normalizeTopupRequestAmount(value),
       });
       if (res !== undefined) {
         const { message, data } = res.data;
@@ -536,14 +584,18 @@ const TopUp = () => {
   const waffoPancakeTopUp = async () => {
     const minTopUpValue = Number(waffoPancakeMinTopUp || 1);
     if (topUpCount < minTopUpValue) {
-      showError(t('充值数量不能小于') + minTopUpValue);
+      showError(
+        `${topupAmountLabel}${t('不能小于')}${renderTopupDisplayAmount(
+          toTopupDisplayAmount(minTopUpValue, topupCurrencyConfig),
+        )}`,
+      );
       return;
     }
 
     setPaymentLoading(true);
     try {
       const res = await API.post('/api/user/waffo-pancake/pay', {
-        amount: parseInt(topUpCount),
+        amount: normalizeTopupRequestAmount(),
       });
       if (res !== undefined) {
         const { message, data } = res.data;
@@ -580,7 +632,7 @@ const TopUp = () => {
     setAmountLoading(true);
     try {
       const res = await API.post('/api/user/waffo-pancake/amount', {
-        amount: parseInt(value),
+        amount: normalizeTopupRequestAmount(value),
       });
       if (res !== undefined) {
         const { message, data } = res.data;
@@ -893,7 +945,7 @@ const TopUp = () => {
     setAmountLoading(true);
     try {
       const res = await API.post('/api/user/amount', {
-        amount: parseFloat(value),
+        amount: normalizeTopupRequestAmount(value),
       });
       if (res !== undefined) {
         const { message, data } = res.data;
@@ -919,7 +971,7 @@ const TopUp = () => {
     setAmountLoading(true);
     try {
       const res = await API.post('/api/user/stripe/amount', {
-        amount: parseFloat(value),
+        amount: normalizeTopupRequestAmount(value),
       });
       if (res !== undefined) {
         const { message, data } = res.data;
@@ -1007,7 +1059,10 @@ const TopUp = () => {
         handleCancel={handleCancel}
         confirmLoading={confirmLoading}
         topUpCount={topUpCount}
+        topUpDisplayAmount={topUpDisplayAmount}
+        topupAmountLabel={topupAmountLabel}
         renderQuotaWithAmount={renderQuotaWithAmount}
+        renderTopupDisplayAmount={renderTopupDisplayAmount}
         amountLoading={amountLoading}
         renderAmount={renderAmount}
         payWay={payWay}
@@ -1069,8 +1124,15 @@ const TopUp = () => {
           formatLargeNumber={formatLargeNumber}
           priceRatio={priceRatio}
           topUpCount={topUpCount}
+          topUpDisplayAmount={topUpDisplayAmount}
           minTopUp={minTopUp}
+          minTopUpDisplayAmount={minTopUpDisplayAmount}
+          topupAmountLabel={topupAmountLabel}
           renderQuotaWithAmount={renderQuotaWithAmount}
+          renderTopupDisplayAmount={renderTopupDisplayAmount}
+          convertTopupDisplayToRequestAmount={
+            convertTopupDisplayToRequestAmount
+          }
           getAmount={getAmount}
           setTopUpCount={setTopUpCount}
           setSelectedPreset={setSelectedPreset}

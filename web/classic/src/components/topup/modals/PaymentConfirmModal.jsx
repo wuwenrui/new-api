@@ -31,7 +31,10 @@ const PaymentConfirmModal = ({
   handleCancel,
   confirmLoading,
   topUpCount,
+  topUpDisplayAmount,
+  topupAmountLabel,
   renderQuotaWithAmount,
+  renderTopupDisplayAmount,
   amountLoading,
   renderAmount,
   payWay,
@@ -65,10 +68,12 @@ const PaymentConfirmModal = ({
           <div className='space-y-3'>
             <div className='flex justify-between items-center'>
               <Text strong className='text-slate-700 dark:text-slate-200'>
-                {t('充值数量')}：
+                {topupAmountLabel || t('充值数量')}：
               </Text>
               <Text className='text-slate-900 dark:text-slate-100'>
-                {renderQuotaWithAmount(topUpCount)}
+                {renderTopupDisplayAmount
+                  ? renderTopupDisplayAmount(topUpDisplayAmount)
+                  : renderQuotaWithAmount(topUpCount)}
               </Text>
             </div>
             <div className='flex justify-between items-center'>

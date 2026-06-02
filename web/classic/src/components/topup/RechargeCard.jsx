@@ -50,6 +50,7 @@ import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime'
 import { useActualTheme } from '../../context/Theme';
 import { getCurrencyConfig } from '../../helpers/render';
 import SubscriptionPlansCard from './SubscriptionPlansCard';
+import { getTopupInputPrecision, toTopupDisplayAmount } from './topupCurrency';
 
 const { Text } = Typography;
 
@@ -66,8 +67,13 @@ const RechargeCard = ({
   formatLargeNumber,
   priceRatio,
   topUpCount,
+  topUpDisplayAmount,
   minTopUp,
+  minTopUpDisplayAmount,
+  topupAmountLabel,
   renderQuotaWithAmount,
+  renderTopupDisplayAmount,
+  convertTopupDisplayToRequestAmount,
   getAmount,
   setTopUpCount,
   setSelectedPreset,
@@ -109,6 +115,8 @@ const RechargeCard = ({
   const shouldShowSubscription =
     !subscriptionLoading && subscriptionPlans.length > 0;
   const regularPayMethods = payMethods || [];
+  const topupCurrencyConfig = getCurrencyConfig();
+  const inputPrecision = getTopupInputPrecision(topupCurrencyConfig);
 
   useEffect(() => {
     if (initialTabSetRef.current) return;
@@ -257,7 +265,7 @@ const RechargeCard = ({
                   <Col xs={24} sm={24} md={24} lg={10} xl={10}>
                     <Form.InputNumber
                       field='topUpCount'
-                      label={t('充值数量')}
+                      label={topupAmountLabel || t('充值数量')}
                       disabled={
                         !enableOnlineTopUp &&
                         !enableStripeTopUp &&
@@ -265,31 +273,43 @@ const RechargeCard = ({
                         !enableWaffoPancakeTopUp &&
                         !hasManualTopUp
                       }
-                      placeholder={
-                        t('充值数量，最低 ') + renderQuotaWithAmount(minTopUp)
-                      }
-                      value={topUpCount}
-                      min={minTopUp}
+                      placeholder={`${topupAmountLabel || t('充值数量')}，${t(
+                        '最低 ',
+                      )}${renderTopupDisplayAmount(
+                        minTopUpDisplayAmount ?? minTopUp,
+                      )}`}
+                      value={topUpDisplayAmount ?? topUpCount}
+                      min={minTopUpDisplayAmount ?? minTopUp}
                       max={999999999}
                       step={1}
-                      precision={0}
+                      precision={inputPrecision}
                       onChange={async (value) => {
-                        if (value && value >= 1) {
-                          setTopUpCount(value);
+                        const displayValue = Number(value);
+                        if (Number.isFinite(displayValue) && displayValue > 0) {
+                          const requestAmount =
+                            convertTopupDisplayToRequestAmount?.(
+                              displayValue,
+                            ) ?? displayValue;
+                          setTopUpCount(requestAmount);
                           setSelectedPreset(null);
-                          await getAmount(value);
+                          await getAmount(requestAmount);
                         }
                       }}
                       onBlur={(e) => {
-                        const value = parseInt(e.target.value);
-                        if (!value || value < 1) {
-                          setTopUpCount(1);
-                          getAmount(1);
+                        const value = parseFloat(e.target.value);
+                        const minDisplay = minTopUpDisplayAmount ?? minTopUp;
+                        if (!value || value < minDisplay) {
+                          setTopUpCount(minTopUp);
+                          getAmount(minTopUp);
+                          onlineFormApiRef.current?.setValue(
+                            'topUpCount',
+                            minDisplay,
+                          );
                         }
                       }}
                       formatter={(value) => (value ? `${value}` : '')}
                       parser={(value) =>
-                        value ? parseInt(value.replace(/[^\d]/g, '')) : 0
+                        value ? parseFloat(value.replace(/[^\d.]/g, '')) : 0
                       }
                       extraText={
                         <Skeleton
@@ -411,7 +431,12 @@ const RechargeCard = ({
                                 content={
                                   t('此支付方式最低充值金额为') +
                                   ' ' +
-                                  minTopupVal
+                                  renderTopupDisplayAmount(
+                                    toTopupDisplayAmount(
+                                      minTopupVal,
+                                      topupCurrencyConfig,
+                                    ),
+                                  )
                                 }
                                 key={payMethod.type}
                               >
@@ -437,7 +462,11 @@ const RechargeCard = ({
                 <Form.Slot
                   label={
                     <div className='flex items-center gap-2'>
-                      <span>{t('选择充值额度')}</span>
+                      <span>
+                        {topupAmountLabel === t('充值金额')
+                          ? t('选择充值金额')
+                          : t('选择充值额度')}
+                      </span>
                       {(() => {
                         const { symbol, rate, type } = getCurrencyConfig();
                         if (type === 'USD') return null;
@@ -515,7 +544,7 @@ const RechargeCard = ({
                             selectPresetAmount(preset);
                             onlineFormApiRef.current?.setValue(
                               'topUpCount',
-                              preset.value,
+                              displayValue,
                             );
                           }}
                         >
