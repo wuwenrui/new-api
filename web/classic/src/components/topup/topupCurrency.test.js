@@ -20,6 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'bun:test';
 import {
   formatTopupDisplayAmount,
+  getTopupAmountSectionHint,
   toTopupDisplayAmount,
   toTopupRequestAmount,
 } from './topupCurrency';
@@ -44,5 +45,11 @@ describe('topup currency display helpers', () => {
     expect(toTopupDisplayAmount(10, currency)).toBe(10);
     expect(toTopupRequestAmount(10, currency)).toBe(10);
     expect(formatTopupDisplayAmount(10, currency)).toBe('$10.00');
+  });
+
+  test('hides exchange-rate hints for topup amount sections', () => {
+    const currency = { type: 'CNY', symbol: '¥', rate: 7.3 };
+
+    expect(getTopupAmountSectionHint(currency)).toBeNull();
   });
 });

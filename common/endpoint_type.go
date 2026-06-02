@@ -1,6 +1,13 @@
 package common
 
-import "github.com/QuantumNous/new-api/constant"
+import (
+	"strings"
+
+	"github.com/QuantumNous/new-api/constant"
+)
+
+const aliAnthropicMessagesModelsEnv = "ALI_ANTHROPIC_MESSAGES_MODELS"
+const defaultAliAnthropicMessagesModels = "qwen,deepseek-v4,kimi,glm,minimax-m"
 
 // GetEndpointTypesByChannelType 获取渠道最优先端点类型（所有的渠道都支持 OpenAI 端点）
 func GetEndpointTypesByChannelType(channelType int, modelName string) []constant.EndpointType {
@@ -30,6 +37,14 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse}
 	case constant.ChannelTypeSora:
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIVideo}
+	case constant.ChannelTypeAli:
+		if SupportsAliAnthropicMessages(modelName) {
+			endpointTypes = []constant.EndpointType{constant.EndpointTypeAnthropic, constant.EndpointTypeOpenAI}
+		} else if IsOpenAIResponseOnlyModel(modelName) {
+			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIResponse}
+		} else {
+			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI}
+		}
 	default:
 		if IsOpenAIResponseOnlyModel(modelName) {
 			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIResponse}
@@ -42,4 +57,30 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeImageGeneration}, endpointTypes...)
 	}
 	return endpointTypes
+}
+
+func SupportsAliAnthropicMessages(modelName string) bool {
+	normalizedModelName := strings.ToLower(strings.TrimSpace(modelName))
+	if normalizedModelName == "" {
+		return false
+	}
+	for _, pattern := range aliAnthropicMessagesModelPatterns() {
+		if strings.Contains(normalizedModelName, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func aliAnthropicMessagesModelPatterns() []string {
+	configuredModels := GetEnvOrDefaultString(aliAnthropicMessagesModelsEnv, defaultAliAnthropicMessagesModels)
+	rawPatterns := strings.Split(configuredModels, ",")
+	patterns := make([]string, 0, len(rawPatterns))
+	for _, item := range rawPatterns {
+		pattern := strings.ToLower(strings.TrimSpace(item))
+		if pattern != "" {
+			patterns = append(patterns, pattern)
+		}
+	}
+	return patterns
 }

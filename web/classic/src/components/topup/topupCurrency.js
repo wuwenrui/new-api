@@ -57,3 +57,7 @@ export function formatTopupDisplayAmount(
 export function getTopupInputPrecision(currencyConfig = {}) {
   return shouldConvertTopupDisplay(currencyConfig) ? 2 : 0;
 }
+
+export function getTopupAmountSectionHint() {
+  return null;
+}

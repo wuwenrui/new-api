@@ -50,7 +50,11 @@ import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime'
 import { useActualTheme } from '../../context/Theme';
 import { getCurrencyConfig } from '../../helpers/render';
 import SubscriptionPlansCard from './SubscriptionPlansCard';
-import { getTopupInputPrecision, toTopupDisplayAmount } from './topupCurrency';
+import {
+  getTopupAmountSectionHint,
+  getTopupInputPrecision,
+  toTopupDisplayAmount,
+} from './topupCurrency';
 
 const { Text } = Typography;
 
@@ -117,6 +121,8 @@ const RechargeCard = ({
   const regularPayMethods = payMethods || [];
   const topupCurrencyConfig = getCurrencyConfig();
   const inputPrecision = getTopupInputPrecision(topupCurrencyConfig);
+  const topupAmountSectionHint =
+    getTopupAmountSectionHint(topupCurrencyConfig);
 
   useEffect(() => {
     if (initialTabSetRef.current) return;
@@ -467,22 +473,17 @@ const RechargeCard = ({
                           ? t('选择充值金额')
                           : t('选择充值额度')}
                       </span>
-                      {(() => {
-                        const { symbol, rate, type } = getCurrencyConfig();
-                        if (type === 'USD') return null;
-
-                        return (
-                          <span
-                            style={{
-                              color: 'var(--semi-color-text-2)',
-                              fontSize: '12px',
-                              fontWeight: 'normal',
-                            }}
-                          >
-                            (1 $ = {rate.toFixed(2)} {symbol})
-                          </span>
-                        );
-                      })()}
+                      {topupAmountSectionHint && (
+                        <span
+                          style={{
+                            color: 'var(--semi-color-text-2)',
+                            fontSize: '12px',
+                            fontWeight: 'normal',
+                          }}
+                        >
+                          {topupAmountSectionHint}
+                        </span>
+                      )}
                     </div>
                   }
                 >
