@@ -27,6 +27,7 @@ import type {
   RedemptionResponse,
   AmountResponse,
   PaymentResponse,
+  ManualTopUpPaymentResponse,
   StripePaymentResponse,
   AffiliateCodeResponse,
   AffiliateTransferResponse,
@@ -106,6 +107,18 @@ export async function requestPayment(
     ...res.data,
     url: res.data.url || (res as unknown as { url?: string }).url,
   }
+}
+
+/**
+ * Request manual QR top-up payment
+ */
+export async function requestManualTopUpPayment(
+  request: PaymentRequest
+): Promise<ManualTopUpPaymentResponse> {
+  const res = await api.post('/api/user/manual-topup/pay', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
 }
 
 /**

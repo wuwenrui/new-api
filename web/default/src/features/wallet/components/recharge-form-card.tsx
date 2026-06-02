@@ -127,6 +127,9 @@ export function RechargeFormCard({
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
+    topupInfo?.enable_manual_topup ||
+    (Array.isArray(topupInfo?.pay_methods) &&
+      topupInfo.pay_methods.length > 0) ||
     enableWaffoTopup ||
     enableWaffoPancakeTopup
   const hasAnyTopup = hasConfigurableTopup || enableCreemTopup

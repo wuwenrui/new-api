@@ -222,6 +222,11 @@ export type BillingSettings = {
   EpayKey: string
   Price: number
   MinTopUp: number
+  ManualTopUpEnabled: boolean
+  ManualTopUpMinTopUp: number
+  ManualTopUpWechatQRCode: string
+  ManualTopUpAlipayQRCode: string
+  ManualTopUpInstructions: string
   CustomCallbackAddress: string
   PayMethods: string
   'payment_setting.amount_options': string

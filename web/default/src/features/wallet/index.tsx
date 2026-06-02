@@ -25,6 +25,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
+import { ManualTopUpDialog } from './components/dialogs/manual-topup-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
@@ -39,10 +40,12 @@ import {
   useCreemPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
+  useManualTopUpPayment,
 } from './hooks'
 import {
   getDefaultPaymentType,
   getMinTopupAmount,
+  isManualTopupPayment,
   isWaffoPancakePayment,
 } from './lib'
 import type {
@@ -70,6 +73,7 @@ export function Wallet(props: WalletProps) {
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
+  const [manualTopUpDialogOpen, setManualTopUpDialogOpen] = useState(false)
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
@@ -102,6 +106,11 @@ export function Wallet(props: WalletProps) {
   const { processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
     useWaffoPancakePayment()
+  const {
+    order: manualTopUpOrder,
+    processing: manualTopUpProcessing,
+    processManualTopUpPayment,
+  } = useManualTopUpPayment()
 
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
@@ -184,6 +193,18 @@ export function Wallet(props: WalletProps) {
   // Handle payment confirmation
   const handlePaymentConfirm = async () => {
     if (!selectedPaymentMethod) return
+
+    if (isManualTopupPayment(selectedPaymentMethod.type)) {
+      const order = await processManualTopUpPayment(
+        topupAmount,
+        selectedPaymentMethod.type
+      )
+      if (order) {
+        setConfirmDialogOpen(false)
+        setManualTopUpDialogOpen(true)
+      }
+      return
+    }
 
     const isPancake = isWaffoPancakePayment(selectedPaymentMethod.type)
     const success = isPancake
@@ -335,9 +356,16 @@ export function Wallet(props: WalletProps) {
         paymentAmount={paymentAmount}
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
-        processing={processing || pancakeProcessing}
+        processing={processing || pancakeProcessing || manualTopUpProcessing}
         discountRate={getDiscountRate()}
         usdExchangeRate={effectiveUsdExchangeRate}
+      />
+
+      <ManualTopUpDialog
+        open={manualTopUpDialogOpen}
+        onOpenChange={setManualTopUpDialogOpen}
+        order={manualTopUpOrder}
+        onOpenBilling={() => setBillingDialogOpen(true)}
       />
 
       <TransferDialog

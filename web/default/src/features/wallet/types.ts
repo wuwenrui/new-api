@@ -38,6 +38,7 @@ export type AmountResponse = ApiResponse<string>
 export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
   url?: string
 }
+export type ManualTopUpPaymentResponse = ApiResponse<ManualTopUpOrder>
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
@@ -102,6 +103,17 @@ export interface PaymentMethod {
   icon?: string
 }
 
+export interface ManualTopUpOrder {
+  trade_no: string
+  amount: number
+  display_amount: number
+  money: number
+  payment_method: string
+  payment_name: string
+  qr_url: string
+  instructions?: string
+}
+
 /**
  * Waffo payment method configuration
  */
@@ -150,6 +162,10 @@ export interface TopupInfo {
   enable_waffo_pancake_topup?: boolean
   /** Minimum topup amount for Waffo Pancake */
   waffo_pancake_min_topup?: number
+  /** Whether manual QR topup is enabled */
+  enable_manual_topup?: boolean
+  /** Minimum topup amount for manual QR topup */
+  manual_topup_min_topup?: number
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */
