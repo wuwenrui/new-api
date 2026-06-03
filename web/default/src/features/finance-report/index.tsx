@@ -170,9 +170,9 @@ function UserTable({
 
 export function FinanceReport() {
   const { t } = useTranslation()
-  const currency = getFinanceCurrencyConfig()
+  const currency = { symbol: '¥', rate: 1, type: 'CNY' }
   const today = useMemo(() => startOfToday(), [])
-  const [startTime, setStartTime] = useState(toInputValue(today))
+  const [startTime, setStartTime] = useState(toInputValue(addDays(today, -7)))
   const [endTime, setEndTime] = useState(toInputValue(addDays(today, 1)))
   const [report, setReport] = useState<FinanceReportData | null>(null)
   const [loading, setLoading] = useState(false)

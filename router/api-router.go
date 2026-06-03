@@ -314,7 +314,7 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
 
 		financeRoute := apiRouter.Group("/finance")
-		financeRoute.Use(middleware.AdminAuth())
+		financeRoute.Use(middleware.RootAuth())
 		{
 			financeRoute.GET("/report", controller.GetFinanceReport)
 		}

@@ -36,6 +36,8 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
+import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -45,6 +47,8 @@ import { type SidebarData } from '@/components/layout/types'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const { auth } = useAuthStore()
+  const isRoot = auth?.user?.role === ROLE.SUPER_ADMIN
 
   return {
     navGroups: [
@@ -142,11 +146,15 @@ export function useSidebarData(): SidebarData {
             url: '/subscriptions',
             icon: CreditCard,
           },
-          {
-            title: t('Finance Report'),
-            url: '/finance-report',
-            icon: CircleDollarSign,
-          },
+          ...(isRoot
+            ? [
+                {
+                  title: t('Finance Report'),
+                  url: '/finance-report',
+                  icon: CircleDollarSign,
+                },
+              ]
+            : []),
           {
             title: t('System Settings'),
             url: '/system-settings/site',
