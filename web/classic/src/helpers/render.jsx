@@ -77,6 +77,7 @@ import {
   User,
   Settings,
   CircleUser,
+  CircleDollarSign,
   Package,
   Server,
   CalendarClock,
@@ -150,6 +151,8 @@ export function getLucideIcon(key, selected = false) {
       return <Server {...commonProps} color={iconColor} />;
     case 'subscription':
       return <CalendarClock {...commonProps} color={iconColor} />;
+    case 'finance':
+      return <CircleDollarSign {...commonProps} color={iconColor} />;
     case 'setting':
       return <Settings {...commonProps} color={iconColor} />;
     default:

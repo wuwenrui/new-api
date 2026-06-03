@@ -449,15 +449,18 @@ func RequestManualTopUp(c *gin.Context) {
 	service.NotifyRootUser(dto.NotifyTypeManualTopUp, notification.Subject, notification.Content)
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("人工充值 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d money=%.2f", id, tradeNo, req.PaymentMethod, req.Amount, payMoney))
 
-	common.ApiSuccess(c, gin.H{
-		"trade_no":       tradeNo,
-		"amount":         topUp.Amount,
-		"display_amount": req.Amount,
-		"money":          payMoney,
-		"payment_method": manualMethod.Type,
-		"payment_name":   manualMethod.Name,
-		"qr_url":         manualMethod.QRCode,
-		"instructions":   operation_setting.ManualTopUpInstructions,
+	c.JSON(http.StatusOK, gin.H{
+		"message": "success",
+		"data": gin.H{
+			"trade_no":       tradeNo,
+			"amount":         topUp.Amount,
+			"display_amount": req.Amount,
+			"money":          payMoney,
+			"payment_method": manualMethod.Type,
+			"payment_name":   manualMethod.Name,
+			"qr_url":         manualMethod.QRCode,
+			"instructions":   operation_setting.ManualTopUpInstructions,
+		},
 	})
 }
 
