@@ -49,7 +49,6 @@ export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
   const isRoot = auth?.user?.role === ROLE.SUPER_ADMIN
-  const isAdmin = (auth?.user?.role ?? 0) >= ROLE.ADMIN
 
   return {
     navGroups: [
@@ -62,15 +61,11 @@ export function useSidebarData(): SidebarData {
             url: '/playground',
             icon: FlaskConical,
           },
-          ...(isAdmin
-            ? [
-                {
-                  title: t('Chat'),
-                  icon: MessageSquare,
-                  type: 'chat-presets' as const,
-                },
-              ]
-            : []),
+          {
+            title: t('Chat'),
+            icon: MessageSquare,
+            type: 'chat-presets',
+          },
         ],
       },
       {
