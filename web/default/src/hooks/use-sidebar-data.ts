@@ -53,26 +53,26 @@ export function useSidebarData(): SidebarData {
 
   return {
     navGroups: [
-      ...(isAdmin
-        ? [
-            {
-              id: 'chat',
-              title: t('Chat'),
-              items: [
-                {
-                  title: t('Playground'),
-                  url: '/playground',
-                  icon: FlaskConical,
-                },
+      {
+        id: 'chat',
+        title: t('Chat'),
+        items: [
+          {
+            title: t('Playground'),
+            url: '/playground',
+            icon: FlaskConical,
+          },
+          ...(isAdmin
+            ? [
                 {
                   title: t('Chat'),
                   icon: MessageSquare,
                   type: 'chat-presets' as const,
                 },
-              ],
-            },
-          ]
-        : []),
+              ]
+            : []),
+        ],
+      },
       {
         id: 'general',
         title: t('General'),
