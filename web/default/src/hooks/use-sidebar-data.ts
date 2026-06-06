@@ -37,7 +37,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
 import { useAuthStore } from '@/stores/auth-store'
-import { ROLE } from '@/lib/roles'
+import { canAccessFinanceReport } from './sidebar-finance-access'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -48,7 +48,7 @@ import { ROLE } from '@/lib/roles'
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
-  const isRoot = auth?.user?.role === ROLE.SUPER_ADMIN
+  const canSeeFinanceReport = canAccessFinanceReport(auth?.user?.role)
 
   return {
     navGroups: [
@@ -146,10 +146,10 @@ export function useSidebarData(): SidebarData {
             url: '/subscriptions',
             icon: CreditCard,
           },
-          ...(isRoot
+          ...(canSeeFinanceReport
             ? [
                 {
-                  title: t('Finance Report'),
+                  title: t('财务报表'),
                   url: '/finance-report',
                   icon: CircleDollarSign,
                 },

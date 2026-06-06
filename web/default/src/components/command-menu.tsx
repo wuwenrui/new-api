@@ -22,6 +22,7 @@ import { ArrowRight, ChevronRight, Laptop, Moon, Sun } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useSearch } from '@/context/search-provider'
 import { useTheme } from '@/context/theme-provider'
+import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 import { useSidebarData } from '@/hooks/use-sidebar-data'
 import {
   Command,
@@ -46,7 +47,8 @@ export function CommandMenu() {
 
   // Use the active nested sidebar view's nav groups when one matches
   // the current URL; otherwise fall back to the root navigation.
-  const navGroups = getNavGroupsForPath(pathname, t) ?? sidebarData.navGroups
+  const rawNavGroups = getNavGroupsForPath(pathname, t) ?? sidebarData.navGroups
+  const navGroups = useSidebarConfig(rawNavGroups)
 
   const runCommand = React.useCallback(
     (command: () => unknown) => {

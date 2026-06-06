@@ -150,6 +150,10 @@ export function SidebarModulesSection({
         title: t('Subscription Management'),
         description: t('Manage subscription plans and pricing.'),
       },
+      finance: {
+        title: t('财务报表'),
+        description: t('按模型和用户查看收入、上游成本与毛利润。'),
+      },
     },
   }
   const formDefaults = useMemo(() => config, [config])

@@ -29,7 +29,7 @@ import {
 import {
   formatFinanceAmount,
   formatFinancePercent,
-  getFinanceCurrencyConfig,
+  type getFinanceCurrencyConfig,
   startOfToday,
   addDays,
   toInputValue,
@@ -88,12 +88,12 @@ function ModelTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>{t('Model')}</TableHead>
-          <TableHead className='w-20 text-right'>{t('Requests')}</TableHead>
-          <TableHead className='text-right'>{t('Revenue')}</TableHead>
-          <TableHead className='text-right'>{t('Cost')}</TableHead>
-          <TableHead className='text-right'>{t('Profit')}</TableHead>
-          <TableHead className='w-24 text-right'>{t('Margin')}</TableHead>
+          <TableHead>{t('模型')}</TableHead>
+          <TableHead className='w-20 text-right'>{t('请求数')}</TableHead>
+          <TableHead className='text-right'>{t('收入')}</TableHead>
+          <TableHead className='text-right'>{t('成本')}</TableHead>
+          <TableHead className='text-right'>{t('利润')}</TableHead>
+          <TableHead className='w-24 text-right'>{t('利润率')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -140,11 +140,11 @@ function UserTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>{t('User')}</TableHead>
-          <TableHead className='w-20 text-right'>{t('Requests')}</TableHead>
-          <TableHead className='text-right'>{t('Revenue')}</TableHead>
-          <TableHead className='text-right'>{t('Profit')}</TableHead>
-          <TableHead className='w-24 text-right'>{t('Margin')}</TableHead>
+          <TableHead>{t('用户')}</TableHead>
+          <TableHead className='w-20 text-right'>{t('请求数')}</TableHead>
+          <TableHead className='text-right'>{t('收入')}</TableHead>
+          <TableHead className='text-right'>{t('利润')}</TableHead>
+          <TableHead className='w-24 text-right'>{t('利润率')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -191,14 +191,20 @@ export function FinanceReport() {
   }, [startTime, endTime])
 
   useEffect(() => {
-    loadReport()
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) void loadReport()
+    })
+    return () => {
+      cancelled = true
+    }
   }, [loadReport])
 
   const summary = report?.summary
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Finance Report')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('财务报表')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <div className='flex flex-wrap items-center gap-2'>
           <input
@@ -228,36 +234,36 @@ export function FinanceReport() {
           <>
             <div className='mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4'>
               <MetricCard
-                title={t('Consumption Revenue')}
+                title={t('消费收入')}
                 value={formatFinanceAmount(
                   summary?.consumption_amount,
                   currency
                 )}
-                hint={`${summary?.requests ?? 0} ${t('requests')}`}
+                hint={`${summary?.requests ?? 0} ${t('次请求')}`}
                 tone={METRIC_TONE.revenue}
               />
               <MetricCard
-                title={t('Estimated Upstream Cost')}
+                title={t('预估上游成本')}
                 value={formatFinanceAmount(
                   summary?.estimated_upstream_cost,
                   currency
                 )}
-                hint={t('Stripped by group ratio')}
+                hint={t('按分组倍率折算')}
                 tone={METRIC_TONE.cost}
               />
               <MetricCard
-                title={t('Gross Profit')}
+                title={t('毛利润')}
                 value={formatFinanceAmount(summary?.gross_profit, currency)}
                 hint={formatFinancePercent(summary?.gross_margin)}
                 tone={METRIC_TONE.profit}
               />
               <MetricCard
-                title={t('Cash Income')}
+                title={t('现金收入')}
                 value={formatFinanceAmount(
                   summary?.cash_income_amount,
                   currency
                 )}
-                hint={`${t('Top-up')} ${formatFinanceAmount(summary?.cash_topup_amount, currency)} / ${t('Subscription')} ${formatFinanceAmount(summary?.cash_subscription_amount, currency)}`}
+                hint={`${t('充值')} ${formatFinanceAmount(summary?.cash_topup_amount, currency)} / ${t('订阅')} ${formatFinanceAmount(summary?.cash_subscription_amount, currency)}`}
                 tone={METRIC_TONE.cash}
               />
             </div>
@@ -267,11 +273,11 @@ export function FinanceReport() {
                 <CardHeader className='border-b'>
                   <CardTitle className='flex items-center gap-2'>
                     <WalletCards size={16} />
-                    {t('Model Profit Ranking')}
+                    {t('模型利润排行')}
                   </CardTitle>
                   <CardAction>
                     <Badge variant='secondary'>
-                      {report?.models?.length ?? 0} {t('models')}
+                      {report?.models?.length ?? 0} {t('个模型')}
                     </Badge>
                   </CardAction>
                 </CardHeader>
@@ -285,7 +291,7 @@ export function FinanceReport() {
 
               <Card>
                 <CardHeader className='border-b'>
-                  <CardTitle>{t('User Contribution Ranking')}</CardTitle>
+                  <CardTitle>{t('用户贡献排行')}</CardTitle>
                 </CardHeader>
                 <CardContent className='p-0'>
                   <UserTable rows={report?.users ?? []} currency={currency} />
