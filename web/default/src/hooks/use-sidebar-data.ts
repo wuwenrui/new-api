@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Activity,
   Box,
+  CircleDollarSign,
   CreditCard,
   FileText,
   FlaskConical,
@@ -35,6 +36,8 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
+import { useAuthStore } from '@/stores/auth-store'
+import { canAccessFinanceReport } from './sidebar-finance-access'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -44,6 +47,8 @@ import { type SidebarData } from '@/components/layout/types'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const { auth } = useAuthStore()
+  const canSeeFinanceReport = canAccessFinanceReport(auth?.user?.role)
 
   return {
     navGroups: [
@@ -141,6 +146,15 @@ export function useSidebarData(): SidebarData {
             url: '/subscriptions',
             icon: CreditCard,
           },
+          ...(canSeeFinanceReport
+            ? [
+                {
+                  title: t('财务报表'),
+                  url: '/finance-report',
+                  icon: CircleDollarSign,
+                },
+              ]
+            : []),
           {
             title: t('System Settings'),
             url: '/system-settings/site',

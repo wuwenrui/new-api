@@ -96,10 +96,7 @@ const ModelPricingTable = ({
       },
     ];
 
-    const isDynamic = modelData?.billing_mode === 'tiered_expr';
-
-    // 动态计费时始终显示倍率列，否则根据设置
-    if (showRatio || isDynamic) {
+    if (showRatio) {
       columns.push({
         title: t('分组倍率'),
         dataIndex: 'ratio',

@@ -23,6 +23,7 @@ import {
   formatMessageForAPI,
   isValidMessage,
 } from './utils';
+import { buildFinanceReportQuery } from './financeReport';
 import axios from 'axios';
 import { MESSAGE_ROLES } from '../constants/playground.constants';
 
@@ -394,4 +395,15 @@ export function getChannelModels(type) {
     return channelModels[type];
   }
   return [];
+}
+
+export async function getFinanceReport(params = {}) {
+  const query = buildFinanceReportQuery(params);
+  const res = await API.get(`/api/finance/report${query ? `?${query}` : ''}`);
+  const { success, message, data } = res.data;
+  if (!success) {
+    showError(message);
+    return null;
+  }
+  return data;
 }

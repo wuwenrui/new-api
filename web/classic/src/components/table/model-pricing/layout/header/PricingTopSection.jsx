@@ -43,6 +43,7 @@ const PricingTopSection = memo(
     siteDisplayType,
     showRatio,
     setShowRatio,
+    canViewInternalBilling,
     viewMode,
     setViewMode,
     tokenUnit,
@@ -72,6 +73,7 @@ const PricingTopSection = memo(
                 siteDisplayType={siteDisplayType}
                 showRatio={showRatio}
                 setShowRatio={setShowRatio}
+                canViewInternalBilling={canViewInternalBilling}
                 viewMode={viewMode}
                 setViewMode={setViewMode}
                 tokenUnit={tokenUnit}
@@ -108,6 +110,7 @@ const PricingTopSection = memo(
             siteDisplayType={siteDisplayType}
             showRatio={showRatio}
             setShowRatio={setShowRatio}
+            canViewInternalBilling={canViewInternalBilling}
             viewMode={viewMode}
             setViewMode={setViewMode}
             tokenUnit={tokenUnit}

@@ -214,25 +214,17 @@ func updatePricing() {
 		modelSupportEndpointsStr[ability.Model] = endpoints
 	}
 
-	// 再补充模型自定义端点：若配置有效则替换默认端点，不做合并
+	// 再补充模型自定义端点：保留渠道原生端点，并追加模型自定义端点。
 	for modelName, meta := range metaMap {
 		if strings.TrimSpace(meta.Endpoints) == "" {
 			continue
 		}
-		var raw map[string]interface{}
-		if err := json.Unmarshal([]byte(meta.Endpoints), &raw); err == nil {
-			endpoints := make([]string, 0, len(raw))
-			for k, v := range raw {
-				switch v.(type) {
-				case string, map[string]interface{}:
-					if !common.StringsContains(endpoints, k) {
-						endpoints = append(endpoints, k)
-					}
-				}
-			}
-			if len(endpoints) > 0 {
-				modelSupportEndpointsStr[modelName] = endpoints
-			}
+		endpoints := mergeModelEndpointTypes(
+			modelSupportEndpointsStr[modelName],
+			meta.Endpoints,
+		)
+		if len(endpoints) > 0 {
+			modelSupportEndpointsStr[modelName] = endpoints
 		}
 	}
 
@@ -356,6 +348,26 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
+}
+
+func mergeModelEndpointTypes(defaultEndpoints []string, endpointsConfig string) []string {
+	endpoints := append([]string{}, defaultEndpoints...)
+	if strings.TrimSpace(endpointsConfig) == "" {
+		return endpoints
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(endpointsConfig), &raw); err != nil {
+		return endpoints
+	}
+	for k, v := range raw {
+		switch v.(type) {
+		case string, map[string]interface{}:
+			if !common.StringsContains(endpoints, k) {
+				endpoints = append(endpoints, k)
+			}
+		}
+	}
+	return endpoints
 }
 
 // GetSupportedEndpointMap 返回全局端点到路径的映射

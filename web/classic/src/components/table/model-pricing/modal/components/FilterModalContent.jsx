@@ -81,6 +81,7 @@ const FilterModalContent = ({ sidebarProps, t }) => {
         siteDisplayType={siteDisplayType}
         showRatio={showRatio}
         setShowRatio={setShowRatio}
+        canViewInternalBilling={categoryProps.canViewInternalBilling}
         viewMode={viewMode}
         setViewMode={setViewMode}
         tokenUnit={tokenUnit}
@@ -103,6 +104,7 @@ const FilterModalContent = ({ sidebarProps, t }) => {
         setFilterGroup={setFilterGroup}
         usableGroup={categoryProps.usableGroup}
         groupRatio={categoryProps.groupRatio}
+        canViewInternalBilling={categoryProps.canViewInternalBilling}
         models={groupCountModels}
         loading={loading}
         t={t}

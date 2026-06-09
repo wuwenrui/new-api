@@ -54,6 +54,7 @@ export const useModelPricingData = () => {
 
   const [statusState] = useContext(StatusContext);
   const [userState] = useContext(UserContext);
+  const canViewInternalBilling = (userState?.user?.role ?? 0) >= 10;
 
   // 充值汇率（price）与美元兑人民币汇率（usd_exchange_rate）
   const priceRate = useMemo(
@@ -292,12 +293,22 @@ export const useModelPricingData = () => {
     setSelectedGroup(group);
     setFilterGroup(group);
     if (group === 'all') {
-      showInfo(t('已切换至最优倍率视图，每个模型使用其最低倍率分组'));
-    } else {
+      showInfo(
+        canViewInternalBilling
+          ? t('已切换至最优倍率视图，每个模型使用其最低倍率分组')
+          : t('已切换至全部分组视图'),
+      );
+    } else if (canViewInternalBilling) {
       showInfo(
         t('当前查看的分组为：{{group}}，倍率为：{{ratio}}', {
           group: group,
           ratio: groupRatio[group] ?? 1,
+        }),
+      );
+    } else {
+      showInfo(
+        t('当前查看的分组为：{{group}}', {
+          group: group,
         }),
       );
     }
@@ -374,6 +385,7 @@ export const useModelPricingData = () => {
     usableGroup,
     endpointMap,
     autoGroups,
+    canViewInternalBilling,
 
     // 计算属性
     priceRate,

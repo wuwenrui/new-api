@@ -46,6 +46,7 @@ import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
+import { useIsAdmin } from '@/hooks/use-admin'
 import {
   formatLatency,
   formatThroughput,
@@ -910,6 +911,7 @@ export interface ModelDetailsContentProps {
 
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
   const showRechargePrice = props.showRechargePrice ?? false
   const metadata = useMemo(() => inferModelMetadata(props.model), [props.model])
 
@@ -953,16 +955,18 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             {isDynamic && (
               <DynamicPricingBreakdown billingExpr={props.model.billing_expr} />
             )}
-            <GroupPricingSection
-              model={props.model}
-              groupRatio={props.groupRatio}
-              usableGroup={props.usableGroup}
-              autoGroups={props.autoGroups}
-              priceRate={props.priceRate}
-              usdExchangeRate={props.usdExchangeRate}
-              tokenUnit={props.tokenUnit}
-              showRechargePrice={showRechargePrice}
-            />
+            {isAdmin && (
+              <GroupPricingSection
+                model={props.model}
+                groupRatio={props.groupRatio}
+                usableGroup={props.usableGroup}
+                autoGroups={props.autoGroups}
+                priceRate={props.priceRate}
+                usdExchangeRate={props.usdExchangeRate}
+                tokenUnit={props.tokenUnit}
+                showRechargePrice={showRechargePrice}
+              />
+            )}
           </section>
 
           <ModelDetailsQuickStats metadata={metadata} />

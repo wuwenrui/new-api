@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo, useState } from 'react'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -105,6 +106,7 @@ export function ApiKeyGroupCombobox({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
+  const isAdmin = useIsAdmin()
   const selectedOption = options.find((option) => option.value === value)
 
   const filteredOptions = useMemo(() => {
@@ -112,7 +114,7 @@ export function ApiKeyGroupCombobox({
     if (!search) return options
 
     return options.filter((option) => {
-      const ratioText = String(option.ratio ?? '').toLowerCase()
+      const ratioText = isAdmin ? String(option.ratio ?? '').toLowerCase() : ''
       return (
         option.value.toLowerCase().includes(search) ||
         option.label.toLowerCase().includes(search) ||
@@ -120,7 +122,7 @@ export function ApiKeyGroupCombobox({
         ratioText.includes(search)
       )
     })
-  }, [options, searchValue])
+  }, [isAdmin, options, searchValue])
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
@@ -154,7 +156,7 @@ export function ApiKeyGroupCombobox({
             )}
           </span>
           <span className='hidden sm:block'>
-            <GroupRatioBadge ratio={selectedOption?.ratio} />
+            {isAdmin && <GroupRatioBadge ratio={selectedOption?.ratio} />}
           </span>
         </span>
         <ChevronsUpDown className='h-4 w-4 shrink-0 opacity-50' />
@@ -197,7 +199,7 @@ export function ApiKeyGroupCombobox({
                       </span>
                     )}
                   </span>
-                  <GroupRatioBadge ratio={option.ratio} />
+                  {isAdmin && <GroupRatioBadge ratio={option.ratio} />}
                 </CommandItem>
               ))}
             </CommandGroup>

@@ -5,9 +5,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -31,15 +32,35 @@ func generateSignature(secret string, payload []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// SendWebhookNotify 发送 webhook 通知
-func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error {
-	// 处理占位符
-	content := data.Content
-	for _, value := range data.Values {
-		content = fmt.Sprintf(content, value)
+func renderNotifyContent(content string, values []interface{}) string {
+	for _, value := range values {
+		content = strings.Replace(content, dto.ContentValueParam, fmt.Sprintf("%v", value), 1)
+	}
+	return content
+}
+
+func isServerChanWebhookURL(webhookURL string) bool {
+	parsed, err := url.Parse(webhookURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if !(strings.HasSuffix(host, "ftqq.com") || strings.HasSuffix(host, "ft07.com")) {
+		return false
+	}
+	return strings.Contains(parsed.Path, ".send")
+}
+
+func buildWebhookBody(webhookURL string, data dto.Notify) ([]byte, string, error) {
+	content := renderNotifyContent(data.Content, data.Values)
+	if isServerChanWebhookURL(webhookURL) {
+		values := url.Values{}
+		values.Set("title", data.Title)
+		values.Set("text", data.Title)
+		values.Set("desp", content)
+		return []byte(values.Encode()), "application/x-www-form-urlencoded", nil
 	}
 
-	// 构建 webhook 负载
 	payload := WebhookPayload{
 		Type:      data.Type,
 		Title:     data.Title,
@@ -47,11 +68,18 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		Values:    data.Values,
 		Timestamp: time.Now().Unix(),
 	}
-
-	// 序列化负载
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := common.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal webhook payload: %v", err)
+		return nil, "", fmt.Errorf("failed to marshal webhook payload: %v", err)
+	}
+	return payloadBytes, "application/json", nil
+}
+
+// SendWebhookNotify 发送 webhook 通知
+func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error {
+	payloadBytes, contentType, err := buildWebhookBody(webhookURL, data)
+	if err != nil {
+		return err
 	}
 
 	// 创建 HTTP 请求
@@ -65,7 +93,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 			Key:    system_setting.WorkerValidKey,
 			Method: http.MethodPost,
 			Headers: map[string]string{
-				"Content-Type": "application/json",
+				"Content-Type": contentType,
 			},
 			Body: payloadBytes,
 		}
@@ -100,7 +128,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		}
 
 		// 设置请求头
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", contentType)
 
 		// 如果有 secret，生成签名
 		if secret != "" {

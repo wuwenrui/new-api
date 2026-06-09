@@ -88,6 +88,11 @@ const paymentSchema = z.object({
   EpayKey: z.string(),
   Price: z.coerce.number().min(0),
   MinTopUp: z.coerce.number().min(0),
+  ManualTopUpEnabled: z.boolean(),
+  ManualTopUpMinTopUp: z.coerce.number().min(0),
+  ManualTopUpWechatQRCode: z.string(),
+  ManualTopUpAlipayQRCode: z.string(),
+  ManualTopUpInstructions: z.string(),
   CustomCallbackAddress: z.string().refine((value) => {
     const trimmed = value.trim()
     if (!trimmed) return true
@@ -405,6 +410,11 @@ export function PaymentSettingsSection({
       EpayKey: values.EpayKey.trim(),
       Price: values.Price,
       MinTopUp: values.MinTopUp,
+      ManualTopUpEnabled: values.ManualTopUpEnabled,
+      ManualTopUpMinTopUp: values.ManualTopUpMinTopUp,
+      ManualTopUpWechatQRCode: values.ManualTopUpWechatQRCode.trim(),
+      ManualTopUpAlipayQRCode: values.ManualTopUpAlipayQRCode.trim(),
+      ManualTopUpInstructions: values.ManualTopUpInstructions.trim(),
       CustomCallbackAddress: removeTrailingSlash(values.CustomCallbackAddress),
       PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
@@ -447,6 +457,14 @@ export function PaymentSettingsSection({
       EpayKey: initialRef.current.EpayKey.trim(),
       Price: initialRef.current.Price,
       MinTopUp: initialRef.current.MinTopUp,
+      ManualTopUpEnabled: initialRef.current.ManualTopUpEnabled,
+      ManualTopUpMinTopUp: initialRef.current.ManualTopUpMinTopUp,
+      ManualTopUpWechatQRCode:
+        initialRef.current.ManualTopUpWechatQRCode.trim(),
+      ManualTopUpAlipayQRCode:
+        initialRef.current.ManualTopUpAlipayQRCode.trim(),
+      ManualTopUpInstructions:
+        initialRef.current.ManualTopUpInstructions.trim(),
       CustomCallbackAddress: removeTrailingSlash(
         initialRef.current.CustomCallbackAddress
       ),
@@ -508,6 +526,41 @@ export function PaymentSettingsSection({
 
     if (sanitized.MinTopUp !== initial.MinTopUp) {
       updates.push({ key: 'MinTopUp', value: sanitized.MinTopUp })
+    }
+
+    if (sanitized.ManualTopUpEnabled !== initial.ManualTopUpEnabled) {
+      updates.push({
+        key: 'ManualTopUpEnabled',
+        value: sanitized.ManualTopUpEnabled,
+      })
+    }
+
+    if (sanitized.ManualTopUpMinTopUp !== initial.ManualTopUpMinTopUp) {
+      updates.push({
+        key: 'ManualTopUpMinTopUp',
+        value: sanitized.ManualTopUpMinTopUp,
+      })
+    }
+
+    if (sanitized.ManualTopUpWechatQRCode !== initial.ManualTopUpWechatQRCode) {
+      updates.push({
+        key: 'ManualTopUpWechatQRCode',
+        value: sanitized.ManualTopUpWechatQRCode,
+      })
+    }
+
+    if (sanitized.ManualTopUpAlipayQRCode !== initial.ManualTopUpAlipayQRCode) {
+      updates.push({
+        key: 'ManualTopUpAlipayQRCode',
+        value: sanitized.ManualTopUpAlipayQRCode,
+      })
+    }
+
+    if (sanitized.ManualTopUpInstructions !== initial.ManualTopUpInstructions) {
+      updates.push({
+        key: 'ManualTopUpInstructions',
+        value: sanitized.ManualTopUpInstructions,
+      })
     }
 
     if (sanitized.CustomCallbackAddress !== initial.CustomCallbackAddress) {
@@ -1078,6 +1131,129 @@ export function PaymentSettingsSection({
                 )}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className='space-y-4'>
+            <div>
+              <h3 className='text-lg font-medium'>{t('Manual QR top-up')}</h3>
+              <p className='text-muted-foreground text-sm'>
+                {t('Personal QR code top-up with administrator confirmation')}
+              </p>
+            </div>
+
+            <FormField
+              control={form.control}
+              name='ManualTopUpEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Enable manual QR top-up')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Users create a pending order, scan your QR code, then wait for manual confirmation.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <div className='grid gap-6 md:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='ManualTopUpMinTopUp'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Minimum manual top-up')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        step='1'
+                        min={0}
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Smallest amount users can recharge manually')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='ManualTopUpWechatQRCode'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('WeChat QR code URL')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder='https://example.com/wechat-qr.png'
+                        {...field}
+                        onChange={(event) => field.onChange(event.target.value)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Leave blank to hide WeChat manual top-up')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='ManualTopUpAlipayQRCode'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Alipay QR code URL')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder='https://example.com/alipay-qr.png'
+                        {...field}
+                        onChange={(event) => field.onChange(event.target.value)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Leave blank to hide Alipay manual top-up')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name='ManualTopUpInstructions'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Payment instructions')}</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={3}
+                      {...field}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Shown below the QR code after a manual order is created'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
 
           <Separator />

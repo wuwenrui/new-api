@@ -21,6 +21,12 @@ var paymentSetting = PaymentSetting{
 	AmountDiscount: map[int]float64{},
 }
 
+var ManualTopUpEnabled = false
+var ManualTopUpMinTopUp = 1
+var ManualTopUpWechatQRCode = ""
+var ManualTopUpAlipayQRCode = ""
+var ManualTopUpInstructions = "付款时请备注订单号，付款后等待管理员确认。"
+
 func init() {
 	// 注册到全局配置管理器
 	config.GlobalConfig.Register("payment_setting", &paymentSetting)

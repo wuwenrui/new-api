@@ -426,7 +426,7 @@ export const useLogsData = () => {
         });
       }
       if (logs[i].type === 2) {
-        if (other?.billing_mode !== 'tiered_expr') {
+        if (isAdminUser && other?.billing_mode !== 'tiered_expr') {
           expandDataLocal.push({
             key: t('日志详情'),
             value: other?.claude
@@ -469,7 +469,11 @@ export const useLogsData = () => {
           Boolean(other?.violation_fee_marker);
 
         let content = '';
-        if (!isViolationFeeLog && other?.billing_mode !== 'tiered_expr') {
+        if (
+          isAdminUser &&
+          !isViolationFeeLog &&
+          other?.billing_mode !== 'tiered_expr'
+        ) {
           const logOpts = {
             ...other,
             prompt_tokens: logs[i].prompt_tokens,
@@ -497,7 +501,11 @@ export const useLogsData = () => {
             value: other.reasoning_effort,
           });
         }
-        if (other?.billing_mode === 'tiered_expr' && other?.expr_b64) {
+        if (
+          isAdminUser &&
+          other?.billing_mode === 'tiered_expr' &&
+          other?.expr_b64
+        ) {
           expandDataLocal.push({
             key: t('计费过程'),
             value: renderTieredModelPrice({

@@ -81,6 +81,11 @@ func InitOptionMap() {
 	common.OptionMap["Price"] = strconv.FormatFloat(operation_setting.Price, 'f', -1, 64)
 	common.OptionMap["USDExchangeRate"] = strconv.FormatFloat(operation_setting.USDExchangeRate, 'f', -1, 64)
 	common.OptionMap["MinTopUp"] = strconv.Itoa(operation_setting.MinTopUp)
+	common.OptionMap["ManualTopUpEnabled"] = strconv.FormatBool(operation_setting.ManualTopUpEnabled)
+	common.OptionMap["ManualTopUpMinTopUp"] = strconv.Itoa(operation_setting.ManualTopUpMinTopUp)
+	common.OptionMap["ManualTopUpWechatQRCode"] = operation_setting.ManualTopUpWechatQRCode
+	common.OptionMap["ManualTopUpAlipayQRCode"] = operation_setting.ManualTopUpAlipayQRCode
+	common.OptionMap["ManualTopUpInstructions"] = operation_setting.ManualTopUpInstructions
 	common.OptionMap["StripeMinTopUp"] = strconv.Itoa(setting.StripeMinTopUp)
 	common.OptionMap["StripeApiSecret"] = setting.StripeApiSecret
 	common.OptionMap["StripeWebhookSecret"] = setting.StripeWebhookSecret
@@ -358,6 +363,8 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.DefaultUseAutoGroup = boolValue
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
+		case "ManualTopUpEnabled":
+			operation_setting.ManualTopUpEnabled = boolValue
 		}
 	}
 	switch key {
@@ -398,6 +405,14 @@ func updateOptionMap(key string, value string) (err error) {
 		operation_setting.USDExchangeRate, _ = strconv.ParseFloat(value, 64)
 	case "MinTopUp":
 		operation_setting.MinTopUp, _ = strconv.Atoi(value)
+	case "ManualTopUpMinTopUp":
+		operation_setting.ManualTopUpMinTopUp, _ = strconv.Atoi(value)
+	case "ManualTopUpWechatQRCode":
+		operation_setting.ManualTopUpWechatQRCode = value
+	case "ManualTopUpAlipayQRCode":
+		operation_setting.ManualTopUpAlipayQRCode = value
+	case "ManualTopUpInstructions":
+		operation_setting.ManualTopUpInstructions = value
 	case "StripeApiSecret":
 		setting.StripeApiSecret = value
 	case "StripeWebhookSecret":

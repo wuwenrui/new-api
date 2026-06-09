@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { ReactNode } from 'react'
 import { ChevronDown, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -36,6 +37,7 @@ import {
   getQuotaTypeLabels,
 } from '../constants'
 import { parseTags } from '../lib/filters'
+import { getVisibleGroupRatioSuffix } from '../lib/group-ratio-visibility'
 import type { PricingModel, PricingVendor } from '../types'
 
 type FilterOption = {
@@ -79,14 +81,6 @@ function countBy(
   predicate: (model: PricingModel) => boolean
 ): number {
   return models.reduce((count, model) => count + (predicate(model) ? 1 : 0), 0)
-}
-
-function formatGroupRatio(ratio: number | undefined): string | undefined {
-  if (ratio == null) return undefined
-  const formatted = Number.isInteger(ratio)
-    ? ratio.toString()
-    : ratio.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
-  return `x${formatted}`
 }
 
 function FilterChip(props: {
@@ -156,6 +150,7 @@ function FilterSection(props: FilterSectionProps) {
 
 export function PricingSidebar(props: PricingSidebarProps) {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
   const quotaTypeLabels = getQuotaTypeLabels(t)
   const endpointTypeLabels = getEndpointTypeLabels(t)
 
@@ -186,7 +181,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
     ...props.groups.map((group) => ({
       value: group,
       label: group,
-      suffix: formatGroupRatio(props.groupRatios?.[group]),
+      suffix: getVisibleGroupRatioSuffix(props.groupRatios?.[group], isAdmin),
     })),
   ]
 

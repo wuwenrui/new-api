@@ -376,7 +376,16 @@ function normalizeDetailText(detail) {
     .replace(/\r\n/g, '\n');
 }
 
-function getUsageLogGroupSummary(groupRatio, userGroupRatio, t) {
+function getUsageLogGroupSummary(
+  groupRatio,
+  userGroupRatio,
+  t,
+  canViewInternalBilling = false,
+) {
+  if (!canViewInternalBilling) {
+    return '';
+  }
+
   const parsedUserGroupRatio = Number(userGroupRatio);
   const useUserGroupRatio =
     Number.isFinite(parsedUserGroupRatio) && parsedUserGroupRatio !== -1;
@@ -424,7 +433,13 @@ function renderCompactDetailSummary(summarySegments) {
   );
 }
 
-function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
+function getUsageLogDetailSummary(
+  record,
+  text,
+  billingDisplayMode,
+  t,
+  isAdminUser,
+) {
   const other = getLogOther(record.other);
 
   if (record.type === 6) {
@@ -447,6 +462,7 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
       other?.group_ratio,
       other?.user_group_ratio,
       t,
+      isAdminUser,
     );
     return {
       segments: [
@@ -910,6 +926,7 @@ export const getLogsColumns = ({
           text,
           billingDisplayMode,
           t,
+          isAdminUser,
         );
 
         if (!detailSummary) {

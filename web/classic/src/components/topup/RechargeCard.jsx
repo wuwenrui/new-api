@@ -50,6 +50,11 @@ import { useMinimumLoadingTime } from '../../hooks/common/useMinimumLoadingTime'
 import { useActualTheme } from '../../context/Theme';
 import { getCurrencyConfig } from '../../helpers/render';
 import SubscriptionPlansCard from './SubscriptionPlansCard';
+import {
+  getTopupAmountSectionHint,
+  getTopupInputPrecision,
+  toTopupDisplayAmount,
+} from './topupCurrency';
 
 const { Text } = Typography;
 
@@ -66,8 +71,13 @@ const RechargeCard = ({
   formatLargeNumber,
   priceRatio,
   topUpCount,
+  topUpDisplayAmount,
   minTopUp,
+  minTopUpDisplayAmount,
+  topupAmountLabel,
   renderQuotaWithAmount,
+  renderTopupDisplayAmount,
+  convertTopupDisplayToRequestAmount,
   getAmount,
   setTopUpCount,
   setSelectedPreset,
@@ -90,6 +100,7 @@ const RechargeCard = ({
   onOpenHistory,
   enableWaffoTopUp,
   enableWaffoPancakeTopUp,
+  enableManualTopUp,
   subscriptionLoading = false,
   subscriptionPlans = [],
   billingPreference,
@@ -108,6 +119,10 @@ const RechargeCard = ({
   const shouldShowSubscription =
     !subscriptionLoading && subscriptionPlans.length > 0;
   const regularPayMethods = payMethods || [];
+  const topupCurrencyConfig = getCurrencyConfig();
+  const inputPrecision = getTopupInputPrecision(topupCurrencyConfig);
+  const topupAmountSectionHint =
+    getTopupAmountSectionHint(topupCurrencyConfig);
 
   useEffect(() => {
     if (initialTabSetRef.current) return;
@@ -121,6 +136,12 @@ const RechargeCard = ({
       setActiveTab('topup');
     }
   }, [shouldShowSubscription, activeTab]);
+  const hasManualTopUp =
+    enableManualTopUp ||
+    regularPayMethods.some(
+      (method) =>
+        method.type === 'manual_wechat' || method.type === 'manual_alipay',
+    );
   const topupContent = (
     <Space vertical style={{ width: '100%' }}>
       {/* 统计数据 */}
@@ -234,7 +255,8 @@ const RechargeCard = ({
           enableStripeTopUp ||
           enableCreemTopUp ||
           enableWaffoTopUp ||
-          enableWaffoPancakeTopUp ? (
+          enableWaffoPancakeTopUp ||
+          hasManualTopUp ? (
           <Form
             getFormApi={(api) => (onlineFormApiRef.current = api)}
             initValues={{ topUpCount: topUpCount }}
@@ -243,43 +265,57 @@ const RechargeCard = ({
               {(enableOnlineTopUp ||
                 enableStripeTopUp ||
                 enableWaffoTopUp ||
-                enableWaffoPancakeTopUp) && (
+                enableWaffoPancakeTopUp ||
+                hasManualTopUp) && (
                 <Row gutter={12}>
                   <Col xs={24} sm={24} md={24} lg={10} xl={10}>
                     <Form.InputNumber
                       field='topUpCount'
-                      label={t('充值数量')}
+                      label={topupAmountLabel || t('充值数量')}
                       disabled={
                         !enableOnlineTopUp &&
                         !enableStripeTopUp &&
                         !enableWaffoTopUp &&
-                        !enableWaffoPancakeTopUp
+                        !enableWaffoPancakeTopUp &&
+                        !hasManualTopUp
                       }
-                      placeholder={
-                        t('充值数量，最低 ') + renderQuotaWithAmount(minTopUp)
-                      }
-                      value={topUpCount}
-                      min={minTopUp}
+                      placeholder={`${topupAmountLabel || t('充值数量')}，${t(
+                        '最低 ',
+                      )}${renderTopupDisplayAmount(
+                        minTopUpDisplayAmount ?? minTopUp,
+                      )}`}
+                      value={topUpDisplayAmount ?? topUpCount}
+                      min={minTopUpDisplayAmount ?? minTopUp}
                       max={999999999}
                       step={1}
-                      precision={0}
+                      precision={inputPrecision}
                       onChange={async (value) => {
-                        if (value && value >= 1) {
-                          setTopUpCount(value);
+                        const displayValue = Number(value);
+                        if (Number.isFinite(displayValue) && displayValue > 0) {
+                          const requestAmount =
+                            convertTopupDisplayToRequestAmount?.(
+                              displayValue,
+                            ) ?? displayValue;
+                          setTopUpCount(requestAmount);
                           setSelectedPreset(null);
-                          await getAmount(value);
+                          await getAmount(requestAmount);
                         }
                       }}
                       onBlur={(e) => {
-                        const value = parseInt(e.target.value);
-                        if (!value || value < 1) {
-                          setTopUpCount(1);
-                          getAmount(1);
+                        const value = parseFloat(e.target.value);
+                        const minDisplay = minTopUpDisplayAmount ?? minTopUp;
+                        if (!value || value < minDisplay) {
+                          setTopUpCount(minTopUp);
+                          getAmount(minTopUp);
+                          onlineFormApiRef.current?.setValue(
+                            'topUpCount',
+                            minDisplay,
+                          );
                         }
                       }}
                       formatter={(value) => (value ? `${value}` : '')}
                       parser={(value) =>
-                        value ? parseInt(value.replace(/[^\d]/g, '')) : 0
+                        value ? parseFloat(value.replace(/[^\d.]/g, '')) : 0
                       }
                       extraText={
                         <Skeleton
@@ -319,14 +355,19 @@ const RechargeCard = ({
                               payMethod.type.startsWith('waffo:');
                             const isWaffoPancake =
                               payMethod.type === 'waffo_pancake';
+                            const isManual =
+                              payMethod.type === 'manual_wechat' ||
+                              payMethod.type === 'manual_alipay';
                             const disabled =
                               (!enableOnlineTopUp &&
                                 !isStripe &&
                                 !isWaffo &&
-                                !isWaffoPancake) ||
+                                !isWaffoPancake &&
+                                !isManual) ||
                               (!enableStripeTopUp && isStripe) ||
                               (!enableWaffoTopUp && isWaffo) ||
                               (!enableWaffoPancakeTopUp && isWaffoPancake) ||
+                              (!enableManualTopUp && isManual) ||
                               minTopupVal > Number(topUpCount || 0);
 
                             const buttonEl = (
@@ -343,6 +384,10 @@ const RechargeCard = ({
                                   payMethod.type === 'alipay' ? (
                                     <SiAlipay size={18} color='#1677FF' />
                                   ) : payMethod.type === 'wxpay' ? (
+                                    <SiWechat size={18} color='#07C160' />
+                                  ) : payMethod.type === 'manual_alipay' ? (
+                                    <SiAlipay size={18} color='#1677FF' />
+                                  ) : payMethod.type === 'manual_wechat' ? (
                                     <SiWechat size={18} color='#07C160' />
                                   ) : payMethod.type === 'stripe' ? (
                                     <SiStripe size={18} color='#635BFF' />
@@ -392,7 +437,12 @@ const RechargeCard = ({
                                 content={
                                   t('此支付方式最低充值金额为') +
                                   ' ' +
-                                  minTopupVal
+                                  renderTopupDisplayAmount(
+                                    toTopupDisplayAmount(
+                                      minTopupVal,
+                                      topupCurrencyConfig,
+                                    ),
+                                  )
                                 }
                                 key={payMethod.type}
                               >
@@ -411,27 +461,29 @@ const RechargeCard = ({
                 </Row>
               )}
 
-              {(enableOnlineTopUp || enableStripeTopUp || enableWaffoTopUp) && (
+              {(enableOnlineTopUp ||
+                enableStripeTopUp ||
+                enableWaffoTopUp ||
+                hasManualTopUp) && (
                 <Form.Slot
                   label={
                     <div className='flex items-center gap-2'>
-                      <span>{t('选择充值额度')}</span>
-                      {(() => {
-                        const { symbol, rate, type } = getCurrencyConfig();
-                        if (type === 'USD') return null;
-
-                        return (
-                          <span
-                            style={{
-                              color: 'var(--semi-color-text-2)',
-                              fontSize: '12px',
-                              fontWeight: 'normal',
-                            }}
-                          >
-                            (1 $ = {rate.toFixed(2)} {symbol})
-                          </span>
-                        );
-                      })()}
+                      <span>
+                        {topupAmountLabel === t('充值金额')
+                          ? t('选择充值金额')
+                          : t('选择充值额度')}
+                      </span>
+                      {topupAmountSectionHint && (
+                        <span
+                          style={{
+                            color: 'var(--semi-color-text-2)',
+                            fontSize: '12px',
+                            fontWeight: 'normal',
+                          }}
+                        >
+                          {topupAmountSectionHint}
+                        </span>
+                      )}
                     </div>
                   }
                 >
@@ -493,7 +545,7 @@ const RechargeCard = ({
                             selectPresetAmount(preset);
                             onlineFormApiRef.current?.setValue(
                               'topUpCount',
-                              preset.value,
+                              displayValue,
                             );
                           }}
                         >
