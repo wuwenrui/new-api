@@ -229,6 +229,7 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
   }, [confirmTarget, loadOrders, t])
 
   return (
+    <>
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('待确认充值')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
@@ -336,6 +337,7 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
           </ScrollArea>
         )}
       </SectionPageLayout.Content>
+    </SectionPageLayout>
 
       <ConfirmDialog
         target={confirmTarget}
@@ -344,6 +346,6 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
         onCancel={() => setConfirmTarget(null)}
         onConfirm={handleConfirm}
       />
-    </SectionPageLayout>
+    </>
   )
 }
