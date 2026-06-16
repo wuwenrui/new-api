@@ -23,6 +23,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  HandCoins,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -152,6 +153,11 @@ export function useSidebarData(): SidebarData {
                   title: t('财务报表'),
                   url: '/finance-report',
                   icon: CircleDollarSign,
+                },
+                {
+                  title: t('待确认充值'),
+                  url: '/recharge-review',
+                  icon: HandCoins,
                 },
               ]
             : []),

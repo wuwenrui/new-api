@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/Calcium-Ion/go-epay/epay"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -446,7 +447,13 @@ func RequestManualTopUp(c *gin.Context) {
 		DisplayAmount: req.Amount,
 		PayMoney:      payMoney,
 	})
-	service.NotifyRootUser(dto.NotifyTypeManualTopUp, notification.Subject, notification.Content)
+	// fire-and-forget：优先通过 Bark 深链通知管理员，失败/未配置时回退到旧通知方式，
+	// 异步发送避免 Bark 网络调用阻塞用户请求。
+	gopool.Go(func() {
+		if !service.NotifyRechargePending(id, tradeNo, manualMethod.Name, req.Amount, payMoney) {
+			service.NotifyRootUser(dto.NotifyTypeManualTopUp, notification.Subject, notification.Content)
+		}
+	})
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("人工充值 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d money=%.2f", id, tradeNo, req.PaymentMethod, req.Amount, payMoney))
 
 	c.JSON(http.StatusOK, gin.H{
@@ -686,8 +693,82 @@ func GetAllTopUps(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+// pendingManualTopUp 待确认人工充值订单的返回项（在原始订单基础上补充用户名/邮箱）。
+type pendingManualTopUp struct {
+	Id            int     `json:"id"`
+	UserId        int     `json:"user_id"`
+	Username      string  `json:"username"`
+	Email         string  `json:"email"`
+	Amount        int64   `json:"amount"`
+	Money         float64 `json:"money"`
+	PaymentMethod string  `json:"payment_method"`
+	CreateTime    int64   `json:"create_time"`
+	TradeNo       string  `json:"trade_no"`
+	Status        string  `json:"status"`
+}
+
+// GetPendingManualTopUps 管理员获取待确认人工充值订单（分页），并批量拼装用户名/邮箱。
+func GetPendingManualTopUps(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+
+	topups, total, err := model.GetPendingManualTopUps(pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	// 批量查询用户名/邮箱，避免 N+1
+	userIDSet := make(map[int]struct{}, len(topups))
+	for _, t := range topups {
+		userIDSet[t.UserId] = struct{}{}
+	}
+	userIDs := make([]int, 0, len(userIDSet))
+	for id := range userIDSet {
+		userIDs = append(userIDs, id)
+	}
+
+	type userBrief struct {
+		Id       int    `json:"id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	}
+	userMap := make(map[int]userBrief, len(userIDs))
+	if len(userIDs) > 0 {
+		var users []userBrief
+		if err := model.DB.Model(&model.User{}).Select("id", "username", "email").Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		for _, u := range users {
+			userMap[u.Id] = u
+		}
+	}
+
+	items := make([]pendingManualTopUp, 0, len(topups))
+	for _, t := range topups {
+		u := userMap[t.UserId]
+		items = append(items, pendingManualTopUp{
+			Id:            t.Id,
+			UserId:        t.UserId,
+			Username:      u.Username,
+			Email:         u.Email,
+			Amount:        t.Amount,
+			Money:         t.Money,
+			PaymentMethod: t.PaymentMethod,
+			CreateTime:    t.CreateTime,
+			TradeNo:       t.TradeNo,
+			Status:        t.Status,
+		})
+	}
+
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
+	common.ApiSuccess(c, pageInfo)
+}
+
 type AdminCompleteTopupRequest struct {
 	TradeNo string `json:"trade_no"`
+	Amount  *int64 `json:"amount"` // 可选；仅人工充值订单生效，按该额度调整后补单
 }
 
 // AdminCompleteTopUp 管理员补单接口
@@ -702,7 +783,27 @@ func AdminCompleteTopUp(c *gin.Context) {
 	LockOrder(req.TradeNo)
 	defer UnlockOrder(req.TradeNo)
 
-	if err := model.ManualCompleteTopUp(req.TradeNo, c.ClientIP()); err != nil {
+	// Amount == nil：保持原有补单逻辑完全不变
+	if req.Amount == nil {
+		if err := model.ManualCompleteTopUp(req.TradeNo, c.ClientIP()); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, nil)
+		return
+	}
+
+	// Amount != nil：仅人工充值订单支持调整金额
+	topUp := model.GetTopUpByTradeNo(req.TradeNo)
+	if topUp == nil {
+		common.ApiErrorMsg(c, "充值订单不存在")
+		return
+	}
+	if topUp.PaymentProvider != model.PaymentProviderManualTopUp {
+		common.ApiErrorMsg(c, "仅人工充值订单支持调整金额")
+		return
+	}
+	if err := model.AdminCompleteManualTopUp(req.TradeNo, *req.Amount, c.ClientIP()); err != nil {
 		common.ApiError(c, err)
 		return
 	}

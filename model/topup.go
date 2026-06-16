@@ -319,6 +319,37 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 	return topups, total, nil
 }
 
+// GetPendingManualTopUps 获取所有待确认的人工充值订单（管理员使用），按 id 倒序分页。
+func GetPendingManualTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, 0, tx.Error
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	query := tx.Model(&TopUp{}).Where("payment_provider = ? AND status = ?", PaymentProviderManualTopUp, common.TopUpStatusPending)
+
+	if err = query.Count(&total).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+
+	return topups, total, nil
+}
+
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值
 func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	if tradeNo == "" {
@@ -392,6 +423,94 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	RecordTopupLog(userId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, paymentMethod, "admin")
 	return nil
 }
+
+// AdminCompleteManualTopUp 管理员调整金额后补单：仅适用于人工充值订单。
+// 与 ManualCompleteTopUp 同款事务 + 行锁 + 幂等语义，额外支持管理员覆盖充值额度 overrideAmount，
+// money 按 overrideAmount/oldAmount 等比缩放（oldAmount>0 时），保留分组倍率。
+func AdminCompleteManualTopUp(tradeNo string, overrideAmount int64, callerIp string) error {
+	if tradeNo == "" {
+		return errors.New("未提供订单号")
+	}
+	if overrideAmount <= 0 {
+		return errors.New("无效的充值额度")
+	}
+
+	refCol := "`trade_no`"
+	if common.UsingPostgreSQL {
+		refCol = `"trade_no"`
+	}
+
+	var userId int
+	var quotaToAdd int
+	var payMoney float64
+	var paymentMethod string
+
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		// 行级锁，避免并发补单
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			return errors.New("充值订单不存在")
+		}
+
+		// 幂等处理：已成功直接返回
+		if topUp.Status == common.TopUpStatusSuccess {
+			return nil
+		}
+
+		// 仅人工充值订单支持调整金额
+		if topUp.PaymentProvider != PaymentProviderManualTopUp {
+			return errors.New("仅人工充值订单支持调整金额")
+		}
+
+		if topUp.Status != common.TopUpStatusPending {
+			return errors.New("订单状态不是待支付，无法补单")
+		}
+
+		// 等比缩放实付金额（保留分组倍率），oldAmount>0 时才缩放
+		oldAmount := topUp.Amount
+		if oldAmount > 0 {
+			topUp.Money = decimal.NewFromFloat(topUp.Money).
+				Mul(decimal.NewFromInt(overrideAmount)).
+				Div(decimal.NewFromInt(oldAmount)).
+				InexactFloat64()
+		}
+
+		// 覆盖充值额度，按新额度计算应充值 quota
+		topUp.Amount = overrideAmount
+		dAmount := decimal.NewFromInt(overrideAmount)
+		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+		quotaToAdd = int(dAmount.Mul(dQuotaPerUnit).IntPart())
+		if quotaToAdd <= 0 {
+			return errors.New("无效的充值额度")
+		}
+
+		// 标记完成
+		topUp.CompleteTime = common.GetTimestamp()
+		topUp.Status = common.TopUpStatusSuccess
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+
+		// 增加用户额度（立即写库，保持一致性）
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
+			return err
+		}
+
+		userId = topUp.UserId
+		payMoney = topUp.Money
+		paymentMethod = topUp.PaymentMethod
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// 事务外记录日志，避免阻塞
+	RecordTopupLog(userId, fmt.Sprintf("管理员调整金额补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, paymentMethod, "admin")
+	return nil
+}
+
 func RechargeCreem(referenceId string, customerEmail string, customerName string, callerIp string) (err error) {
 	if referenceId == "" {
 		return errors.New("未提供支付单号")

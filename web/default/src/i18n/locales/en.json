@@ -4554,6 +4554,23 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "待确认充值": "Pending Recharges",
+    "确认充值": "Confirm Recharge",
+    "确认后将为该用户充值并入账，请核对到账金额。": "After confirming, the user will be credited. Please verify the amount.",
+    "用户": "User",
+    "订单号": "Order No.",
+    "充值额度": "Recharge Amount",
+    "将给用户充值": "User will be credited",
+    "取消": "Cancel",
+    "加载待确认充值失败": "Failed to load pending recharges",
+    "无效的充值额度": "Invalid recharge amount",
+    "充值成功": "Recharge successful",
+    "充值失败": "Recharge failed",
+    "暂无待确认充值": "No pending recharges",
+    "用户提交人工充值后会显示在这里": "Manual recharges submitted by users will appear here",
+    "申请额度": "Requested Amount",
+    "应收": "Amount Due",
+    "方式": "Method"
   }
 }

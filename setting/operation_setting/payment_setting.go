@@ -27,6 +27,11 @@ var ManualTopUpWechatQRCode = ""
 var ManualTopUpAlipayQRCode = ""
 var ManualTopUpInstructions = "付款时请备注订单号，付款后等待管理员确认。"
 
+// 人工充值待确认通知（Bark 深链）相关配置
+var RechargeNotifyEnabled = false
+var RechargeNotifyBarkUrl = ""
+var RechargeNotifyLinkBase = ""
+
 func init() {
 	// 注册到全局配置管理器
 	config.GlobalConfig.Register("payment_setting", &paymentSetting)

@@ -86,6 +86,9 @@ func InitOptionMap() {
 	common.OptionMap["ManualTopUpWechatQRCode"] = operation_setting.ManualTopUpWechatQRCode
 	common.OptionMap["ManualTopUpAlipayQRCode"] = operation_setting.ManualTopUpAlipayQRCode
 	common.OptionMap["ManualTopUpInstructions"] = operation_setting.ManualTopUpInstructions
+	common.OptionMap["RechargeNotifyEnabled"] = strconv.FormatBool(operation_setting.RechargeNotifyEnabled)
+	common.OptionMap["RechargeNotifyBarkUrl"] = operation_setting.RechargeNotifyBarkUrl
+	common.OptionMap["RechargeNotifyLinkBase"] = operation_setting.RechargeNotifyLinkBase
 	common.OptionMap["StripeMinTopUp"] = strconv.Itoa(setting.StripeMinTopUp)
 	common.OptionMap["StripeApiSecret"] = setting.StripeApiSecret
 	common.OptionMap["StripeWebhookSecret"] = setting.StripeWebhookSecret
@@ -365,6 +368,8 @@ func updateOptionMap(key string, value string) (err error) {
 			ratio_setting.SetExposeRatioEnabled(boolValue)
 		case "ManualTopUpEnabled":
 			operation_setting.ManualTopUpEnabled = boolValue
+		case "RechargeNotifyEnabled":
+			operation_setting.RechargeNotifyEnabled = boolValue
 		}
 	}
 	switch key {
@@ -413,6 +418,10 @@ func updateOptionMap(key string, value string) (err error) {
 		operation_setting.ManualTopUpAlipayQRCode = value
 	case "ManualTopUpInstructions":
 		operation_setting.ManualTopUpInstructions = value
+	case "RechargeNotifyBarkUrl":
+		operation_setting.RechargeNotifyBarkUrl = value
+	case "RechargeNotifyLinkBase":
+		operation_setting.RechargeNotifyLinkBase = value
 	case "StripeApiSecret":
 		setting.StripeApiSecret = value
 	case "StripeWebhookSecret":

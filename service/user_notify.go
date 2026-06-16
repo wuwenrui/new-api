@@ -116,6 +116,12 @@ func sendEmailNotify(userEmail string, data dto.Notify) error {
 }
 
 func sendBarkNotify(barkURL string, data dto.Notify) error {
+	return sendBarkRequest(barkURL, data, "")
+}
+
+// sendBarkRequest 发送 Bark 通知。当 deepLink 非空时，追加 Bark 点击跳转参数 url=<escaped deepLink>，
+// 用户点击推送即可直达指定页面。deepLink 为空时行为与历史 sendBarkNotify 完全一致。
+func sendBarkRequest(barkURL string, data dto.Notify, deepLink string) error {
 	// 处理占位符
 	content := data.Content
 	for _, value := range data.Values {
@@ -125,6 +131,15 @@ func sendBarkNotify(barkURL string, data dto.Notify) error {
 	// 替换模板变量
 	finalURL := strings.ReplaceAll(barkURL, "{{title}}", url.QueryEscape(data.Title))
 	finalURL = strings.ReplaceAll(finalURL, "{{content}}", url.QueryEscape(content))
+
+	// 追加 Bark 点击跳转参数
+	if deepLink != "" {
+		separator := "?"
+		if strings.Contains(finalURL, "?") {
+			separator = "&"
+		}
+		finalURL = finalURL + separator + "url=" + url.QueryEscape(deepLink)
+	}
 
 	// 发送GET请求到Bark
 	var req *http.Request
