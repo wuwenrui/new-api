@@ -64,4 +64,19 @@ export async function completeOrderWithAmount(input: {
   return res.data
 }
 
+/**
+ * Batch-confirm pending manual orders' status to "success" WITHOUT crediting the
+ * user (admin only). Used for historical orders already credited out-of-band.
+ */
+export async function confirmManualTopUpStatus(input: {
+  trade_nos?: string[]
+  all?: boolean
+}): Promise<ApiResponse<{ count: number }>> {
+  const res = await api.post<ApiResponse<{ count: number }>>(
+    '/api/user/topup/confirm-status',
+    { trade_nos: input.trade_nos ?? [], all: input.all ?? false }
+  )
+  return res.data
+}
+
 export type { PendingManualTopUp }

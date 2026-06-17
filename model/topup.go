@@ -511,6 +511,32 @@ func AdminCompleteManualTopUp(tradeNo string, overrideAmount int64, callerIp str
 	return nil
 }
 
+// ConfirmManualTopUpStatus 批量把人工充值订单状态置为成功（仅改状态，不给用户充值）。
+// 用于历史上已在系统外手工充值、订单却仍为待确认的情况，避免重复加额度。
+// 仅影响 payment_provider=manual_topup 且 status=pending 的订单；返回实际更新条数。
+// all=true 时忽略 tradeNos，确认所有待确认人工充值订单。
+func ConfirmManualTopUpStatus(tradeNos []string, all bool) (int64, error) {
+	if !all && len(tradeNos) == 0 {
+		return 0, errors.New("未提供订单号")
+	}
+
+	query := DB.Model(&TopUp{}).
+		Where("payment_provider = ?", PaymentProviderManualTopUp).
+		Where("status = ?", common.TopUpStatusPending)
+	if !all {
+		query = query.Where("trade_no IN ?", tradeNos)
+	}
+
+	result := query.Updates(map[string]interface{}{
+		"status":        common.TopUpStatusSuccess,
+		"complete_time": common.GetTimestamp(),
+	})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 func RechargeCreem(referenceId string, customerEmail string, customerName string, callerIp string) (err error) {
 	if referenceId == "" {
 		return errors.New("未提供支付单号")

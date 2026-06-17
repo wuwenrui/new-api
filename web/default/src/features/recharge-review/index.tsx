@@ -16,13 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatNumber, formatTimestampToDate } from '@/lib/format'
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogClose,
@@ -39,6 +40,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/status-badge'
 import {
   completeOrderWithAmount,
+  confirmManualTopUpStatus,
   getPendingManualTopUps,
   isApiSuccess,
 } from './api'
@@ -130,6 +132,53 @@ function ConfirmDialog({
   )
 }
 
+function BatchConfirmDialog({
+  open,
+  count,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean
+  count: number
+  submitting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel()
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('批量确认状态（不充值）')}</DialogTitle>
+          <DialogDescription>
+            {t('将所选订单标记为已完成，仅改状态、不会给用户充值。')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className='text-sm'>
+          {t('已选择')}: <span className='font-semibold'>{count}</span>
+        </div>
+        <DialogFooter>
+          <DialogClose
+            render={<Button variant='outline' disabled={submitting} />}
+          >
+            {t('取消')}
+          </DialogClose>
+          <Button onClick={onConfirm} disabled={submitting || count === 0}>
+            {submitting ? <Spinner /> : null}
+            {t('确认状态')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
   const { t } = useTranslation()
   const [orders, setOrders] = useState<PendingManualTopUp[]>([])
@@ -137,6 +186,9 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null)
   const [highlightTradeNo, setHighlightTradeNo] = useState<string | null>(null)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [batchSubmitting, setBatchSubmitting] = useState(false)
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const focusedTradeNo = useRef<string | null>(null)
 
@@ -154,6 +206,7 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
       toast.error(t('加载待确认充值失败'))
       setOrders([])
     } finally {
+      setSelected(new Set())
       setLoading(false)
     }
   }, [t])
@@ -174,8 +227,6 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
 
   // Auto-locate the order referenced by the deep link: scroll into view,
   // highlight it, and open its confirm dialog exactly once per trade_no.
-  // Deferred to a microtask so the state updates run outside the effect body
-  // and the row refs are settled before scrolling.
   useEffect(() => {
     if (!tradeNo) return
     if (focusedTradeNo.current === tradeNo) return
@@ -228,116 +279,187 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
     }
   }, [confirmTarget, loadOrders, t])
 
+  const toggleSelect = useCallback((tradeNoValue: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(tradeNoValue)) next.delete(tradeNoValue)
+      else next.add(tradeNoValue)
+      return next
+    })
+  }, [])
+
+  const allSelected = useMemo(
+    () => orders.length > 0 && orders.every((o) => selected.has(o.trade_no)),
+    [orders, selected]
+  )
+
+  const toggleSelectAll = useCallback(() => {
+    setSelected((prev) => {
+      if (orders.length > 0 && orders.every((o) => prev.has(o.trade_no))) {
+        return new Set()
+      }
+      return new Set(orders.map((o) => o.trade_no))
+    })
+  }, [orders])
+
+  const handleBatchConfirm = useCallback(async () => {
+    const tradeNos = [...selected]
+    if (tradeNos.length === 0) return
+    setBatchSubmitting(true)
+    try {
+      const response = await confirmManualTopUpStatus({ trade_nos: tradeNos })
+      if (isApiSuccess(response)) {
+        toast.success(`${t('确认状态成功')}: ${response.data?.count ?? tradeNos.length}`)
+        setBatchOpen(false)
+        await loadOrders()
+      } else {
+        toast.error(response.message || t('确认状态失败'))
+      }
+    } catch {
+      toast.error(t('确认状态失败'))
+    } finally {
+      setBatchSubmitting(false)
+    }
+  }, [selected, loadOrders, t])
+
   return (
     <>
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('待确认充值')}</SectionPageLayout.Title>
-      <SectionPageLayout.Actions>
-        <Button variant='outline' onClick={loadOrders} disabled={loading}>
-          {loading ? <Spinner /> : <RefreshCw size={14} />}
-          {t('Refresh')}
-        </Button>
-      </SectionPageLayout.Actions>
-      <SectionPageLayout.Content>
-        {loading && orders.length === 0 ? (
-          <div className='flex items-center justify-center py-16'>
-            <Spinner className='size-6' />
-          </div>
-        ) : orders.length === 0 ? (
-          <div className='text-muted-foreground flex min-h-40 flex-col items-center justify-center py-10 text-center'>
-            <p className='text-sm font-medium'>{t('暂无待确认充值')}</p>
-            <p className='mt-1 text-xs'>{t('用户提交人工充值后会显示在这里')}</p>
-          </div>
-        ) : (
-          <ScrollArea className='max-h-[calc(100dvh-12rem)] pr-3 sm:pr-4'>
-            <div className='space-y-3'>
-              {orders.map((order) => {
-                const highlighted = highlightTradeNo === order.trade_no
-                return (
-                  <div
-                    key={order.id}
-                    ref={(node) => {
-                      rowRefs.current[order.trade_no] = node
-                    }}
-                    className={
-                      highlighted
-                        ? 'ring-primary bg-muted/40 rounded-lg border p-3 ring-2 transition-colors sm:p-4'
-                        : 'hover:bg-muted/50 rounded-lg border p-3 transition-colors sm:p-4'
-                    }
-                  >
-                    <div className='flex items-start justify-between gap-2'>
-                      <div className='flex-1 space-y-1'>
-                        <div className='flex min-w-0 flex-wrap items-center gap-2'>
-                          <span className='text-sm font-medium'>
-                            {order.username || order.email}
-                          </span>
-                          <StatusBadge
-                            label={`${t('User ID')}: ${order.user_id}`}
-                            variant='neutral'
-                            size='sm'
-                            copyText={String(order.user_id)}
-                          />
-                        </div>
-                        <div className='text-muted-foreground text-xs'>
-                          {formatTimestampToDate(order.create_time)}
-                        </div>
-                        <code className='text-muted-foreground block truncate font-mono text-xs'>
-                          {order.trade_no}
-                        </code>
-                      </div>
-                      <StatusBadge
-                        label={t('Pending')}
-                        variant='warning'
-                        showDot
-                        copyable={false}
-                      />
-                    </div>
-
-                    <div className='mt-3 grid grid-cols-2 gap-3 sm:mt-4 sm:grid-cols-3 sm:gap-4'>
-                      <div className='space-y-1'>
-                        <Label className='text-muted-foreground text-xs'>
-                          {t('申请额度')}
-                        </Label>
-                        <div className='text-sm font-semibold'>
-                          {order.amount}
-                        </div>
-                      </div>
-                      <div className='space-y-1'>
-                        <Label className='text-muted-foreground text-xs'>
-                          {t('应收')}
-                        </Label>
-                        <div className='text-sm font-semibold text-red-600'>
-                          {`¥${formatNumber(order.money)}`}
-                        </div>
-                      </div>
-                      <div className='space-y-1'>
-                        <Label className='text-muted-foreground text-xs'>
-                          {t('方式')}
-                        </Label>
-                        <div className='text-sm font-medium'>
-                          {order.payment_method}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className='mt-4 flex justify-end'>
-                      <Button
-                        size='sm'
-                        variant='outline'
-                        onClick={() => openConfirm(order)}
-                        disabled={submitting}
-                      >
-                        {t('确认充值')}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
+      <SectionPageLayout>
+        <SectionPageLayout.Title>{t('待确认充值')}</SectionPageLayout.Title>
+        <SectionPageLayout.Actions>
+          {orders.length > 0 ? (
+            <label className='flex cursor-pointer items-center gap-2 text-sm'>
+              <Checkbox
+                checked={allSelected}
+                indeterminate={selected.size > 0 && !allSelected}
+                onCheckedChange={toggleSelectAll}
+                aria-label={t('全选')}
+              />
+              {t('全选')}
+            </label>
+          ) : null}
+          <Button
+            variant='outline'
+            onClick={() => setBatchOpen(true)}
+            disabled={selected.size === 0}
+          >
+            {t('确认状态')}
+            {selected.size > 0 ? ` (${selected.size})` : ''}
+          </Button>
+          <Button variant='outline' onClick={loadOrders} disabled={loading}>
+            {loading ? <Spinner /> : <RefreshCw size={14} />}
+            {t('Refresh')}
+          </Button>
+        </SectionPageLayout.Actions>
+        <SectionPageLayout.Content>
+          {loading && orders.length === 0 ? (
+            <div className='flex items-center justify-center py-16'>
+              <Spinner className='size-6' />
             </div>
-          </ScrollArea>
-        )}
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+          ) : orders.length === 0 ? (
+            <div className='text-muted-foreground flex min-h-40 flex-col items-center justify-center py-10 text-center'>
+              <p className='text-sm font-medium'>{t('暂无待确认充值')}</p>
+              <p className='mt-1 text-xs'>{t('用户提交人工充值后会显示在这里')}</p>
+            </div>
+          ) : (
+            <ScrollArea className='max-h-[calc(100dvh-12rem)] pr-3 sm:pr-4'>
+              <div className='space-y-3'>
+                {orders.map((order) => {
+                  const highlighted = highlightTradeNo === order.trade_no
+                  const checked = selected.has(order.trade_no)
+                  return (
+                    <div
+                      key={order.id}
+                      ref={(node) => {
+                        rowRefs.current[order.trade_no] = node
+                      }}
+                      className={
+                        highlighted
+                          ? 'ring-primary bg-muted/40 rounded-lg border p-3 ring-2 transition-colors sm:p-4'
+                          : 'hover:bg-muted/50 rounded-lg border p-3 transition-colors sm:p-4'
+                      }
+                    >
+                      <div className='flex items-start justify-between gap-2'>
+                        <div className='flex min-w-0 flex-1 items-start gap-2'>
+                          <Checkbox
+                            className='mt-0.5'
+                            checked={checked}
+                            onCheckedChange={() => toggleSelect(order.trade_no)}
+                            aria-label={t('选择订单')}
+                          />
+                          <div className='min-w-0 flex-1 space-y-1'>
+                            <div className='flex min-w-0 flex-wrap items-center gap-2'>
+                              <span className='text-sm font-medium'>
+                                {order.username || order.email}
+                              </span>
+                              <StatusBadge
+                                label={`${t('User ID')}: ${order.user_id}`}
+                                variant='neutral'
+                                size='sm'
+                                copyText={String(order.user_id)}
+                              />
+                            </div>
+                            <div className='text-muted-foreground text-xs'>
+                              {formatTimestampToDate(order.create_time)}
+                            </div>
+                            <code className='text-muted-foreground block truncate font-mono text-xs'>
+                              {order.trade_no}
+                            </code>
+                          </div>
+                        </div>
+                        <StatusBadge
+                          label={t('Pending')}
+                          variant='warning'
+                          showDot
+                          copyable={false}
+                        />
+                      </div>
+
+                      <div className='mt-3 grid grid-cols-2 gap-3 sm:mt-4 sm:grid-cols-3 sm:gap-4'>
+                        <div className='space-y-1'>
+                          <Label className='text-muted-foreground text-xs'>
+                            {t('申请额度')}
+                          </Label>
+                          <div className='text-sm font-semibold'>
+                            {order.amount}
+                          </div>
+                        </div>
+                        <div className='space-y-1'>
+                          <Label className='text-muted-foreground text-xs'>
+                            {t('应收')}
+                          </Label>
+                          <div className='text-sm font-semibold text-red-600'>
+                            {`¥${formatNumber(order.money)}`}
+                          </div>
+                        </div>
+                        <div className='space-y-1'>
+                          <Label className='text-muted-foreground text-xs'>
+                            {t('方式')}
+                          </Label>
+                          <div className='text-sm font-medium'>
+                            {order.payment_method}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className='mt-4 flex justify-end'>
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          onClick={() => openConfirm(order)}
+                          disabled={submitting}
+                        >
+                          {t('确认充值')}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </ScrollArea>
+          )}
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
 
       <ConfirmDialog
         target={confirmTarget}
@@ -345,6 +467,14 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
         onAmountChange={handleAmountChange}
         onCancel={() => setConfirmTarget(null)}
         onConfirm={handleConfirm}
+      />
+
+      <BatchConfirmDialog
+        open={batchOpen}
+        count={selected.size}
+        submitting={batchSubmitting}
+        onCancel={() => setBatchOpen(false)}
+        onConfirm={handleBatchConfirm}
       />
     </>
   )

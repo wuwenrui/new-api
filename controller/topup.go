@@ -809,3 +809,30 @@ func AdminCompleteTopUp(c *gin.Context) {
 	}
 	common.ApiSuccess(c, nil)
 }
+
+type ConfirmManualTopUpStatusRequest struct {
+	TradeNos []string `json:"trade_nos"`
+	All      bool     `json:"all"`
+}
+
+// ConfirmManualTopUpStatus 批量确认人工充值订单状态为已完成（仅改状态，不给用户充值）。
+// 适用于历史上已在系统外手工充值、订单仍为待确认的情况。
+func ConfirmManualTopUpStatus(c *gin.Context) {
+	var req ConfirmManualTopUpStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if !req.All && len(req.TradeNos) == 0 {
+		common.ApiErrorMsg(c, "未选择订单")
+		return
+	}
+
+	count, err := model.ConfirmManualTopUpStatus(req.TradeNos, req.All)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("人工充值 批量确认状态(不充值) count=%d all=%v operator_ip=%s", count, req.All, c.ClientIP()))
+	common.ApiSuccess(c, gin.H{"count": count})
+}
