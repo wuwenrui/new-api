@@ -4634,14 +4634,14 @@
     "用户提交人工充值后会显示在这里": "Manual recharges submitted by users will appear here",
     "申请额度": "Requested Amount",
     "应收": "Amount Due",
-    "方式": "Method"
-  },
-  "全选": "Select All",
-  "确认状态": "Confirm Status",
-  "已选择": "Selected",
-  "批量确认状态（不充值）": "Batch Confirm Status (no credit)",
-  "选择订单": "Select order",
-  "确认状态成功": "Status confirmed",
-  "确认状态失败": "Failed to confirm status",
-  "将所选订单标记为已完成，仅改状态、不会给用户充值。": "Mark the selected orders as completed. This only changes the status and does NOT credit the users."
+    "方式": "Method",
+    "全选": "Select All",
+    "确认状态": "Confirm Status",
+    "已选择": "Selected",
+    "批量确认状态（不充值）": "Batch Confirm Status (no credit)",
+    "选择订单": "Select order",
+    "确认状态成功": "Status confirmed",
+    "确认状态失败": "Failed to confirm status",
+    "将所选订单标记为已完成，仅改状态、不会给用户充值。": "Mark the selected orders as completed. This only changes the status and does NOT credit the users."
+  }
 }
