@@ -10,6 +10,7 @@ interface FinanceReportSummary {
   cash_income_amount: number
   cash_topup_amount: number
   cash_subscription_amount: number
+  user_balance_amount: number
 }
 
 export interface FinanceModelRow {

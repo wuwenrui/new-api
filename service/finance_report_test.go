@@ -26,6 +26,7 @@ func setupFinanceReportTestDB(t *testing.T) {
 		&model.Log{},
 		&model.TopUp{},
 		&model.SubscriptionOrder{},
+		&model.User{},
 	))
 	model.DB = db
 	model.LOG_DB = db
@@ -107,6 +108,17 @@ func TestBuildFinanceReportAggregatesConsumptionAndCashIncome(t *testing.T) {
 		CompleteTime: 1400,
 		Status:       common.TopUpStatusSuccess,
 	}).Error)
+	// 用户当前剩余额度合计 = 1000000 + 500000 = 1500000 quota -> 3.0 金额（与时间区间无关）
+	require.NoError(t, model.DB.Create(&model.User{
+		Username: "wyh",
+		AffCode:  "aff-wyh",
+		Quota:    1000000,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.User{
+		Username: "idle-user",
+		AffCode:  "aff-idle",
+		Quota:    500000,
+	}).Error)
 
 	report, err := BuildFinanceReport(FinanceReportParams{
 		StartTimestamp: 1000,
@@ -123,6 +135,7 @@ func TestBuildFinanceReportAggregatesConsumptionAndCashIncome(t *testing.T) {
 	requireFloatNear(t, 10, report.Summary.CashTopUpAmount)
 	requireFloatNear(t, 20.5, report.Summary.CashSubscriptionAmount)
 	requireFloatNear(t, 30.5, report.Summary.CashIncomeAmount)
+	requireFloatNear(t, 3, report.Summary.UserBalanceAmount)
 
 	require.Len(t, report.Models, 2)
 	require.Equal(t, "deepseek-v4-flash", report.Models[0].ModelName)

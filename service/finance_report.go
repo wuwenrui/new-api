@@ -39,6 +39,7 @@ type FinanceReportSummary struct {
 	CashTopUpAmount        float64 `json:"cash_topup_amount"`
 	CashSubscriptionAmount float64 `json:"cash_subscription_amount"`
 	CashIncomeAmount       float64 `json:"cash_income_amount"`
+	UserBalanceAmount      float64 `json:"user_balance_amount"`
 	PromptTokens           int64   `json:"prompt_tokens"`
 	CompletionTokens       int64   `json:"completion_tokens"`
 	CacheTokens            int64   `json:"cache_tokens"`
@@ -129,6 +130,13 @@ func BuildFinanceReport(params FinanceReportParams) (FinanceReport, error) {
 		return FinanceReport{}, err
 	}
 
+	// 可能退款：用户当前剩余余额合计（充值未使用的部分，随时可能退给用户）。
+	// 这是当下快照，与所选时间区间无关。
+	userBalanceAmount, err := sumUserBalance()
+	if err != nil {
+		return FinanceReport{}, err
+	}
+
 	summary := FinanceReportSummary{
 		Requests:               summaryAgg.requests,
 		ConsumptionQuota:       summaryAgg.consumptionQuota,
@@ -139,6 +147,7 @@ func BuildFinanceReport(params FinanceReportParams) (FinanceReport, error) {
 		CashTopUpAmount:        cashTopUpAmount,
 		CashSubscriptionAmount: cashSubscriptionAmount,
 		CashIncomeAmount:       cashTopUpAmount + cashSubscriptionAmount,
+		UserBalanceAmount:      userBalanceAmount,
 		PromptTokens:           summaryAgg.promptTokens,
 		CompletionTokens:       summaryAgg.completionTokens,
 		CacheTokens:            summaryAgg.cacheTokens,
@@ -195,6 +204,18 @@ func sumFinanceCash(table string, params FinanceReportParams) (float64, error) {
 		return 0, err
 	}
 	return total, nil
+}
+
+// sumUserBalance 汇总所有用户当前剩余额度，换算成金额，即「可能退款」敞口。
+// 软删除用户由 GORM 默认作用域自动排除。
+func sumUserBalance() (float64, error) {
+	var totalQuota int64
+	if err := model.DB.Model(&model.User{}).
+		Select("COALESCE(SUM(quota), 0)").
+		Scan(&totalQuota).Error; err != nil {
+		return 0, err
+	}
+	return float64(totalQuota) / common.QuotaPerUnit, nil
 }
 
 func financeLogRatios(other string) (float64, int64) {

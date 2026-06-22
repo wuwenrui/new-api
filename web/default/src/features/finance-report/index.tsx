@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, TrendingUp, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
@@ -41,6 +41,7 @@ const METRIC_TONE = {
   cost: 'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-400',
   profit: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
   cash: 'bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  refund: 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-400',
 } as const
 
 function MetricCard({
@@ -90,9 +91,9 @@ function ModelTable({
         <TableRow>
           <TableHead>{t('模型')}</TableHead>
           <TableHead className='w-20 text-right'>{t('请求数')}</TableHead>
-          <TableHead className='text-right'>{t('收入')}</TableHead>
+          <TableHead className='text-right'>{t('实际使用')}</TableHead>
           <TableHead className='text-right'>{t('成本')}</TableHead>
-          <TableHead className='text-right'>{t('利润')}</TableHead>
+          <TableHead className='text-right'>{t('实际赚到')}</TableHead>
           <TableHead className='w-24 text-right'>{t('利润率')}</TableHead>
         </TableRow>
       </TableHeader>
@@ -142,8 +143,8 @@ function UserTable({
         <TableRow>
           <TableHead>{t('用户')}</TableHead>
           <TableHead className='w-20 text-right'>{t('请求数')}</TableHead>
-          <TableHead className='text-right'>{t('收入')}</TableHead>
-          <TableHead className='text-right'>{t('利润')}</TableHead>
+          <TableHead className='text-right'>{t('实际使用')}</TableHead>
+          <TableHead className='text-right'>{t('实际赚到')}</TableHead>
           <TableHead className='w-24 text-right'>{t('利润率')}</TableHead>
         </TableRow>
       </TableHeader>
@@ -171,11 +172,22 @@ function UserTable({
 export function FinanceReport() {
   const { t } = useTranslation()
   const currency = { symbol: '¥', rate: 1, type: 'CNY' }
-  const today = useMemo(() => startOfToday(), [])
-  const [startTime, setStartTime] = useState(toInputValue(addDays(today, -7)))
-  const [endTime, setEndTime] = useState(toInputValue(addDays(today, 1)))
+  // 默认全部范围：空值 -> toTimestamp 返回 0 -> 后端不按时间过滤
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [report, setReport] = useState<FinanceReportData | null>(null)
   const [loading, setLoading] = useState(false)
+
+  const setAllRange = useCallback(() => {
+    setStartTime('')
+    setEndTime('')
+  }, [])
+
+  const setLast7Days = useCallback(() => {
+    const today = startOfToday()
+    setStartTime(toInputValue(addDays(today, -7)))
+    setEndTime(toInputValue(addDays(today, 1)))
+  }, [])
 
   const loadReport = useCallback(async () => {
     setLoading(true)
@@ -207,6 +219,12 @@ export function FinanceReport() {
       <SectionPageLayout.Title>{t('财务报表')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <div className='flex flex-wrap items-center gap-2'>
+          <Button variant='outline' size='sm' onClick={setAllRange}>
+            {t('全部')}
+          </Button>
+          <Button variant='outline' size='sm' onClick={setLast7Days}>
+            {t('近 7 天')}
+          </Button>
           <input
             className='border-input bg-background h-8 rounded-md border px-2 text-sm'
             type='datetime-local'
@@ -232,9 +250,9 @@ export function FinanceReport() {
           </div>
         ) : (
           <>
-            <div className='mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4'>
+            <div className='mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5'>
               <MetricCard
-                title={t('消费收入')}
+                title={t('实际使用')}
                 value={formatFinanceAmount(
                   summary?.consumption_amount,
                   currency
@@ -252,9 +270,9 @@ export function FinanceReport() {
                 tone={METRIC_TONE.cost}
               />
               <MetricCard
-                title={t('毛利润')}
+                title={t('实际赚到')}
                 value={formatFinanceAmount(summary?.gross_profit, currency)}
-                hint={formatFinancePercent(summary?.gross_margin)}
+                hint={`${t('实际使用扣上游成本')} · ${formatFinancePercent(summary?.gross_margin)}`}
                 tone={METRIC_TONE.profit}
               />
               <MetricCard
@@ -265,6 +283,15 @@ export function FinanceReport() {
                 )}
                 hint={`${t('充值')} ${formatFinanceAmount(summary?.cash_topup_amount, currency)} / ${t('订阅')} ${formatFinanceAmount(summary?.cash_subscription_amount, currency)}`}
                 tone={METRIC_TONE.cash}
+              />
+              <MetricCard
+                title={t('可能退款')}
+                value={formatFinanceAmount(
+                  summary?.user_balance_amount,
+                  currency
+                )}
+                hint={t('用户充值未使用的余额')}
+                tone={METRIC_TONE.refund}
               />
             </div>
 

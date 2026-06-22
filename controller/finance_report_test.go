@@ -36,6 +36,7 @@ func setupFinanceReportControllerTestDB(t *testing.T) {
 		&model.Log{},
 		&model.TopUp{},
 		&model.SubscriptionOrder{},
+		&model.User{},
 	))
 	model.DB = db
 	model.LOG_DB = db
