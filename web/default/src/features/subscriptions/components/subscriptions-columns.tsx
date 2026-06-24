@@ -129,6 +129,33 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
         size: 80,
       },
       {
+        id: 'feature_keys',
+        header: t('Features'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          const keys = (row.original.plan.feature_keys || '')
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
+          if (keys.length === 0) {
+            return <span className='text-muted-foreground'>-</span>
+          }
+          return (
+            <BadgeCell>
+              {keys.map((key) => (
+                <StatusBadge
+                  key={key}
+                  label={key}
+                  variant='neutral'
+                  copyable={false}
+                />
+              ))}
+            </BadgeCell>
+          )
+        },
+        size: 160,
+      },
+      {
         id: 'payment',
         header: t('Payment Channel'),
         meta: { mobileHidden: true },

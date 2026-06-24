@@ -41,13 +41,14 @@ import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
+import { Route as AuthenticatedSubscriptionReviewIndexRouteImport } from './routes/_authenticated/subscription-review/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
+import { Route as AuthenticatedRechargeReviewIndexRouteImport } from './routes/_authenticated/recharge-review/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedFinanceReportIndexRouteImport } from './routes/_authenticated/finance-report/index'
-import { Route as AuthenticatedRechargeReviewIndexRouteImport } from './routes/_authenticated/recharge-review/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
@@ -234,10 +235,22 @@ const AuthenticatedSubscriptionsIndexRoute =
     path: '/subscriptions/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedSubscriptionReviewIndexRoute =
+  AuthenticatedSubscriptionReviewIndexRouteImport.update({
+    id: '/subscription-review/',
+    path: '/subscription-review/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedRedemptionCodesIndexRoute =
   AuthenticatedRedemptionCodesIndexRouteImport.update({
     id: '/redemption-codes/',
     path: '/redemption-codes/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRechargeReviewIndexRoute =
+  AuthenticatedRechargeReviewIndexRouteImport.update({
+    id: '/recharge-review/',
+    path: '/recharge-review/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedProfileIndexRoute =
@@ -267,12 +280,6 @@ const AuthenticatedFinanceReportIndexRoute =
   AuthenticatedFinanceReportIndexRouteImport.update({
     id: '/finance-report/',
     path: '/finance-report/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedRechargeReviewIndexRoute =
-  AuthenticatedRechargeReviewIndexRouteImport.update({
-    id: '/recharge-review/',
-    path: '/recharge-review/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedDashboardIndexRoute =
@@ -446,6 +453,7 @@ export interface FileRoutesByFullPath {
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/recharge-review/': typeof AuthenticatedRechargeReviewIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/subscription-review/': typeof AuthenticatedSubscriptionReviewIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
@@ -506,6 +514,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/recharge-review': typeof AuthenticatedRechargeReviewIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/subscription-review': typeof AuthenticatedSubscriptionReviewIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
@@ -570,6 +579,7 @@ export interface FileRoutesById {
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/recharge-review/': typeof AuthenticatedRechargeReviewIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/_authenticated/subscription-review/': typeof AuthenticatedSubscriptionReviewIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
@@ -633,6 +643,7 @@ export interface FileRouteTypes {
     | '/profile/'
     | '/recharge-review/'
     | '/redemption-codes/'
+    | '/subscription-review/'
     | '/subscriptions/'
     | '/system-settings/'
     | '/usage-logs/'
@@ -693,6 +704,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/recharge-review'
     | '/redemption-codes'
+    | '/subscription-review'
     | '/subscriptions'
     | '/system-settings'
     | '/usage-logs'
@@ -756,6 +768,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile/'
     | '/_authenticated/recharge-review/'
     | '/_authenticated/redemption-codes/'
+    | '/_authenticated/subscription-review/'
     | '/_authenticated/subscriptions/'
     | '/_authenticated/system-settings/'
     | '/_authenticated/usage-logs/'
@@ -1025,11 +1038,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSubscriptionsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/subscription-review/': {
+      id: '/_authenticated/subscription-review/'
+      path: '/subscription-review'
+      fullPath: '/subscription-review/'
+      preLoaderRoute: typeof AuthenticatedSubscriptionReviewIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/redemption-codes/': {
       id: '/_authenticated/redemption-codes/'
       path: '/redemption-codes'
       fullPath: '/redemption-codes/'
       preLoaderRoute: typeof AuthenticatedRedemptionCodesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/recharge-review/': {
+      id: '/_authenticated/recharge-review/'
+      path: '/recharge-review'
+      fullPath: '/recharge-review/'
+      preLoaderRoute: typeof AuthenticatedRechargeReviewIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/profile/': {
@@ -1065,13 +1092,6 @@ declare module '@tanstack/react-router' {
       path: '/finance-report'
       fullPath: '/finance-report/'
       preLoaderRoute: typeof AuthenticatedFinanceReportIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/recharge-review/': {
-      id: '/_authenticated/recharge-review/'
-      path: '/recharge-review'
-      fullPath: '/recharge-review/'
-      preLoaderRoute: typeof AuthenticatedRechargeReviewIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard/': {
@@ -1331,6 +1351,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedRechargeReviewIndexRoute: typeof AuthenticatedRechargeReviewIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
+  AuthenticatedSubscriptionReviewIndexRoute: typeof AuthenticatedSubscriptionReviewIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
@@ -1356,6 +1377,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRechargeReviewIndexRoute: AuthenticatedRechargeReviewIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
+  AuthenticatedSubscriptionReviewIndexRoute:
+    AuthenticatedSubscriptionReviewIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,

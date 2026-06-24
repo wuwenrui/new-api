@@ -480,6 +480,26 @@ export function SubscriptionsMutateDrawer({
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name='feature_keys'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Feature Keys')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder='wechat_bridge'
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Use wechat_bridge to unlock the WeChat advanced feature. Multiple keys can be separated by commas.')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </SideDrawerSection>
 
             {/* Duration Settings */}

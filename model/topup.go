@@ -35,13 +35,14 @@ const (
 )
 
 const (
-	PaymentProviderEpay         = "epay"
-	PaymentProviderStripe       = "stripe"
-	PaymentProviderCreem        = "creem"
-	PaymentProviderWaffo        = "waffo"
-	PaymentProviderWaffoPancake = "waffo_pancake"
-	PaymentProviderBalance      = "balance"
-	PaymentProviderManualTopUp  = "manual_topup"
+	PaymentProviderEpay               = "epay"
+	PaymentProviderStripe             = "stripe"
+	PaymentProviderCreem              = "creem"
+	PaymentProviderWaffo              = "waffo"
+	PaymentProviderWaffoPancake       = "waffo_pancake"
+	PaymentProviderBalance            = "balance"
+	PaymentProviderManualTopUp        = "manual_topup"
+	PaymentProviderManualSubscription = "manual_subscription"
 )
 
 var (

@@ -104,6 +104,28 @@ func TestNotifyRechargePendingSendsDeepLinkAndContent(t *testing.T) {
 	require.Contains(t, captured, "url="+url.QueryEscape(expectedDeepLink))
 }
 
+func TestNotifySubscriptionPendingSendsDeepLinkAndContent(t *testing.T) {
+	resetRechargeNotifySettings(t)
+	disableSSRFForBarkTest(t)
+
+	rec := &barkRecorder{}
+	server := httptest.NewServer(rec.handler())
+	defer server.Close()
+
+	operation_setting.RechargeNotifyEnabled = true
+	operation_setting.RechargeNotifyBarkUrl = server.URL + "/devicekey/{{title}}/{{content}}"
+	operation_setting.RechargeNotifyLinkBase = "https://model.codingrui.work"
+
+	sent := NotifySubscriptionPending(42, "SUBMAN42", "微信高级功能", "微信人工充值", 19.9)
+	require.True(t, sent)
+
+	captured := rec.capturedURL()
+	require.Contains(t, captured, url.QueryEscape("新的人工订阅待确认"))
+	require.Contains(t, captured, url.QueryEscape("微信高级功能"))
+	expectedDeepLink := "https://model.codingrui.work/subscription-review?trade_no=" + url.QueryEscape("SUBMAN42")
+	require.Contains(t, captured, "url="+url.QueryEscape(expectedDeepLink))
+}
+
 func TestNotifyRechargePendingFallsBackToCallbackAddress(t *testing.T) {
 	resetRechargeNotifySettings(t)
 	disableSSRFForBarkTest(t)

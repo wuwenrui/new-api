@@ -27,6 +27,7 @@ import {
   Key,
   LayoutDashboard,
   ListTodo,
+  ReceiptText,
   MessageSquare,
   Radio,
   Settings,
@@ -158,6 +159,11 @@ export function useSidebarData(): SidebarData {
                   title: t('待确认充值'),
                   url: '/recharge-review',
                   icon: HandCoins,
+                },
+                {
+                  title: t('待确认订阅'),
+                  url: '/subscription-review',
+                  icon: ReceiptText,
                 },
               ]
             : []),

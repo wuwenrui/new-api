@@ -33,6 +33,11 @@ const (
 	SubscriptionResetCustom  = "custom"
 )
 
+// Subscription feature keys grant access to paid product capabilities.
+const (
+	SubscriptionFeatureWechatBridge = "wechat_bridge"
+)
+
 var (
 	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
@@ -172,6 +177,9 @@ type SubscriptionPlan struct {
 	// Upgrade user group after purchase (empty = no change)
 	UpgradeGroup string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 
+	// Feature keys unlocked by this plan. Stored as normalized comma-separated keys.
+	FeatureKeys string `json:"feature_keys" gorm:"type:text;default:''"`
+
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
@@ -199,6 +207,50 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	if p.AllowBalancePay == nil {
 		p.AllowBalancePay = common.GetPointer(true)
 	}
+	p.FeatureKeys = NormalizeSubscriptionFeatureKeys(p.FeatureKeys)
+}
+
+func NormalizeSubscriptionFeatureKeys(raw string) string {
+	raw = strings.ReplaceAll(raw, ";", ",")
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]struct{}, len(parts))
+	keys := make([]string, 0, len(parts))
+	for _, part := range parts {
+		key := strings.ToLower(strings.TrimSpace(part))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	return strings.Join(keys, ",")
+}
+
+func (p *SubscriptionPlan) FeatureKeyList() []string {
+	if p == nil {
+		return nil
+	}
+	normalized := NormalizeSubscriptionFeatureKeys(p.FeatureKeys)
+	if normalized == "" {
+		return nil
+	}
+	return strings.Split(normalized, ",")
+}
+
+func (p *SubscriptionPlan) HasFeature(featureKey string) bool {
+	target := NormalizeSubscriptionFeatureKeys(featureKey)
+	if target == "" || strings.Contains(target, ",") {
+		return false
+	}
+	for _, key := range p.FeatureKeyList() {
+		if key == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Subscription order (payment -> webhook -> create UserSubscription)
@@ -468,7 +520,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, errors.New("已达到该套餐购买上限")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := GetDBTimestampTx(tx)
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -547,7 +599,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status != common.TopUpStatusPending {
 			return ErrSubscriptionOrderStatusInvalid
 		}
-		plan, err := GetSubscriptionPlanById(order.PlanId)
+		plan, err := getSubscriptionPlanByIdTx(tx, order.PlanId)
 		if err != nil {
 			return err
 		}
@@ -809,6 +861,69 @@ func HasActiveUserSubscription(userId int) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+type SubscriptionFeatureEntitlement struct {
+	FeatureKey string `json:"feature_key"`
+	Active     bool   `json:"active"`
+	ExpiresAt  int64  `json:"expires_at"`
+	PlanId     int    `json:"plan_id"`
+	PlanTitle  string `json:"plan_title"`
+}
+
+// GetActiveSubscriptionFeatureEntitlements returns active feature entitlements derived from subscriptions.
+func GetActiveSubscriptionFeatureEntitlements(userId int) (map[string]SubscriptionFeatureEntitlement, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	now := common.GetTimestamp()
+	type row struct {
+		PlanId      int
+		PlanTitle   string
+		FeatureKeys string
+		EndTime     int64
+	}
+	var rows []row
+	err := DB.Table("user_subscriptions AS us").
+		Select("us.plan_id AS plan_id, sp.title AS plan_title, sp.feature_keys AS feature_keys, us.end_time AS end_time").
+		Joins("JOIN subscription_plans AS sp ON sp.id = us.plan_id").
+		Where("us.user_id = ? AND us.status = ? AND us.end_time > ?", userId, "active", now).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	entitlements := make(map[string]SubscriptionFeatureEntitlement)
+	for _, r := range rows {
+		plan := SubscriptionPlan{Id: r.PlanId, Title: r.PlanTitle, FeatureKeys: r.FeatureKeys}
+		for _, featureKey := range plan.FeatureKeyList() {
+			current, exists := entitlements[featureKey]
+			if exists && current.ExpiresAt >= r.EndTime {
+				continue
+			}
+			entitlements[featureKey] = SubscriptionFeatureEntitlement{
+				FeatureKey: featureKey,
+				Active:     true,
+				ExpiresAt:  r.EndTime,
+				PlanId:     r.PlanId,
+				PlanTitle:  r.PlanTitle,
+			}
+		}
+	}
+	return entitlements, nil
+}
+
+// HasActiveUserSubscriptionFeature returns whether a user has an active subscription with the feature key.
+func HasActiveUserSubscriptionFeature(userId int, featureKey string) (bool, error) {
+	target := NormalizeSubscriptionFeatureKeys(featureKey)
+	if target == "" || strings.Contains(target, ",") {
+		return false, nil
+	}
+	entitlements, err := GetActiveSubscriptionFeatureEntitlements(userId)
+	if err != nil {
+		return false, err
+	}
+	_, ok := entitlements[target]
+	return ok, nil
 }
 
 // GetAllUserSubscriptions returns all subscriptions (active and expired) for a user.

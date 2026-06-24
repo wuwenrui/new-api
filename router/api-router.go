@@ -151,6 +151,14 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		// Subscription billing (plans, purchase, admin management)
+		entitlementRoute := apiRouter.Group("/entitlements")
+		entitlementRoute.Use(middleware.TokenAuthReadOnly())
+		{
+			entitlementRoute.GET("/self", controller.GetEntitlementsSelf)
+			entitlementRoute.GET("/wechat-bridge/plans", controller.GetWechatBridgeSubscriptionPlans)
+			entitlementRoute.POST("/wechat-bridge/manual-pay", middleware.CriticalRateLimit(), controller.RequestWechatBridgeManualSubscription)
+		}
+
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())
 		{
@@ -171,6 +179,9 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.PUT("/plans/:id", controller.AdminUpdateSubscriptionPlan)
 			subscriptionAdminRoute.PATCH("/plans/:id", controller.AdminUpdateSubscriptionPlanStatus)
 			subscriptionAdminRoute.POST("/bind", controller.AdminBindSubscription)
+			subscriptionAdminRoute.GET("/manual/pending", controller.GetPendingManualSubscriptions)
+			subscriptionAdminRoute.POST("/manual/complete", controller.AdminCompleteManualSubscription)
+			subscriptionAdminRoute.POST("/manual/confirm-status", controller.ConfirmManualSubscriptionStatus)
 
 			// User subscription management (admin)
 			subscriptionAdminRoute.GET("/users/:id/subscriptions", controller.AdminListUserSubscriptions)

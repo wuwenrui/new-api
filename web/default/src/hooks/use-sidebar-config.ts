@@ -64,6 +64,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     subscription: true,
     finance: true,
     rechargeReview: true,
+    subscriptionReview: true,
   },
 }
 
@@ -117,6 +118,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/subscriptions': { section: 'admin', module: 'subscription' },
   '/finance-report': { section: 'admin', module: 'finance' },
   '/recharge-review': { section: 'admin', module: 'rechargeReview' },
+  '/subscription-review': { section: 'admin', module: 'subscriptionReview' },
   '/system-settings': { section: 'admin', module: 'setting' },
   '/system-settings/site': { section: 'admin', module: 'setting' },
 }

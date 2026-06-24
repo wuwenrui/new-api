@@ -42,3 +42,34 @@ func NotifyRechargePending(userID int, tradeNo, paymentName string, displayAmoun
 	}
 	return true
 }
+
+// NotifySubscriptionPending 通过 Bark 给管理员推送一条带深链的人工订阅待确认通知。
+func NotifySubscriptionPending(userID int, tradeNo, planTitle, paymentName string, payMoney float64) (sent bool) {
+	if !operation_setting.RechargeNotifyEnabled || operation_setting.RechargeNotifyBarkUrl == "" {
+		return false
+	}
+
+	barkURL := operation_setting.RechargeNotifyBarkUrl
+
+	linkBase := operation_setting.RechargeNotifyLinkBase
+	if linkBase == "" {
+		linkBase = GetCallbackAddress()
+	}
+	deepLink := linkBase + "/subscription-review?trade_no=" + url.QueryEscape(tradeNo)
+
+	title := "新的人工订阅待确认"
+	content := fmt.Sprintf(
+		"用户ID: %d 套餐: %s 收款方式: %s 应收金额: ¥%.2f",
+		userID,
+		planTitle,
+		paymentName,
+		payMoney,
+	)
+	notify := dto.NewNotify(dto.NotifyTypeManualSubscription, title, content, nil)
+
+	if err := sendBarkRequest(barkURL, notify, deepLink); err != nil {
+		common.SysLog(fmt.Sprintf("failed to send subscription pending bark notify (trade_no=%s): %s", tradeNo, err.Error()))
+		return false
+	}
+	return true
+}
