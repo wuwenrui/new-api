@@ -17,9 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { buildCompletePayload } from './lib'
+import { buildCompletePayload, buildManualOrderQueryParams } from './lib'
 import type {
   ApiResponse,
+  ManualOrderQueryParams,
+  ManualTopUpOrderPage,
   PendingManualTopUp,
   PendingManualTopUpPage,
 } from './types'
@@ -48,6 +50,19 @@ export async function getPendingManualTopUps(
   })
   const res = await api.get<ApiResponse<PendingManualTopUpPage>>(
     `/api/user/topup/pending-manual?${params.toString()}`
+  )
+  return res.data
+}
+
+/**
+ * Fetch searchable manual top-up history with aggregate summary (admin only).
+ */
+export async function getManualTopUpOrders(
+  params: ManualOrderQueryParams
+): Promise<ApiResponse<ManualTopUpOrderPage>> {
+  const query = buildManualOrderQueryParams(params)
+  const res = await api.get<ApiResponse<ManualTopUpOrderPage>>(
+    `/api/user/topup/manual?${query}`
   )
   return res.data
 }

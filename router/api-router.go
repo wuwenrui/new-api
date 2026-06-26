@@ -130,6 +130,7 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
+				adminRoute.GET("/topup/manual", controller.GetManualTopUpOrders)
 				adminRoute.GET("/topup/pending-manual", controller.GetPendingManualTopUps)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
 				adminRoute.POST("/topup/confirm-status", controller.ConfirmManualTopUpStatus)
@@ -180,6 +181,7 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.PATCH("/plans/:id", controller.AdminUpdateSubscriptionPlanStatus)
 			subscriptionAdminRoute.POST("/bind", controller.AdminBindSubscription)
 			subscriptionAdminRoute.GET("/manual/pending", controller.GetPendingManualSubscriptions)
+			subscriptionAdminRoute.GET("/manual/orders", controller.GetManualSubscriptionOrders)
 			subscriptionAdminRoute.POST("/manual/complete", controller.AdminCompleteManualSubscription)
 			subscriptionAdminRoute.POST("/manual/confirm-status", controller.ConfirmManualSubscriptionStatus)
 

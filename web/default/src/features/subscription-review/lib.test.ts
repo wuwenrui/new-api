@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { findOrderIndexByTradeNo } from './lib'
+import {
+  buildManualOrderQueryParams,
+  findOrderIndexByTradeNo,
+  normalizeManualOrderSummary,
+} from './lib'
 import type { PendingManualSubscription } from './types'
 
 function makeOrder(
@@ -41,5 +45,54 @@ describe('findOrderIndexByTradeNo', () => {
     assert.equal(findOrderIndexByTradeNo(list, ''), -1)
     assert.equal(findOrderIndexByTradeNo(list, undefined), -1)
     assert.equal(findOrderIndexByTradeNo(list, null), -1)
+  })
+})
+
+describe('buildManualOrderQueryParams', () => {
+  test('builds stable query params for subscription history requests', () => {
+    assert.equal(
+      buildManualOrderQueryParams({
+        page: 3,
+        pageSize: 25,
+        keyword: '高级',
+        status: 'pending',
+        startTimestamp: 100,
+        endTimestamp: 900,
+      }),
+      'p=3&page_size=25&keyword=%E9%AB%98%E7%BA%A7&status=pending&start_timestamp=100&end_timestamp=900'
+    )
+  })
+
+  test('omits blank optional filters', () => {
+    assert.equal(
+      buildManualOrderQueryParams({
+        page: 1,
+        pageSize: 100,
+        keyword: '',
+        status: '',
+        startTimestamp: 0,
+        endTimestamp: 0,
+      }),
+      'p=1&page_size=100'
+    )
+  })
+})
+
+describe('normalizeManualOrderSummary', () => {
+  test('fills missing subscription summary fields with zero values', () => {
+    assert.deepEqual(normalizeManualOrderSummary(undefined), {
+      total_count: 0,
+      pending_count: 0,
+      success_count: 0,
+      failed_count: 0,
+      expired_count: 0,
+      total_money: 0,
+      pending_money: 0,
+      success_money: 0,
+      failed_money: 0,
+      expired_money: 0,
+      by_status: [],
+      by_method: [],
+    })
   })
 })

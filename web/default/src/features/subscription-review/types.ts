@@ -31,7 +31,9 @@ export interface PendingManualSubscription {
   plan_title: string
   money: number
   payment_method: string
+  payment_provider?: string
   create_time: number
+  complete_time?: number
   trade_no: string
   status: string
 }
@@ -39,4 +41,41 @@ export interface PendingManualSubscription {
 export interface PendingManualSubscriptionPage {
   items: PendingManualSubscription[]
   total: number
+}
+
+export interface ManualOrderBreakdown {
+  status?: string
+  payment_method?: string
+  count: number
+  money: number
+}
+
+export interface ManualOrderSummary {
+  total_count: number
+  pending_count: number
+  success_count: number
+  failed_count: number
+  expired_count: number
+  total_money: number
+  pending_money: number
+  success_money: number
+  failed_money: number
+  expired_money: number
+  by_status: ManualOrderBreakdown[]
+  by_method: ManualOrderBreakdown[]
+}
+
+export interface ManualOrderQueryParams {
+  page: number
+  pageSize: number
+  keyword?: string
+  status?: string
+  startTimestamp?: number
+  endTimestamp?: number
+}
+
+export interface ManualSubscriptionOrderPage {
+  items: PendingManualSubscription[]
+  total: number
+  summary: ManualOrderSummary
 }

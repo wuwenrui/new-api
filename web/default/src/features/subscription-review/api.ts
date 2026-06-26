@@ -17,8 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { buildManualOrderQueryParams } from './lib'
 import type {
   ApiResponse,
+  ManualOrderQueryParams,
+  ManualSubscriptionOrderPage,
   PendingManualSubscription,
   PendingManualSubscriptionPage,
 } from './types'
@@ -37,6 +40,16 @@ export async function getPendingManualSubscriptions(
   })
   const res = await api.get<ApiResponse<PendingManualSubscriptionPage>>(
     `/api/subscription/admin/manual/pending?${params.toString()}`
+  )
+  return res.data
+}
+
+export async function getManualSubscriptionOrders(
+  params: ManualOrderQueryParams
+): Promise<ApiResponse<ManualSubscriptionOrderPage>> {
+  const query = buildManualOrderQueryParams(params)
+  const res = await api.get<ApiResponse<ManualSubscriptionOrderPage>>(
+    `/api/subscription/admin/manual/orders?${query}`
   )
   return res.data
 }

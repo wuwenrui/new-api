@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  buildManualOrderQueryParams,
   buildCompletePayload,
   findOrderIndexByTradeNo,
+  normalizeManualOrderSummary,
   previewQuota,
 } from './lib'
 import type { PendingManualTopUp } from './types'
@@ -92,5 +94,54 @@ describe('previewQuota', () => {
     assert.equal(previewQuota(0), '0')
     assert.equal(previewQuota(-5), '0')
     assert.equal(previewQuota(Number.NaN, '$'), '$0')
+  })
+})
+
+describe('buildManualOrderQueryParams', () => {
+  test('builds stable query params for history requests', () => {
+    assert.equal(
+      buildManualOrderQueryParams({
+        page: 2,
+        pageSize: 50,
+        keyword: ' bob ',
+        status: 'success',
+        startTimestamp: 1000,
+        endTimestamp: 2000,
+      }),
+      'p=2&page_size=50&keyword=bob&status=success&start_timestamp=1000&end_timestamp=2000'
+    )
+  })
+
+  test('omits empty filters and all status', () => {
+    assert.equal(
+      buildManualOrderQueryParams({
+        page: 1,
+        pageSize: 20,
+        keyword: ' ',
+        status: 'all',
+        startTimestamp: 0,
+        endTimestamp: 0,
+      }),
+      'p=1&page_size=20'
+    )
+  })
+})
+
+describe('normalizeManualOrderSummary', () => {
+  test('fills missing summary fields with zero values', () => {
+    assert.deepEqual(normalizeManualOrderSummary(undefined), {
+      total_count: 0,
+      pending_count: 0,
+      success_count: 0,
+      failed_count: 0,
+      expired_count: 0,
+      total_money: 0,
+      pending_money: 0,
+      success_money: 0,
+      failed_money: 0,
+      expired_money: 0,
+      by_status: [],
+      by_method: [],
+    })
   })
 })
