@@ -30,6 +30,7 @@ import {
   ReceiptText,
   MessageSquare,
   Radio,
+  ServerCog,
   Settings,
   Ticket,
   User,
@@ -37,6 +38,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { ROLE } from '@/lib/roles'
 import { type SidebarData } from '@/components/layout/types'
 import { useAuthStore } from '@/stores/auth-store'
 import { canAccessFinanceReport } from './sidebar-finance-access'
@@ -144,7 +146,7 @@ export function useSidebarData(): SidebarData {
             icon: Ticket,
           },
           {
-            title: t('Subscription Management'),
+            title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
           },
@@ -167,6 +169,12 @@ export function useSidebarData(): SidebarData {
                 },
               ]
             : []),
+          {
+            title: t('System Info'),
+            url: '/system-info',
+            icon: ServerCog,
+            requiredRole: ROLE.SUPER_ADMIN,
+          },
           {
             title: t('System Settings'),
             url: '/system-settings/site',

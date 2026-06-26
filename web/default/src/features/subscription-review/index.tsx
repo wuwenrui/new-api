@@ -1,3 +1,4 @@
+import { RefreshCw } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,10 +18,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatNumber, formatTimestampToDate } from '@/lib/format'
+
+import { SectionPageLayout } from '@/components/layout'
+import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -43,8 +45,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { SectionPageLayout } from '@/components/layout'
-import { StatusBadge } from '@/components/status-badge'
 import {
   MANUAL_ORDER_PAGE_SIZE,
   ManualOrderBreakdownTable,
@@ -60,6 +60,8 @@ import {
   statusVariant,
   toTimestamp,
 } from '@/features/manual-order-review/utils'
+import { formatNumber, formatTimestampToDate } from '@/lib/format'
+
 import {
   completeManualSubscription,
   getManualSubscriptionOrders,
@@ -305,14 +307,16 @@ export function SubscriptionReview({ tradeNo }: { tradeNo?: string }) {
                 <div className='flex items-center justify-center py-16'>
                   <Spinner className='size-6' />
                 </div>
-              ) : orders.length === 0 ? (
+              ) : null}
+              {!loading && orders.length === 0 ? (
                 <div className='text-muted-foreground flex min-h-40 flex-col items-center justify-center py-10 text-center'>
                   <p className='text-sm font-medium'>{t('暂无待确认订阅')}</p>
                   <p className='mt-1 text-xs'>
                     {t('用户提交人工订阅后会显示在这里')}
                   </p>
                 </div>
-              ) : (
+              ) : null}
+              {orders.length > 0 ? (
                 <ScrollArea className='max-h-[calc(100dvh-14rem)] pr-3 sm:pr-4'>
                   <div className='space-y-3'>
                     {orders.map((order) => {
@@ -399,7 +403,7 @@ export function SubscriptionReview({ tradeNo }: { tradeNo?: string }) {
                     })}
                   </div>
                 </ScrollArea>
-              )}
+              ) : null}
             </TabsContent>
 
             <TabsContent value='history' className='space-y-3'>

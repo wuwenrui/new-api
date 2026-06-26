@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback } from 'react'
+
 import { getTopupInfo } from '../api'
 import {
   generatePresetAmounts,
@@ -71,6 +72,7 @@ function parsePaymentMethods(
         name: typeof item.name === 'string' ? item.name : '',
         type,
         color: typeof item.color === 'string' ? item.color : undefined,
+        icon: typeof item.icon === 'string' ? item.icon : undefined,
         min_topup:
           type === 'stripe' && normalizedMinTopup <= 0
             ? stripeMinTopup
@@ -222,30 +224,16 @@ export function useTopupInfo() {
   }, [applyTopupInfoResponse])
 
   useEffect(() => {
-    let active = true
+    let cancelled = false
 
-    getTopupInfo()
-      .then((response) => {
-        if (active) {
-          applyTopupInfoResponse(response)
-        }
-      })
-      .catch((err) => {
-        if (active) {
-          // eslint-disable-next-line no-console
-          console.error('Failed to fetch topup info:', err)
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false)
-        }
-      })
+    queueMicrotask(() => {
+      if (!cancelled) void refetchTopupInfo()
+    })
 
     return () => {
-      active = false
+      cancelled = true
     }
-  }, [applyTopupInfoResponse])
+  }, [refetchTopupInfo])
 
   return {
     topupInfo,

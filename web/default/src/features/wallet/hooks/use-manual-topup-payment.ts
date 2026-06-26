@@ -1,3 +1,4 @@
+import i18next from 'i18next'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,8 +18,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useState } from 'react'
-import i18next from 'i18next'
 import { toast } from 'sonner'
+
 import { isApiSuccess, requestManualTopUpPayment } from '../api'
 import type { ManualTopUpOrder } from '../types'
 
@@ -43,7 +44,7 @@ export function useManualTopUpPayment() {
         setOrder(response.data)
         toast.success(i18next.t('Manual top-up order created'))
         return response.data
-      } catch (_error) {
+      } catch {
         toast.error(i18next.t('Payment request failed'))
         return null
       } finally {
