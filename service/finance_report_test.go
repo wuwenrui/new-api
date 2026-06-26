@@ -53,6 +53,23 @@ func requireFloatNear(t *testing.T, expected float64, actual float64) {
 func TestBuildFinanceReportAggregatesConsumptionAndCashIncome(t *testing.T) {
 	setupFinanceReportTestDB(t)
 
+	// 用户当前剩余额度合计排除 wuwenrui 后 = 1000000 + 500000 = 1500000 quota -> 3.0 金额（与时间区间无关）
+	require.NoError(t, model.DB.Create(&model.User{
+		Username: "wyh",
+		AffCode:  "aff-wyh",
+		Quota:    1000000,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.User{
+		Username: "wuwenrui",
+		AffCode:  "aff-wuwenrui",
+		Quota:    700000,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.User{
+		Username: "idle-user",
+		AffCode:  "aff-idle",
+		Quota:    500000,
+	}).Error)
+
 	require.NoError(t, model.LOG_DB.Create(&model.Log{
 		UserId:           1,
 		Username:         "wyh",
@@ -87,6 +104,18 @@ func TestBuildFinanceReportAggregatesConsumptionAndCashIncome(t *testing.T) {
 		Group:     "default",
 		Other:     `{"group_ratio":2}`,
 	}).Error)
+	require.NoError(t, model.LOG_DB.Create(&model.Log{
+		UserId:           2,
+		Username:         "wuwenrui",
+		CreatedAt:        1250,
+		Type:             model.LogTypeConsume,
+		ModelName:        "internal-test-model",
+		Quota:            2000000,
+		PromptTokens:     2000,
+		CompletionTokens: 200,
+		Group:            "default",
+		Other:            `{"group_ratio":2,"cache_tokens":50}`,
+	}).Error)
 	require.NoError(t, model.DB.Create(&model.TopUp{
 		UserId:       1,
 		Money:        10,
@@ -101,6 +130,13 @@ func TestBuildFinanceReportAggregatesConsumptionAndCashIncome(t *testing.T) {
 		CompleteTime: 1300,
 		Status:       common.TopUpStatusPending,
 	}).Error)
+	require.NoError(t, model.DB.Create(&model.TopUp{
+		UserId:       2,
+		Money:        99,
+		TradeNo:      "topup-excluded",
+		CompleteTime: 1300,
+		Status:       common.TopUpStatusSuccess,
+	}).Error)
 	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
 		UserId:       1,
 		Money:        20.5,
@@ -108,16 +144,12 @@ func TestBuildFinanceReportAggregatesConsumptionAndCashIncome(t *testing.T) {
 		CompleteTime: 1400,
 		Status:       common.TopUpStatusSuccess,
 	}).Error)
-	// 用户当前剩余额度合计 = 1000000 + 500000 = 1500000 quota -> 3.0 金额（与时间区间无关）
-	require.NoError(t, model.DB.Create(&model.User{
-		Username: "wyh",
-		AffCode:  "aff-wyh",
-		Quota:    1000000,
-	}).Error)
-	require.NoError(t, model.DB.Create(&model.User{
-		Username: "idle-user",
-		AffCode:  "aff-idle",
-		Quota:    500000,
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:       2,
+		Money:        66,
+		TradeNo:      "sub-excluded",
+		CompleteTime: 1400,
+		Status:       common.TopUpStatusSuccess,
 	}).Error)
 
 	report, err := BuildFinanceReport(FinanceReportParams{

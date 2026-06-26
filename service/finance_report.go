@@ -9,6 +9,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+
+	"gorm.io/gorm"
 )
 
 type FinanceReportParams struct {
@@ -80,6 +82,8 @@ type financeAggregate struct {
 	completionTokens      int64
 	cacheTokens           int64
 }
+
+const financeReportExcludedUsername = "wuwenrui"
 
 func BuildFinanceReport(params FinanceReportParams) (FinanceReport, error) {
 	if common.QuotaPerUnit <= 0 {
@@ -165,6 +169,7 @@ func BuildFinanceReport(params FinanceReportParams) (FinanceReport, error) {
 
 func loadFinanceLogs(params FinanceReportParams) ([]model.Log, error) {
 	query := model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume)
+	query = query.Where("username <> ?", financeReportExcludedUsername)
 	if params.StartTimestamp > 0 {
 		query = query.Where("created_at >= ?", params.StartTimestamp)
 	}
@@ -189,10 +194,18 @@ func loadFinanceLogs(params FinanceReportParams) ([]model.Log, error) {
 	return logs, err
 }
 
+func financeReportExcludedUserIDs() *gorm.DB {
+	return model.DB.Unscoped().
+		Model(&model.User{}).
+		Select("id").
+		Where("username = ?", financeReportExcludedUsername)
+}
+
 func sumFinanceCash(table string, params FinanceReportParams) (float64, error) {
 	query := model.DB.Table(table).
 		Select("COALESCE(SUM(money), 0)").
-		Where("status = ?", common.TopUpStatusSuccess)
+		Where("status = ?", common.TopUpStatusSuccess).
+		Where("user_id NOT IN (?)", financeReportExcludedUserIDs())
 	if params.StartTimestamp > 0 {
 		query = query.Where("complete_time >= ?", params.StartTimestamp)
 	}
@@ -212,6 +225,7 @@ func sumUserBalance() (float64, error) {
 	var totalQuota int64
 	if err := model.DB.Model(&model.User{}).
 		Select("COALESCE(SUM(quota), 0)").
+		Where("username <> ?", financeReportExcludedUsername).
 		Scan(&totalQuota).Error; err != nil {
 		return 0, err
 	}
