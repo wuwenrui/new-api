@@ -34,6 +34,8 @@ import type {
   GetChannelsResponse,
   MultiKeyManageParams,
   MultiKeyStatusResponse,
+  NewAPIProbeRequest,
+  NewAPIProbeResponse,
   SearchChannelsParams,
   SearchChannelsResponse,
   TagOperationParams,
@@ -581,6 +583,24 @@ export async function getOllamaVersion(
   channelId: number
 ): Promise<{ success: boolean; message?: string; data?: { version: string } }> {
   const res = await api.get(`/api/channel/ollama/version/${channelId}`)
+  return res.data
+}
+
+// ============================================================================
+// NewAPI Upstream Probe (onboard wizard)
+// ============================================================================
+
+/**
+ * Probe a NewAPI-compatible upstream site: fetch its models, groups and pricing
+ */
+export async function probeNewAPIUpstream(
+  request: NewAPIProbeRequest
+): Promise<NewAPIProbeResponse> {
+  const res = await api.post(
+    '/api/channel/probe_newapi',
+    request,
+    channelActionConfig()
+  )
   return res.data
 }
 

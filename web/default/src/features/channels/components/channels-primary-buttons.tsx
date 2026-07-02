@@ -29,6 +29,7 @@ import {
   SortAsc,
   RefreshCw,
   ArrowUpFromLine,
+  PlugZap,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -115,6 +116,19 @@ export function ChannelsPrimaryButtons() {
           <Plus className='h-4 w-4' />
           <span className='max-sm:hidden'>{t('Create Channel')}</span>
           <span className='sm:hidden'>{t('Create')}</span>
+        </Button>
+
+        {/* Onboard NewAPI Upstream */}
+        <Button
+          variant='outline'
+          onClick={() => {
+            setCurrentRow(null)
+            setOpen('newapi-onboard')
+          }}
+          size='sm'
+        >
+          <PlugZap className='h-4 w-4' />
+          <span className='max-sm:hidden'>{t('Onboard NewAPI')}</span>
         </Button>
 
         {/* More Actions */}

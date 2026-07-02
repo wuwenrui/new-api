@@ -23,6 +23,7 @@ import { CopyChannelDialog } from './dialogs/copy-channel-dialog'
 import { EditTagDialog } from './dialogs/edit-tag-dialog'
 import { FetchModelsDialog } from './dialogs/fetch-models-dialog'
 import { MultiKeyManageDialog } from './dialogs/multi-key-manage-dialog'
+import { NewAPIOnboardDialog } from './dialogs/newapi-onboard-dialog'
 import { OllamaModelsDialog } from './dialogs/ollama-models-dialog'
 import { TagBatchEditDialog } from './dialogs/tag-batch-edit-dialog'
 import { UpstreamUpdateDialog } from './dialogs/upstream-update-dialog'
@@ -67,6 +68,12 @@ export function ChannelsDialogs() {
       {/* Copy Channel Dialog */}
       <CopyChannelDialog
         open={open === 'copy-channel'}
+        onOpenChange={(v) => !v && setOpen(null)}
+      />
+
+      {/* NewAPI Upstream Onboard Wizard */}
+      <NewAPIOnboardDialog
+        open={open === 'newapi-onboard'}
         onOpenChange={(v) => !v && setOpen(null)}
       />
 

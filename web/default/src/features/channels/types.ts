@@ -372,3 +372,41 @@ export interface AddChannelRequest {
   batch_add_set_key_prefix_2_name?: boolean
   channel: Partial<Channel>
 }
+
+// ============================================================================
+// NewAPI Upstream Probe (onboard wizard)
+// ============================================================================
+
+export interface NewAPIProbeModel {
+  model_name: string
+  quota_type: number
+  model_ratio: number
+  model_price: number
+  completion_ratio: number
+  cache_ratio: number
+  create_cache_ratio: number
+  image_ratio: number
+  audio_ratio: number
+  audio_completion_ratio: number
+  enable_groups: string[] | null
+  supported_endpoint_types: string[] | null
+}
+
+export interface NewAPIProbeResult {
+  base_url: string
+  models: NewAPIProbeModel[]
+  group_ratio: Record<string, number> | null
+  usable_group: Record<string, string> | null
+}
+
+export interface NewAPIProbeRequest {
+  base_url: string
+  access_token?: string
+  user_id?: string
+}
+
+export interface NewAPIProbeResponse {
+  success: boolean
+  message?: string
+  data?: NewAPIProbeResult
+}

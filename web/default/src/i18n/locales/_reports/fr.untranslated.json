@@ -1,0 +1,12 @@
+{
+  "Leave blank to hide Alipay manual top-up": "Leave blank to hide Alipay manual top-up",
+  "Leave blank to hide WeChat manual top-up": "Leave blank to hide WeChat manual top-up",
+  "Personal QR code top-up with administrator confirmation": "Personal QR code top-up with administrator confirmation",
+  "Please include the order number in payment remarks.": "Please include the order number in payment remarks.",
+  "Scan the QR code and wait for administrator confirmation.": "Scan the QR code and wait for administrator confirmation.",
+  "Shown below the QR code after a manual order is created": "Shown below the QR code after a manual order is created",
+  "确认后将为该用户充值并入账，请核对到账金额。": "After confirming, the user will be credited. Please verify the amount.",
+  "加载待确认充值失败": "Failed to load pending recharges",
+  "确认状态失败": "Failed to confirm status",
+  "将所选订单标记为已完成，仅改状态、不会给用户充值。": "Mark the selected orders as completed. This only changes the status and does NOT credit the users."
+}
