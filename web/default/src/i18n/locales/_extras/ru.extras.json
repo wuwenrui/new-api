@@ -1,0 +1,13 @@
+{
+  "translation.Pick an upstream group and select the models to onboard": "选择上游分组并勾选要接入的模型",
+  "translation.Set channel info and local pricing": "设置渠道信息与本地价格",
+  "translation.Upstream group": "上游分组",
+  "translation.All groups": "全部分组",
+  "translation.Group ratio {{ratio}}, cost below already includes it": "分组倍率 {{ratio}}，下方成本已包含该倍率",
+  "translation.Per-call ${{price}}": "按次 ${{price}}",
+  "translation.No models in this group": "该分组下没有模型",
+  "translation.Next: pricing & channel": "下一步：定价与渠道",
+  "translation.Local model ratio = upstream model ratio x upstream group ratio ({{ratio}}) x markup": "本地模型倍率 = 上游模型倍率 × 上游分组倍率（{{ratio}}）× 加价系数",
+  "translation.Markup multiplier": "加价系数",
+  "translation.1 = sell at cost (with default local group ratio 1)": "1 = 按成本价（本站分组倍率为 1 时）"
+}

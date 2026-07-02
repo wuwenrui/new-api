@@ -8,5 +8,11 @@
   "确认后将为该用户充值并入账，请核对到账金额。": "After confirming, the user will be credited. Please verify the amount.",
   "加载待确认充值失败": "Failed to load pending recharges",
   "确认状态失败": "Failed to confirm status",
-  "将所选订单标记为已完成，仅改状态、不会给用户充值。": "Mark the selected orders as completed. This only changes the status and does NOT credit the users."
+  "将所选订单标记为已完成，仅改状态、不会给用户充值。": "Mark the selected orders as completed. This only changes the status and does NOT credit the users.",
+  "Please pick a billing group": "Please pick a billing group",
+  "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.": "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.",
+  "Local price defaults to cost x markup; edited prices are highlighted": "Local price defaults to cost x markup; edited prices are highlighted",
+  "Prices set in the previous step are written as local model ratios": "Prices set in the previous step are written as local model ratios",
+  "All groups at a glance: filter groups, tick models and set local prices": "All groups at a glance: filter groups, tick models and set local prices",
+  "Set channel info and confirm pricing": "Set channel info and confirm pricing"
 }

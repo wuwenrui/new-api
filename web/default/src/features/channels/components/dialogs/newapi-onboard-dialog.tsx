@@ -25,6 +25,7 @@ import {
   getSystemOptions,
   updateSystemOption,
 } from '@/features/system-settings/api'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -46,6 +47,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { Dialog } from '@/components/dialog'
 import { createChannel, getGroups, probeNewAPIUpstream } from '../../api'
 import { channelsQueryKeys } from '../../lib'
@@ -104,12 +110,10 @@ function roundRatio(value: number): number {
   return Math.round(value * 1e6) / 1e6
 }
 
-/** Local ModelRatio bakes in the upstream group ratio so that a markup of 1
- *  makes our default-group selling price equal to our real upstream cost. */
-function computeLocalRatios(
+/** sale is $/1M input tokens for ratio-billed models, $/call for price-billed. */
+function applyModelPricing(
   model: NewAPIProbeModel,
-  upstreamGroupRatio: number,
-  markup: number,
+  sale: number,
   maps: RatioOptionMaps
 ): RatioOptionMaps {
   const name = model.model_name
@@ -121,18 +125,14 @@ function computeLocalRatios(
     ModelPrice: { ...maps.ModelPrice },
   }
   if (model.quota_type === 1) {
-    next.ModelPrice[name] = roundRatio(
-      model.model_price * upstreamGroupRatio * markup
-    )
+    next.ModelPrice[name] = roundRatio(sale)
     delete next.ModelRatio[name]
     delete next.CompletionRatio[name]
     delete next.CacheRatio[name]
     delete next.CreateCacheRatio[name]
     return next
   }
-  next.ModelRatio[name] = roundRatio(
-    model.model_ratio * upstreamGroupRatio * markup
-  )
+  next.ModelRatio[name] = roundRatio(sale / RATIO_TO_USD_PER_MILLION)
   if (model.completion_ratio > 0) {
     next.CompletionRatio[name] = roundRatio(model.completion_ratio)
   }
@@ -162,9 +162,14 @@ export function NewAPIOnboardDialog({
     null
   )
 
-  const [selectedGroup, setSelectedGroup] = useState('')
+  const [billingGroup, setBillingGroup] = useState('')
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set())
   const [searchKeyword, setSearchKeyword] = useState('')
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set())
+  const [markupInput, setMarkupInput] = useState('1')
+  const [saleOverrides, setSaleOverrides] = useState<Record<string, number>>(
+    {}
+  )
 
   const [channelName, setChannelName] = useState('')
   const [channelKey, setChannelKey] = useState('')
@@ -173,14 +178,16 @@ export function NewAPIOnboardDialog({
     new Set(['default'])
   )
   const [syncPricing, setSyncPricing] = useState(true)
-  const [markupInput, setMarkupInput] = useState('1')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const groupRatio = useMemo(
     () => probeResult?.group_ratio ?? {},
     [probeResult]
   )
-  const usableGroup = probeResult?.usable_group ?? {}
+  const usableGroup = useMemo(
+    () => probeResult?.usable_group ?? {},
+    [probeResult]
+  )
 
   const upstreamGroups = useMemo(() => {
     const names = new Set<string>(Object.keys(groupRatio))
@@ -190,21 +197,10 @@ export function NewAPIOnboardDialog({
     return Array.from(names).sort((a, b) => a.localeCompare(b))
   }, [probeResult, groupRatio])
 
-  const selectedGroupRatio = groupRatio[selectedGroup] ?? 1
-
-  const groupModels = useMemo(() => {
-    if (!probeResult) return []
-    if (!selectedGroup) return probeResult.models
-    return probeResult.models.filter((m) =>
-      (m.enable_groups ?? []).includes(selectedGroup)
-    )
-  }, [probeResult, selectedGroup])
-
-  const filteredModels = useMemo(() => {
-    const kw = searchKeyword.trim().toLowerCase()
-    if (!kw) return groupModels
-    return groupModels.filter((m) => m.model_name.toLowerCase().includes(kw))
-  }, [groupModels, searchKeyword])
+  const markup = useMemo(() => {
+    const parsed = Number(markupInput)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+  }, [markupInput])
 
   const selectedModelObjects = useMemo(
     () =>
@@ -214,10 +210,51 @@ export function NewAPIOnboardDialog({
     [probeResult, selectedModels]
   )
 
-  const markup = useMemo(() => {
-    const parsed = Number(markupInput)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
-  }, [markupInput])
+  // Cost basis for the default local price: the billing group when the model
+  // belongs to it, otherwise the model's own (first) group.
+  const baseGroupRatioFor = (m: NewAPIProbeModel): number => {
+    const groups = m.enable_groups ?? []
+    if (billingGroup && groups.includes(billingGroup)) {
+      return groupRatio[billingGroup] ?? 1
+    }
+    const own = groups[0]
+    return (own && groupRatio[own]) || 1
+  }
+
+  const defaultSaleFor = (m: NewAPIProbeModel): number => {
+    if (m.quota_type === 1) {
+      return m.model_price * baseGroupRatioFor(m) * markup
+    }
+    return (
+      m.model_ratio * baseGroupRatioFor(m) * RATIO_TO_USD_PER_MILLION * markup
+    )
+  }
+
+  const effectiveSaleFor = (m: NewAPIProbeModel): number =>
+    saleOverrides[m.model_name] ?? defaultSaleFor(m)
+
+  const searchedModels = (models: NewAPIProbeModel[]) => {
+    const kw = searchKeyword.trim().toLowerCase()
+    if (!kw) return models
+    return models.filter((m) => m.model_name.toLowerCase().includes(kw))
+  }
+
+  const modelsOfGroup = (group: string) =>
+    searchedModels(
+      (probeResult?.models ?? []).filter((m) =>
+        (m.enable_groups ?? []).includes(group)
+      )
+    )
+
+  const outOfBillingGroup = useMemo(
+    () =>
+      billingGroup
+        ? selectedModelObjects
+            .filter((m) => !(m.enable_groups ?? []).includes(billingGroup))
+            .map((m) => m.model_name)
+        : [],
+    [selectedModelObjects, billingGroup]
+  )
 
   const { data: groupsResp } = useQuery({
     queryKey: ['user-groups'],
@@ -240,22 +277,29 @@ export function NewAPIOnboardDialog({
     if (!syncPricing) return []
     return selectedModelObjects
       .filter((m) => {
+        const sale = effectiveSaleFor(m)
         if (m.quota_type === 1) {
           const existing = currentRatioMaps.ModelPrice[m.model_name]
-          if (existing === undefined) return false
-          return (
-            existing !==
-            roundRatio(m.model_price * selectedGroupRatio * markup)
-          )
+          return existing !== undefined && existing !== roundRatio(sale)
         }
         const existing = currentRatioMaps.ModelRatio[m.model_name]
-        if (existing === undefined) return false
         return (
-          existing !== roundRatio(m.model_ratio * selectedGroupRatio * markup)
+          existing !== undefined &&
+          existing !== roundRatio(sale / RATIO_TO_USD_PER_MILLION)
         )
       })
       .map((m) => m.model_name)
-  }, [syncPricing, selectedModelObjects, currentRatioMaps, selectedGroupRatio, markup])
+    // effectiveSaleFor depends on saleOverrides/markup/billingGroup captured below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    syncPricing,
+    selectedModelObjects,
+    currentRatioMaps,
+    saleOverrides,
+    markup,
+    billingGroup,
+    groupRatio,
+  ])
 
   const resetState = () => {
     setStep('connect')
@@ -263,15 +307,17 @@ export function NewAPIOnboardDialog({
     setAccessToken('')
     setUserId('')
     setProbeResult(null)
-    setSelectedGroup('')
+    setBillingGroup('')
+    setHiddenGroups(new Set())
     setSearchKeyword('')
     setSelectedModels(new Set())
+    setMarkupInput('1')
+    setSaleOverrides({})
     setChannelName('')
     setChannelKey('')
     setChannelType(CHANNEL_TYPE_OPENAI)
     setLocalGroups(new Set(['default']))
     setSyncPricing(true)
-    setMarkupInput('1')
   }
 
   const handleClose = () => {
@@ -297,17 +343,24 @@ export function NewAPIOnboardDialog({
       }
       setProbeResult(resp.data)
       setSelectedModels(new Set())
-      setSelectedGroup('')
+      setSaleOverrides({})
+      setHiddenGroups(new Set())
+      const groups = Object.keys(resp.data.group_ratio ?? {}).sort((a, b) =>
+        a.localeCompare(b)
+      )
+      setBillingGroup(groups[0] ?? '')
       setStep('select')
       toast.success(
         t('Found {{models}} models and {{groups}} groups', {
           models: resp.data.models.length,
-          groups: Object.keys(resp.data.group_ratio ?? {}).length,
+          groups: groups.length,
         })
       )
     } catch (error: unknown) {
       toast.error(
-        error instanceof Error ? error.message : t('Failed to probe upstream site')
+        error instanceof Error
+          ? error.message
+          : t('Failed to probe upstream site')
       )
     } finally {
       setIsProbing(false)
@@ -326,20 +379,35 @@ export function NewAPIOnboardDialog({
     })
   }
 
-  const allFilteredSelected =
-    filteredModels.length > 0 &&
-    filteredModels.every((m) => selectedModels.has(m.model_name))
+  const toggleHiddenGroup = (group: string) => {
+    setHiddenGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(group)) {
+        next.delete(group)
+      } else {
+        next.add(group)
+      }
+      return next
+    })
+  }
 
-  const toggleAllFiltered = (checked: boolean) => {
+  const selectAllInGroup = (group: string) => {
     setSelectedModels((prev) => {
       const next = new Set(prev)
-      filteredModels.forEach((m) => {
-        if (checked) {
-          next.add(m.model_name)
-        } else {
-          next.delete(m.model_name)
-        }
-      })
+      modelsOfGroup(group).forEach((m) => next.add(m.model_name))
+      return next
+    })
+  }
+
+  const setSaleOverride = (name: string, raw: string) => {
+    const parsed = Number(raw)
+    setSaleOverrides((prev) => {
+      const next = { ...prev }
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        next[name] = parsed
+      } else {
+        delete next[name]
+      }
       return next
     })
   }
@@ -349,11 +417,15 @@ export function NewAPIOnboardDialog({
       toast.error(t('Please select at least one model'))
       return
     }
+    if (!billingGroup) {
+      toast.error(t('Please pick a billing group'))
+      return
+    }
     const host = probeResult
       ? new URL(probeResult.base_url).hostname
       : 'upstream'
     if (!channelName) {
-      setChannelName(selectedGroup ? `${host} | ${selectedGroup}` : host)
+      setChannelName(`${host} | ${billingGroup}`)
     }
     const allAnthropic =
       selectedModelObjects.length > 0 &&
@@ -414,7 +486,7 @@ export function NewAPIOnboardDialog({
       if (syncPricing) {
         let maps = extractRatioMaps(optionsResp?.data ?? [])
         selectedModelObjects.forEach((m) => {
-          maps = computeLocalRatios(m, selectedGroupRatio, markup, maps)
+          maps = applyModelPricing(m, effectiveSaleFor(m), maps)
         })
         for (const key of RATIO_OPTION_KEYS) {
           await updateSystemOption({
@@ -445,8 +517,12 @@ export function NewAPIOnboardDialog({
     }
   }
 
-  const formatUsd = (ratio: number) =>
-    `$${(ratio * RATIO_TO_USD_PER_MILLION).toFixed(3)}`
+  const formatUsd = (value: number) => `$${roundRatio(value)}`
+
+  const marginPercent = (sale: number, cost: number): number | null => {
+    if (cost <= 0) return null
+    return (sale / cost - 1) * 100
+  }
 
   const renderConnectStep = () => (
     <div className='space-y-4'>
@@ -476,7 +552,9 @@ export function NewAPIOnboardDialog({
         />
       </div>
       <div className='space-y-2'>
-        <Label htmlFor='newapi-user-id'>{t('Upstream user ID (optional)')}</Label>
+        <Label htmlFor='newapi-user-id'>
+          {t('Upstream user ID (optional)')}
+        </Label>
         <Input
           id='newapi-user-id'
           placeholder='1'
@@ -488,22 +566,151 @@ export function NewAPIOnboardDialog({
     </div>
   )
 
-  const renderSelectStep = () => (
-    <div className='space-y-4'>
-      <div className='flex flex-wrap items-end gap-3'>
-        <div className='space-y-1'>
-          <Label>{t('Upstream group')}</Label>
-          <Select
-            value={selectedGroup || '__all__'}
-            onValueChange={(v) =>
-              setSelectedGroup(!v || v === '__all__' ? '' : v)
-            }
+  const renderModelRow = (m: NewAPIProbeModel, group: string) => {
+    const isSel = selectedModels.has(m.model_name)
+    const cost =
+      m.quota_type === 1
+        ? m.model_price * (groupRatio[group] ?? 1)
+        : m.model_ratio * (groupRatio[group] ?? 1) * RATIO_TO_USD_PER_MILLION
+    const sale = effectiveSaleFor(m)
+    const overridden = saleOverrides[m.model_name] !== undefined
+    const margin = marginPercent(sale, cost)
+    return (
+      <TableRow
+        key={`${group}:${m.model_name}`}
+        className={cn('cursor-pointer', isSel && 'bg-primary/5')}
+        onClick={() => toggleModel(m.model_name)}
+      >
+        <TableCell onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSel}
+            onCheckedChange={() => toggleModel(m.model_name)}
+          />
+        </TableCell>
+        <TableCell className='font-mono text-xs'>
+          {m.model_name}
+          {(m.supported_endpoint_types ?? []).includes('anthropic') && (
+            <Badge variant='outline' className='ml-2'>
+              anthropic
+            </Badge>
+          )}
+          {m.quota_type === 1 && (
+            <Badge variant='secondary' className='ml-2'>
+              {t('per-call')}
+            </Badge>
+          )}
+        </TableCell>
+        <TableCell className='text-right'>
+          {m.quota_type === 1 ? `$${m.model_price}` : m.model_ratio}
+        </TableCell>
+        <TableCell className='text-right'>
+          {m.quota_type === 1 ? '-' : m.completion_ratio || '-'}
+        </TableCell>
+        <TableCell className='text-right font-medium'>
+          {formatUsd(cost)}
+        </TableCell>
+        <TableCell
+          className='text-right'
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className='inline-flex items-center gap-1.5'>
+            <Input
+              type='number'
+              step='0.001'
+              min='0'
+              className={cn(
+                'h-7 w-24 text-right font-mono text-xs',
+                overridden && 'border-amber-500 bg-amber-50 dark:bg-amber-950'
+              )}
+              value={roundRatio(sale)}
+              onChange={(e) => setSaleOverride(m.model_name, e.target.value)}
+            />
+            {margin !== null && (
+              <span
+                className={cn(
+                  'w-12 text-xs',
+                  margin >= 0
+                    ? 'text-green-600 dark:text-green-500'
+                    : 'text-red-600 dark:text-red-500'
+                )}
+              >
+                {margin >= 0 ? '+' : ''}
+                {margin.toFixed(0)}%
+              </span>
+            )}
+          </span>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
+  const renderGroupSection = (group: string) => {
+    const models = modelsOfGroup(group)
+    if (models.length === 0) return null
+    return (
+      <div key={group} className='overflow-hidden rounded-md border'>
+        <div className='bg-muted/60 flex flex-wrap items-center gap-2 px-3 py-2'>
+          <span className='text-sm font-semibold'>{group}</span>
+          <Badge variant='secondary'>x{groupRatio[group] ?? 1}</Badge>
+          {group === billingGroup && (
+            <Badge>{t('Billing group')}</Badge>
+          )}
+          <span className='text-muted-foreground max-w-72 truncate text-xs'>
+            {usableGroup[group] || ''}
+          </span>
+          <span className='text-muted-foreground ml-auto text-xs'>
+            {t('{{count}} models', { count: models.length })}
+          </span>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-6 px-2 text-xs'
+            onClick={() => selectAllInGroup(group)}
           >
-            <SelectTrigger className='w-72'>
-              <SelectValue>{selectedGroup || t('All groups')}</SelectValue>
+            {t('Select all in group')}
+          </Button>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className='w-10' />
+              <TableHead>{t('Model')}</TableHead>
+              <TableHead className='text-right'>{t('Model ratio')}</TableHead>
+              <TableHead className='text-right'>
+                {t('Completion ratio')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Cost / 1M input')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Local price / 1M (editable)')}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>{models.map((m) => renderModelRow(m, group))}</TableBody>
+        </Table>
+      </div>
+    )
+  }
+
+  const renderSelectStep = () => (
+    <div className='space-y-3'>
+      <div className='flex flex-wrap items-center gap-3'>
+        <div className='flex items-center gap-2'>
+          <Label className='shrink-0'>{t('Billing group')}</Label>
+          <Select
+            value={billingGroup}
+            onValueChange={(v) => {
+              if (v) {
+                setBillingGroup(v)
+                setSaleOverrides({})
+              }
+            }}
+          >
+            <SelectTrigger className='w-64'>
+              <SelectValue>{billingGroup}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value='__all__'>{t('All groups')}</SelectItem>
               {upstreamGroups.map((g) => (
                 <SelectItem key={g} value={g}>
                   <span className='flex items-center gap-2'>
@@ -514,103 +721,82 @@ export function NewAPIOnboardDialog({
               ))}
             </SelectContent>
           </Select>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className='text-muted-foreground cursor-help text-xs underline decoration-dotted'>
+                  ?
+                </span>
+              }
+            />
+            <TooltipContent className='max-w-72'>
+              {t(
+                'The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.'
+              )}
+            </TooltipContent>
+          </Tooltip>
         </div>
-        <div className='relative flex-1'>
+        <div className='flex items-center gap-2'>
+          <Label htmlFor='newapi-markup' className='shrink-0'>
+            {t('Global markup')}
+          </Label>
+          <Input
+            id='newapi-markup'
+            className='h-8 w-20'
+            value={markupInput}
+            onChange={(e) => {
+              setMarkupInput(e.target.value)
+              setSaleOverrides({})
+            }}
+          />
+        </div>
+        <div className='relative min-w-44 flex-1'>
           <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
           <Input
             placeholder={t('Search models...')}
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
-            className='pl-9'
+            className='h-8 pl-9'
           />
         </div>
       </div>
 
-      {selectedGroup && (
-        <p className='text-muted-foreground text-xs'>
-          {usableGroup[selectedGroup] || selectedGroup} ·{' '}
-          {t('Group ratio {{ratio}}, cost below already includes it', {
-            ratio: selectedGroupRatio,
-          })}
-        </p>
-      )}
-
-      <div className='max-h-96 overflow-y-auto rounded-md border'>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className='w-10'>
-                <Checkbox
-                  checked={allFilteredSelected}
-                  onCheckedChange={(checked) => toggleAllFiltered(!!checked)}
-                />
-              </TableHead>
-              <TableHead>{t('Model')}</TableHead>
-              <TableHead className='text-right'>{t('Model ratio')}</TableHead>
-              <TableHead className='text-right'>
-                {t('Completion ratio')}
-              </TableHead>
-              <TableHead className='text-right'>{t('Cache ratio')}</TableHead>
-              <TableHead className='text-right'>
-                {t('Cost / 1M input')}
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredModels.map((m) => (
-              <TableRow
-                key={m.model_name}
-                className='cursor-pointer'
-                onClick={() => toggleModel(m.model_name)}
-              >
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selectedModels.has(m.model_name)}
-                    onCheckedChange={() => toggleModel(m.model_name)}
-                  />
-                </TableCell>
-                <TableCell className='font-mono text-xs'>
-                  {m.model_name}
-                  {(m.supported_endpoint_types ?? []).includes('anthropic') && (
-                    <Badge variant='outline' className='ml-2'>
-                      anthropic
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className='text-right'>
-                  {m.quota_type === 1
-                    ? t('Per-call ${{price}}', { price: m.model_price })
-                    : m.model_ratio}
-                </TableCell>
-                <TableCell className='text-right'>
-                  {m.quota_type === 1 ? '-' : m.completion_ratio || '-'}
-                </TableCell>
-                <TableCell className='text-right'>
-                  {m.quota_type === 1 ? '-' : m.cache_ratio || '-'}
-                </TableCell>
-                <TableCell className='text-right'>
-                  {m.quota_type === 1
-                    ? `$${roundRatio(m.model_price * selectedGroupRatio)}`
-                    : formatUsd(m.model_ratio * selectedGroupRatio)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {filteredModels.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className='text-muted-foreground py-8 text-center'
-                >
-                  {t('No models in this group')}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+      <div className='flex flex-wrap gap-1.5'>
+        {upstreamGroups.map((g) => {
+          const visible = !hiddenGroups.has(g)
+          return (
+            <button
+              key={g}
+              type='button'
+              onClick={() => toggleHiddenGroup(g)}
+              className={cn(
+                'rounded-full border px-3 py-1 text-xs transition-colors',
+                visible
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'text-muted-foreground bg-transparent'
+              )}
+            >
+              {visible ? '✓ ' : ''}
+              {g}{' '}
+              <span className='opacity-70'>x{groupRatio[g] ?? 1}</span>
+            </button>
+          )
+        })}
       </div>
 
-      <div className='bg-muted/50 rounded-lg border p-3 text-sm'>
-        {t('{{n}} model(s) selected', { n: selectedModels.size })}
+      <div className='max-h-96 space-y-3 overflow-y-auto pr-1'>
+        {upstreamGroups
+          .filter((g) => !hiddenGroups.has(g))
+          .map((g) => renderGroupSection(g))}
+      </div>
+
+      <div className='bg-muted/50 flex flex-wrap items-center gap-4 rounded-lg border p-3 text-sm'>
+        <span>{t('{{n}} model(s) selected', { n: selectedModels.size })}</span>
+        <span className='text-muted-foreground text-xs'>
+          {t(
+            'Local price defaults to cost x markup; edited prices are highlighted'
+          )}
+        </span>
       </div>
     </div>
   )
@@ -667,10 +853,22 @@ export function NewAPIOnboardDialog({
         <p className='text-muted-foreground text-xs'>
           {t(
             'Create an API token on the upstream site (bound to group {{group}}) and paste it here. The system access token cannot be used for relaying.',
-            { group: selectedGroup || t('any') }
+            { group: billingGroup || t('any') }
           )}
         </p>
       </div>
+
+      {outOfBillingGroup.length > 0 && (
+        <p className='text-xs text-amber-600 dark:text-amber-500'>
+          {t(
+            '{{count}} selected models are outside the billing group and will still be billed via it upstream: {{models}}',
+            {
+              count: outOfBillingGroup.length,
+              models: outOfBillingGroup.join(', '),
+            }
+          )}
+        </p>
+      )}
 
       <div className='space-y-2'>
         <Label>{t('Local groups allowed to use this channel')}</Label>
@@ -695,8 +893,7 @@ export function NewAPIOnboardDialog({
             </Label>
             <p className='text-muted-foreground text-xs'>
               {t(
-                'Local model ratio = upstream model ratio x upstream group ratio ({{ratio}}) x markup',
-                { ratio: selectedGroupRatio }
+                'Prices set in the previous step are written as local model ratios'
               )}
             </p>
           </div>
@@ -706,22 +903,6 @@ export function NewAPIOnboardDialog({
             onCheckedChange={setSyncPricing}
           />
         </div>
-        {syncPricing && (
-          <div className='flex items-center gap-2'>
-            <Label htmlFor='newapi-markup' className='shrink-0'>
-              {t('Markup multiplier')}
-            </Label>
-            <Input
-              id='newapi-markup'
-              className='max-w-24'
-              value={markupInput}
-              onChange={(e) => setMarkupInput(e.target.value)}
-            />
-            <span className='text-muted-foreground text-xs'>
-              {t('1 = sell at cost (with default local group ratio 1)')}
-            </span>
-          </div>
-        )}
         {syncPricing && pricingConflicts.length > 0 && (
           <p className='text-xs text-amber-600 dark:text-amber-500'>
             {t(
@@ -768,7 +949,7 @@ export function NewAPIOnboardDialog({
       )}
       {step === 'select' && (
         <Button onClick={enterFinalize} disabled={selectedModels.size === 0}>
-          {t('Next: pricing & channel')}
+          {t('Next: channel info')}
         </Button>
       )}
       {step === 'finalize' && (
@@ -787,12 +968,16 @@ export function NewAPIOnboardDialog({
       title={t('Onboard NewAPI upstream')}
       description={
         step === 'connect'
-          ? t('Enter the upstream site address to discover its groups, models and pricing')
+          ? t(
+              'Enter the upstream site address to discover its groups, models and pricing'
+            )
           : step === 'select'
-            ? t('Pick an upstream group and select the models to onboard')
-            : t('Set channel info and local pricing')
+            ? t(
+                'All groups at a glance: filter groups, tick models and set local prices'
+              )
+            : t('Set channel info and confirm pricing')
       }
-      contentClassName='max-w-4xl'
+      contentClassName='max-w-5xl'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={footer}
