@@ -4980,7 +4980,6 @@
     "Found {{models}} models and {{groups}} groups": "Found {{models}} models and {{groups}} groups",
     "Probe upstream": "Probe upstream",
     "Probing...": "Probing...",
-    "Cost / 1M input": "Cost / 1M input",
     "Channel name": "Channel name",
     "Channel type": "Channel type",
     "Anthropic is pre-selected when every selected model supports the anthropic endpoint": "Anthropic is pre-selected when every selected model supports the anthropic endpoint",
@@ -4999,14 +4998,21 @@
     "per-call": "per-call",
     "Billing group": "Billing group",
     "Select all in group": "Select all in group",
-    "Local price / 1M (editable)": "Local price / 1M (editable)",
     "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.": "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.",
     "Global markup": "Global markup",
-    "Local price defaults to cost x markup; edited prices are highlighted": "Local price defaults to cost x markup; edited prices are highlighted",
     "Next: channel info": "Next: channel info",
     "{{count}} selected models are outside the billing group and will still be billed via it upstream: {{models}}": "{{count}} selected models are outside the billing group and will still be billed via it upstream: {{models}}",
-    "Prices set in the previous step are written as local model ratios": "Prices set in the previous step are written as local model ratios",
     "All groups at a glance: filter groups, tick models and set local prices": "All groups at a glance: filter groups, tick models and set local prices",
-    "Set channel info and confirm pricing": "Set channel info and confirm pricing"
+    "Set channel info and confirm pricing": "Set channel info and confirm pricing",
+    "Upstream ratios": "Upstream ratios",
+    "Cost input /1M": "Cost input /1M",
+    "Cost output /1M": "Cost output /1M",
+    "Sale input /1M": "Sale input /1M",
+    "Sale output /1M": "Sale output /1M",
+    "Upstream rate: 1$ = ¥{{rate}} (display: {{type}})": "Upstream rate: 1$ = ¥{{rate}} (display: {{type}})",
+    "Our rate: 1$ = ¥{{rate}}": "Our rate: 1$ = ¥{{rate}}",
+    "Our group ratio: x{{ratio}} (already included in sale price)": "Our group ratio: x{{ratio}} (already included in sale price)",
+    "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted": "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted",
+    "Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})": "Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})"
   }
 }

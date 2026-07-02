@@ -392,11 +392,18 @@ export interface NewAPIProbeModel {
   supported_endpoint_types: string[] | null
 }
 
+export interface NewAPIProbeRateInfo {
+  quota_display_type: string
+  usd_exchange_rate: number
+  price: number
+}
+
 export interface NewAPIProbeResult {
   base_url: string
   models: NewAPIProbeModel[]
   group_ratio: Record<string, number> | null
   usable_group: Record<string, string> | null
+  rate_info: NewAPIProbeRateInfo | null
 }
 
 export interface NewAPIProbeRequest {

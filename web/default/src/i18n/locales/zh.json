@@ -4980,7 +4980,6 @@
     "Found {{models}} models and {{groups}} groups": "发现 {{models}} 个模型、{{groups}} 个分组",
     "Probe upstream": "探测上游",
     "Probing...": "探测中...",
-    "Cost / 1M input": "成本 / 百万输入",
     "Channel name": "渠道名称",
     "Channel type": "渠道类型",
     "Anthropic is pre-selected when every selected model supports the anthropic endpoint": "当所选模型全部支持 anthropic 端点时默认选 Anthropic",
@@ -4999,14 +4998,21 @@
     "per-call": "按次",
     "Billing group": "计费分组",
     "Select all in group": "全选本组",
-    "Local price / 1M (editable)": "本站售价 /1M（可改）",
     "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.": "转发令牌必须属于该分组。勾选了组外模型时，上游仍按此分组计费，实际成本可能有偏差。",
     "Global markup": "全局加价",
-    "Local price defaults to cost x markup; edited prices are highlighted": "售价默认 = 成本 × 加价系数；手改过的会高亮标出",
     "Next: channel info": "下一步：渠道信息",
     "{{count}} selected models are outside the billing group and will still be billed via it upstream: {{models}}": "{{count}} 个所选模型不在计费分组内，上游仍按计费分组收费：{{models}}",
-    "Prices set in the previous step are written as local model ratios": "上一步设置的售价将写入本站模型倍率",
     "All groups at a glance: filter groups, tick models and set local prices": "所有分组一目了然：筛选分组、勾选模型并设置本站售价",
-    "Set channel info and confirm pricing": "设置渠道信息并确认价格"
+    "Set channel info and confirm pricing": "设置渠道信息并确认价格",
+    "Upstream ratios": "上游倍率",
+    "Cost input /1M": "成本·输入 /1M",
+    "Cost output /1M": "成本·输出 /1M",
+    "Sale input /1M": "售价·输入 /1M",
+    "Sale output /1M": "售价·输出 /1M",
+    "Upstream rate: 1$ = ¥{{rate}} (display: {{type}})": "对方汇率 1$ = ¥{{rate}}（展示币种 {{type}}）",
+    "Our rate: 1$ = ¥{{rate}}": "本站汇率 1$ = ¥{{rate}}",
+    "Our group ratio: x{{ratio}} (already included in sale price)": "本站分组倍率 x{{ratio}}（售价已包含）",
+    "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted": "售价即用户最终支付价（已含本站分组倍率）；手改过的会高亮",
+    "Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})": "售价为用户最终价；写入倍率 = 售价 ÷ 锚定价($2/1M) ÷ 本站分组倍率（x{{ratio}}）"
   }
 }

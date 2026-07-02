@@ -54,10 +54,14 @@ func probeRequest(t *testing.T, body string) *httptest.ResponseRecorder {
 func TestProbeNewAPIUpstreamSuccess(t *testing.T) {
 	var gotAuth, gotUser string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/status" {
+			_, _ = w.Write([]byte(`{"success": true, "data": {"quota_display_type": "CNY", "usd_exchange_rate": 7.2, "price": 1}}`))
+			return
+		}
 		require.Equal(t, "/api/pricing", r.URL.Path)
 		gotAuth = r.Header.Get("Authorization")
 		gotUser = r.Header.Get("New-Api-User")
-		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"success": true,
 			"data": [
@@ -80,10 +84,11 @@ func TestProbeNewAPIUpstreamSuccess(t *testing.T) {
 	var resp struct {
 		Success bool `json:"success"`
 		Data    struct {
-			BaseURL     string             `json:"base_url"`
-			Models      []NewAPIProbeModel `json:"models"`
-			GroupRatio  map[string]float64 `json:"group_ratio"`
-			UsableGroup map[string]string  `json:"usable_group"`
+			BaseURL     string               `json:"base_url"`
+			Models      []NewAPIProbeModel   `json:"models"`
+			GroupRatio  map[string]float64   `json:"group_ratio"`
+			UsableGroup map[string]string    `json:"usable_group"`
+			RateInfo    *NewAPIProbeRateInfo `json:"rate_info"`
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(w.Body.Bytes(), &resp))
@@ -95,6 +100,9 @@ func TestProbeNewAPIUpstreamSuccess(t *testing.T) {
 	assert.Equal(t, []string{"ClaudeCode-Max"}, resp.Data.Models[0].EnableGroups)
 	assert.Equal(t, 1.5, resp.Data.GroupRatio["ClaudeCode-Max"])
 	assert.Equal(t, "Max pool", resp.Data.UsableGroup["ClaudeCode-Max"])
+	require.NotNil(t, resp.Data.RateInfo)
+	assert.Equal(t, "CNY", resp.Data.RateInfo.QuotaDisplayType)
+	assert.Equal(t, 7.2, resp.Data.RateInfo.USDExchangeRate)
 }
 
 func TestProbeNewAPIUpstreamFailures(t *testing.T) {

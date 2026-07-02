@@ -48,6 +48,35 @@ type newAPIProbePricingResponse struct {
 	UsableGroup map[string]string  `json:"usable_group"`
 }
 
+// NewAPIProbeRateInfo 上游站点的货币展示与汇率设置（取自 /api/status）
+type NewAPIProbeRateInfo struct {
+	QuotaDisplayType string  `json:"quota_display_type"`
+	USDExchangeRate  float64 `json:"usd_exchange_rate"`
+	Price            float64 `json:"price"`
+}
+
+func fetchUpstreamRateInfo(client *http.Client, baseURL string) *NewAPIProbeRateInfo {
+	resp, err := client.Get(baseURL + "/api/status")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, newAPIProbeMaxBodyBytes))
+	if err != nil {
+		return nil
+	}
+	var status struct {
+		Data NewAPIProbeRateInfo `json:"data"`
+	}
+	if err := common.Unmarshal(body, &status); err != nil {
+		return nil
+	}
+	return &status.Data
+}
+
 func normalizeProbeBaseURL(raw string) (string, error) {
 	raw = strings.TrimSpace(strings.TrimRight(raw, "/"))
 	parsed, err := url.Parse(raw)
@@ -147,6 +176,7 @@ func ProbeNewAPIUpstream(c *gin.Context) {
 			"models":       pricing.Data,
 			"group_ratio":  pricing.GroupRatio,
 			"usable_group": pricing.UsableGroup,
+			"rate_info":    fetchUpstreamRateInfo(client, baseURL),
 		},
 	})
 }

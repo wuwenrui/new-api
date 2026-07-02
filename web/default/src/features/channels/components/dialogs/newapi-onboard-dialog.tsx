@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Search } from 'lucide-react'
+import { Loader2, Maximize2, Minimize2, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -26,6 +26,7 @@ import {
   updateSystemOption,
 } from '@/features/system-settings/api'
 import { cn } from '@/lib/utils'
+import { useSystemConfig } from '@/hooks/use-system-config'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -55,95 +56,35 @@ import {
 import { Dialog } from '@/components/dialog'
 import { createChannel, getGroups, probeNewAPIUpstream } from '../../api'
 import { channelsQueryKeys } from '../../lib'
+import {
+  RATIO_OPTION_KEYS,
+  type SaleOverride,
+  applyModelPricing,
+  extractRatioMaps,
+  parseJsonRecord,
+  roundRatio,
+  upstreamCostInUSD,
+  upstreamCostOutUSD,
+} from '../../lib/newapi-onboard-pricing'
 import type { NewAPIProbeModel, NewAPIProbeResult } from '../../types'
 
 const CHANNEL_TYPE_OPENAI = 1
 const CHANNEL_TYPE_ANTHROPIC = 14
-// ratio 1 == $0.002 / 1K tokens == $2 / 1M tokens
-const RATIO_TO_USD_PER_MILLION = 2
 
 type WizardStep = 'connect' | 'select' | 'finalize'
+
+const STEP_DESCRIPTIONS: Record<WizardStep, string> = {
+  connect:
+    'Enter the upstream site address to discover its groups, models and pricing',
+  select:
+    'All groups at a glance: filter groups, tick models and set local prices',
+  finalize: 'Set channel info and confirm pricing',
+}
+type Currency = 'USD' | 'CNY'
 
 type NewAPIOnboardDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-type RatioOptionMaps = {
-  ModelRatio: Record<string, number>
-  CompletionRatio: Record<string, number>
-  CacheRatio: Record<string, number>
-  CreateCacheRatio: Record<string, number>
-  ModelPrice: Record<string, number>
-}
-
-const RATIO_OPTION_KEYS = [
-  'ModelRatio',
-  'CompletionRatio',
-  'CacheRatio',
-  'CreateCacheRatio',
-  'ModelPrice',
-] as const
-
-function parseJsonRecord(raw: string | undefined): Record<string, number> {
-  try {
-    return JSON.parse(raw || '{}') as Record<string, number>
-  } catch {
-    return {}
-  }
-}
-
-function extractRatioMaps(
-  options: Array<{ key: string; value: string }>
-): RatioOptionMaps {
-  const byKey = new Map(options.map((o) => [o.key, o.value]))
-  return {
-    ModelRatio: parseJsonRecord(byKey.get('ModelRatio')),
-    CompletionRatio: parseJsonRecord(byKey.get('CompletionRatio')),
-    CacheRatio: parseJsonRecord(byKey.get('CacheRatio')),
-    CreateCacheRatio: parseJsonRecord(byKey.get('CreateCacheRatio')),
-    ModelPrice: parseJsonRecord(byKey.get('ModelPrice')),
-  }
-}
-
-function roundRatio(value: number): number {
-  return Math.round(value * 1e6) / 1e6
-}
-
-/** sale is $/1M input tokens for ratio-billed models, $/call for price-billed. */
-function applyModelPricing(
-  model: NewAPIProbeModel,
-  sale: number,
-  maps: RatioOptionMaps
-): RatioOptionMaps {
-  const name = model.model_name
-  const next: RatioOptionMaps = {
-    ModelRatio: { ...maps.ModelRatio },
-    CompletionRatio: { ...maps.CompletionRatio },
-    CacheRatio: { ...maps.CacheRatio },
-    CreateCacheRatio: { ...maps.CreateCacheRatio },
-    ModelPrice: { ...maps.ModelPrice },
-  }
-  if (model.quota_type === 1) {
-    next.ModelPrice[name] = roundRatio(sale)
-    delete next.ModelRatio[name]
-    delete next.CompletionRatio[name]
-    delete next.CacheRatio[name]
-    delete next.CreateCacheRatio[name]
-    return next
-  }
-  next.ModelRatio[name] = roundRatio(sale / RATIO_TO_USD_PER_MILLION)
-  if (model.completion_ratio > 0) {
-    next.CompletionRatio[name] = roundRatio(model.completion_ratio)
-  }
-  if (model.cache_ratio > 0) {
-    next.CacheRatio[name] = roundRatio(model.cache_ratio)
-  }
-  if (model.create_cache_ratio > 0) {
-    next.CreateCacheRatio[name] = roundRatio(model.create_cache_ratio)
-  }
-  delete next.ModelPrice[name]
-  return next
 }
 
 export function NewAPIOnboardDialog({
@@ -152,8 +93,10 @@ export function NewAPIOnboardDialog({
 }: NewAPIOnboardDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const systemConfig = useSystemConfig()
 
   const [step, setStep] = useState<WizardStep>('connect')
+  const [maximized, setMaximized] = useState(false)
   const [baseUrl, setBaseUrl] = useState('')
   const [accessToken, setAccessToken] = useState('')
   const [userId, setUserId] = useState('')
@@ -167,8 +110,11 @@ export function NewAPIOnboardDialog({
   const [searchKeyword, setSearchKeyword] = useState('')
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set())
   const [markupInput, setMarkupInput] = useState('1')
-  const [saleOverrides, setSaleOverrides] = useState<Record<string, number>>(
-    {}
+  const [saleOverrides, setSaleOverrides] = useState<
+    Record<string, SaleOverride>
+  >({})
+  const [currency, setCurrency] = useState<Currency>(() =>
+    systemConfig.currency.quotaDisplayType === 'CNY' ? 'CNY' : 'USD'
   )
 
   const [channelName, setChannelName] = useState('')
@@ -179,6 +125,13 @@ export function NewAPIOnboardDialog({
   )
   const [syncPricing, setSyncPricing] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // ------------------------------------------------------------------
+  // Rates: upstream rate converts upstream cost to CNY, our rate converts
+  // our sale price to CNY. Both fall back to 1.
+  // ------------------------------------------------------------------
+  const upstreamRate = probeResult?.rate_info?.usd_exchange_rate || 1
+  const ourRate = systemConfig.currency.usdExchangeRate || 1
 
   const groupRatio = useMemo(
     () => probeResult?.group_ratio ?? {},
@@ -194,7 +147,7 @@ export function NewAPIOnboardDialog({
     probeResult?.models.forEach((m) =>
       (m.enable_groups ?? []).forEach((g) => names.add(g))
     )
-    return Array.from(names).sort((a, b) => a.localeCompare(b))
+    return [...names].sort((a, b) => a.localeCompare(b))
   }, [probeResult, groupRatio])
 
   const markup = useMemo(() => {
@@ -210,8 +163,36 @@ export function NewAPIOnboardDialog({
     [probeResult, selectedModels]
   )
 
-  // Cost basis for the default local price: the billing group when the model
-  // belongs to it, otherwise the model's own (first) group.
+  // ------------------------------------------------------------------
+  // Our own options (ratio maps + our group ratios), needed from step 2 on.
+  // ------------------------------------------------------------------
+  const { data: optionsResp } = useQuery({
+    queryKey: ['system-options'],
+    queryFn: getSystemOptions,
+    enabled: open && step !== 'connect',
+  })
+  const currentRatioMaps = useMemo(
+    () => extractRatioMaps(optionsResp?.data ?? []),
+    [optionsResp]
+  )
+  const siteGroupRatioMap = useMemo(() => {
+    const opt = (optionsResp?.data ?? []).find(
+      (o: { key: string; value: string }) => o.key === 'GroupRatio'
+    )
+    return parseJsonRecord(opt?.value)
+  }, [optionsResp])
+  const siteGroupRatio = siteGroupRatioMap['default'] ?? 1
+
+  const { data: groupsResp } = useQuery({
+    queryKey: ['user-groups'],
+    queryFn: getGroups,
+    enabled: open && step === 'finalize',
+  })
+  const availableLocalGroups = groupsResp?.data ?? ['default']
+
+  // ------------------------------------------------------------------
+  // Pricing math (all internal values in USD)
+  // ------------------------------------------------------------------
   const baseGroupRatioFor = (m: NewAPIProbeModel): number => {
     const groups = m.enable_groups ?? []
     if (billingGroup && groups.includes(billingGroup)) {
@@ -221,30 +202,14 @@ export function NewAPIOnboardDialog({
     return (own && groupRatio[own]) || 1
   }
 
-  const defaultSaleFor = (m: NewAPIProbeModel): number => {
-    if (m.quota_type === 1) {
-      return m.model_price * baseGroupRatioFor(m) * markup
-    }
-    return (
-      m.model_ratio * baseGroupRatioFor(m) * RATIO_TO_USD_PER_MILLION * markup
-    )
+  const saleInUSD = (m: NewAPIProbeModel): number =>
+    saleOverrides[m.model_name]?.in ??
+    upstreamCostInUSD(m, baseGroupRatioFor(m)) * markup
+
+  const saleOutUSD = (m: NewAPIProbeModel): number | null => {
+    if (m.quota_type === 1) return null
+    return saleOverrides[m.model_name]?.out ?? saleInUSD(m) * m.completion_ratio
   }
-
-  const effectiveSaleFor = (m: NewAPIProbeModel): number =>
-    saleOverrides[m.model_name] ?? defaultSaleFor(m)
-
-  const searchedModels = (models: NewAPIProbeModel[]) => {
-    const kw = searchKeyword.trim().toLowerCase()
-    if (!kw) return models
-    return models.filter((m) => m.model_name.toLowerCase().includes(kw))
-  }
-
-  const modelsOfGroup = (group: string) =>
-    searchedModels(
-      (probeResult?.models ?? []).filter((m) =>
-        (m.enable_groups ?? []).includes(group)
-      )
-    )
 
   const outOfBillingGroup = useMemo(
     () =>
@@ -256,40 +221,25 @@ export function NewAPIOnboardDialog({
     [selectedModelObjects, billingGroup]
   )
 
-  const { data: groupsResp } = useQuery({
-    queryKey: ['user-groups'],
-    queryFn: getGroups,
-    enabled: open && step === 'finalize',
-  })
-  const availableLocalGroups = groupsResp?.data ?? ['default']
-
-  const { data: optionsResp } = useQuery({
-    queryKey: ['system-options'],
-    queryFn: getSystemOptions,
-    enabled: open && step === 'finalize',
-  })
-  const currentRatioMaps = useMemo(
-    () => extractRatioMaps(optionsResp?.data ?? []),
-    [optionsResp]
-  )
-
   const pricingConflicts = useMemo(() => {
     if (!syncPricing) return []
+    const divisor = siteGroupRatio > 0 ? siteGroupRatio : 1
     return selectedModelObjects
       .filter((m) => {
-        const sale = effectiveSaleFor(m)
         if (m.quota_type === 1) {
           const existing = currentRatioMaps.ModelPrice[m.model_name]
-          return existing !== undefined && existing !== roundRatio(sale)
+          return (
+            existing !== undefined &&
+            existing !== roundRatio(saleInUSD(m) / divisor)
+          )
         }
         const existing = currentRatioMaps.ModelRatio[m.model_name]
         return (
           existing !== undefined &&
-          existing !== roundRatio(sale / RATIO_TO_USD_PER_MILLION)
+          existing !== roundRatio(saleInUSD(m) / 2 / divisor)
         )
       })
       .map((m) => m.model_name)
-    // effectiveSaleFor depends on saleOverrides/markup/billingGroup captured below
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     syncPricing,
@@ -299,8 +249,26 @@ export function NewAPIOnboardDialog({
     markup,
     billingGroup,
     groupRatio,
+    siteGroupRatio,
   ])
 
+  // ------------------------------------------------------------------
+  // Currency helpers: costs use the upstream rate, sales use our rate.
+  // ------------------------------------------------------------------
+  const symbol = currency === 'CNY' ? '¥' : '$'
+  const fmtCost = (usd: number) =>
+    `${symbol}${roundRatio(usd * (currency === 'CNY' ? upstreamRate : 1))}`
+  const saleDisplayValue = (usd: number) =>
+    roundRatio(usd * (currency === 'CNY' ? ourRate : 1))
+  const saleInputToUSD = (raw: string): number | undefined => {
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed) || parsed < 0) return undefined
+    return currency === 'CNY' ? parsed / ourRate : parsed
+  }
+
+  // ------------------------------------------------------------------
+  // State helpers
+  // ------------------------------------------------------------------
   const resetState = () => {
     setStep('connect')
     setBaseUrl('')
@@ -391,6 +359,19 @@ export function NewAPIOnboardDialog({
     })
   }
 
+  const searchedModels = (models: NewAPIProbeModel[]) => {
+    const kw = searchKeyword.trim().toLowerCase()
+    if (!kw) return models
+    return models.filter((m) => m.model_name.toLowerCase().includes(kw))
+  }
+
+  const modelsOfGroup = (group: string) =>
+    searchedModels(
+      (probeResult?.models ?? []).filter((m) =>
+        (m.enable_groups ?? []).includes(group)
+      )
+    )
+
   const selectAllInGroup = (group: string) => {
     setSelectedModels((prev) => {
       const next = new Set(prev)
@@ -399,14 +380,24 @@ export function NewAPIOnboardDialog({
     })
   }
 
-  const setSaleOverride = (name: string, raw: string) => {
-    const parsed = Number(raw)
+  const setSaleOverrideField = (
+    name: string,
+    field: 'in' | 'out',
+    raw: string
+  ) => {
+    const usd = saleInputToUSD(raw)
     setSaleOverrides((prev) => {
-      const next = { ...prev }
-      if (Number.isFinite(parsed) && parsed >= 0) {
-        next[name] = parsed
+      const entry = { ...prev[name] }
+      if (usd === undefined) {
+        delete entry[field]
       } else {
+        entry[field] = usd
+      }
+      const next = { ...prev }
+      if (entry.in === undefined && entry.out === undefined) {
         delete next[name]
+      } else {
+        next[name] = entry
       }
       return next
     })
@@ -471,8 +462,8 @@ export function NewAPIOnboardDialog({
           name: channelName.trim(),
           key: channelKey.trim(),
           base_url: probeResult.base_url,
-          models: Array.from(selectedModels).join(','),
-          group: Array.from(localGroups).join(','),
+          models: [...selectedModels].join(','),
+          group: [...localGroups].join(','),
           status: 1,
           priority: 0,
           weight: 0,
@@ -486,7 +477,13 @@ export function NewAPIOnboardDialog({
       if (syncPricing) {
         let maps = extractRatioMaps(optionsResp?.data ?? [])
         selectedModelObjects.forEach((m) => {
-          maps = applyModelPricing(m, effectiveSaleFor(m), maps)
+          maps = applyModelPricing(
+            m,
+            saleInUSD(m),
+            saleOutUSD(m),
+            siteGroupRatio,
+            maps
+          )
         })
         for (const key of RATIO_OPTION_KEYS) {
           await updateSystemOption({
@@ -517,13 +514,14 @@ export function NewAPIOnboardDialog({
     }
   }
 
-  const formatUsd = (value: number) => `$${roundRatio(value)}`
-
   const marginPercent = (sale: number, cost: number): number | null => {
     if (cost <= 0) return null
     return (sale / cost - 1) * 100
   }
 
+  // ------------------------------------------------------------------
+  // Render: step 1
+  // ------------------------------------------------------------------
   const renderConnectStep = () => (
     <div className='space-y-4'>
       <div className='space-y-2'>
@@ -566,15 +564,38 @@ export function NewAPIOnboardDialog({
     </div>
   )
 
+  // ------------------------------------------------------------------
+  // Render: step 2
+  // ------------------------------------------------------------------
+  const renderSaleInput = (
+    m: NewAPIProbeModel,
+    field: 'in' | 'out',
+    usd: number,
+    overridden: boolean
+  ) => (
+    <Input
+      type='number'
+      step='0.001'
+      min='0'
+      className={cn(
+        'border-primary/40 bg-primary/5 h-7 w-24 text-right font-mono text-xs font-semibold',
+        overridden &&
+          'border-amber-500 bg-amber-100/70 dark:bg-amber-950'
+      )}
+      value={saleDisplayValue(usd)}
+      onChange={(e) => setSaleOverrideField(m.model_name, field, e.target.value)}
+    />
+  )
+
   const renderModelRow = (m: NewAPIProbeModel, group: string) => {
     const isSel = selectedModels.has(m.model_name)
-    const cost =
-      m.quota_type === 1
-        ? m.model_price * (groupRatio[group] ?? 1)
-        : m.model_ratio * (groupRatio[group] ?? 1) * RATIO_TO_USD_PER_MILLION
-    const sale = effectiveSaleFor(m)
-    const overridden = saleOverrides[m.model_name] !== undefined
-    const margin = marginPercent(sale, cost)
+    const gr = groupRatio[group] ?? 1
+    const costIn = upstreamCostInUSD(m, gr)
+    const costOut = upstreamCostOutUSD(m, gr)
+    const sIn = saleInUSD(m)
+    const sOut = saleOutUSD(m)
+    const override = saleOverrides[m.model_name]
+    const margin = marginPercent(sIn, upstreamCostInUSD(m, baseGroupRatioFor(m)))
     return (
       <TableRow
         key={`${group}:${m.model_name}`}
@@ -600,45 +621,47 @@ export function NewAPIOnboardDialog({
             </Badge>
           )}
         </TableCell>
-        <TableCell className='text-right'>
-          {m.quota_type === 1 ? `$${m.model_price}` : m.model_ratio}
-        </TableCell>
-        <TableCell className='text-right'>
-          {m.quota_type === 1 ? '-' : m.completion_ratio || '-'}
+        <TableCell className='text-muted-foreground text-right text-xs'>
+          {m.quota_type === 1
+            ? `$${m.model_price}`
+            : `${m.model_ratio} / ${m.completion_ratio || '-'}`}
         </TableCell>
         <TableCell className='text-right font-medium'>
-          {formatUsd(cost)}
+          {fmtCost(costIn)}
+        </TableCell>
+        <TableCell className='text-right font-medium'>
+          {costOut === null ? '-' : fmtCost(costOut)}
         </TableCell>
         <TableCell
-          className='text-right'
+          className='bg-primary/[0.03] text-right'
           onClick={(e) => e.stopPropagation()}
         >
-          <span className='inline-flex items-center gap-1.5'>
-            <Input
-              type='number'
-              step='0.001'
-              min='0'
+          {renderSaleInput(m, 'in', sIn, override?.in !== undefined)}
+        </TableCell>
+        <TableCell
+          className='bg-primary/[0.03] text-right'
+          onClick={(e) => e.stopPropagation()}
+        >
+          {sOut === null ? (
+            <span className='text-muted-foreground'>-</span>
+          ) : (
+            renderSaleInput(m, 'out', sOut, override?.out !== undefined)
+          )}
+        </TableCell>
+        <TableCell className='text-right'>
+          {margin !== null && (
+            <span
               className={cn(
-                'h-7 w-24 text-right font-mono text-xs',
-                overridden && 'border-amber-500 bg-amber-50 dark:bg-amber-950'
+                'text-xs',
+                margin >= 0
+                  ? 'text-green-600 dark:text-green-500'
+                  : 'text-red-600 dark:text-red-500'
               )}
-              value={roundRatio(sale)}
-              onChange={(e) => setSaleOverride(m.model_name, e.target.value)}
-            />
-            {margin !== null && (
-              <span
-                className={cn(
-                  'w-12 text-xs',
-                  margin >= 0
-                    ? 'text-green-600 dark:text-green-500'
-                    : 'text-red-600 dark:text-red-500'
-                )}
-              >
-                {margin >= 0 ? '+' : ''}
-                {margin.toFixed(0)}%
-              </span>
-            )}
-          </span>
+            >
+              {margin >= 0 ? '+' : ''}
+              {margin.toFixed(0)}%
+            </span>
+          )}
         </TableCell>
       </TableRow>
     )
@@ -652,9 +675,7 @@ export function NewAPIOnboardDialog({
         <div className='bg-muted/60 flex flex-wrap items-center gap-2 px-3 py-2'>
           <span className='text-sm font-semibold'>{group}</span>
           <Badge variant='secondary'>x{groupRatio[group] ?? 1}</Badge>
-          {group === billingGroup && (
-            <Badge>{t('Billing group')}</Badge>
-          )}
+          {group === billingGroup && <Badge>{t('Billing group')}</Badge>}
           <span className='text-muted-foreground max-w-72 truncate text-xs'>
             {usableGroup[group] || ''}
           </span>
@@ -675,16 +696,22 @@ export function NewAPIOnboardDialog({
             <TableRow>
               <TableHead className='w-10' />
               <TableHead>{t('Model')}</TableHead>
-              <TableHead className='text-right'>{t('Model ratio')}</TableHead>
               <TableHead className='text-right'>
-                {t('Completion ratio')}
+                {t('Upstream ratios')}
               </TableHead>
               <TableHead className='text-right'>
-                {t('Cost / 1M input')}
+                {t('Cost input /1M')}
               </TableHead>
               <TableHead className='text-right'>
-                {t('Local price / 1M (editable)')}
+                {t('Cost output /1M')}
               </TableHead>
+              <TableHead className='bg-primary/[0.03] text-right'>
+                {t('Sale input /1M')}
+              </TableHead>
+              <TableHead className='bg-primary/[0.03] text-right'>
+                {t('Sale output /1M')}
+              </TableHead>
+              <TableHead className='text-right'>{t('Margin')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>{models.map((m) => renderModelRow(m, group))}</TableBody>
@@ -692,6 +719,45 @@ export function NewAPIOnboardDialog({
       </div>
     )
   }
+
+  const renderRateBar = () => (
+    <div className='bg-muted/50 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border px-3 py-1.5 text-xs'>
+      <span className='flex items-center gap-1'>
+        {t('Currency')}
+        <span className='ml-1 inline-flex overflow-hidden rounded-md border'>
+          {(['USD', 'CNY'] as const).map((c) => (
+            <button
+              key={c}
+              type='button'
+              onClick={() => setCurrency(c)}
+              className={cn(
+                'px-2 py-0.5',
+                currency === c
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-transparent'
+              )}
+            >
+              {c === 'USD' ? '$' : '¥'}
+            </button>
+          ))}
+        </span>
+      </span>
+      <span className='text-muted-foreground'>
+        {t('Upstream rate: 1$ = ¥{{rate}} (display: {{type}})', {
+          rate: upstreamRate,
+          type: probeResult?.rate_info?.quota_display_type || 'USD',
+        })}
+      </span>
+      <span className='text-muted-foreground'>
+        {t('Our rate: 1$ = ¥{{rate}}', { rate: ourRate })}
+      </span>
+      <span className='text-muted-foreground'>
+        {t('Our group ratio: x{{ratio}} (already included in sale price)', {
+          ratio: siteGroupRatio,
+        })}
+      </span>
+    </div>
+  )
 
   const renderSelectStep = () => (
     <div className='space-y-3'>
@@ -707,7 +773,7 @@ export function NewAPIOnboardDialog({
               }
             }}
           >
-            <SelectTrigger className='w-64'>
+            <SelectTrigger className='w-60'>
               <SelectValue>{billingGroup}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -759,7 +825,21 @@ export function NewAPIOnboardDialog({
             className='h-8 pl-9'
           />
         </div>
+        <Button
+          variant='outline'
+          size='sm'
+          className='h-8'
+          onClick={() => setMaximized((v) => !v)}
+        >
+          {maximized ? (
+            <Minimize2 className='h-4 w-4' />
+          ) : (
+            <Maximize2 className='h-4 w-4' />
+          )}
+        </Button>
       </div>
+
+      {renderRateBar()}
 
       <div className='flex flex-wrap gap-1.5'>
         {upstreamGroups.map((g) => {
@@ -777,14 +857,18 @@ export function NewAPIOnboardDialog({
               )}
             >
               {visible ? '✓ ' : ''}
-              {g}{' '}
-              <span className='opacity-70'>x{groupRatio[g] ?? 1}</span>
+              {g} <span className='opacity-70'>x{groupRatio[g] ?? 1}</span>
             </button>
           )
         })}
       </div>
 
-      <div className='max-h-96 space-y-3 overflow-y-auto pr-1'>
+      <div
+        className={cn(
+          'space-y-3 overflow-y-auto pr-1',
+          maximized ? 'max-h-[62vh]' : 'max-h-96'
+        )}
+      >
         {upstreamGroups
           .filter((g) => !hiddenGroups.has(g))
           .map((g) => renderGroupSection(g))}
@@ -794,13 +878,16 @@ export function NewAPIOnboardDialog({
         <span>{t('{{n}} model(s) selected', { n: selectedModels.size })}</span>
         <span className='text-muted-foreground text-xs'>
           {t(
-            'Local price defaults to cost x markup; edited prices are highlighted'
+            'Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted'
           )}
         </span>
       </div>
     </div>
   )
 
+  // ------------------------------------------------------------------
+  // Render: step 3
+  // ------------------------------------------------------------------
   const renderFinalizeStep = () => (
     <div className='space-y-4'>
       <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
@@ -880,6 +967,9 @@ export function NewAPIOnboardDialog({
                 onCheckedChange={() => toggleLocalGroup(g)}
               />
               {g}
+              <span className='text-muted-foreground text-xs'>
+                x{siteGroupRatioMap[g] ?? 1}
+              </span>
             </label>
           ))}
         </div>
@@ -893,7 +983,8 @@ export function NewAPIOnboardDialog({
             </Label>
             <p className='text-muted-foreground text-xs'>
               {t(
-                'Prices set in the previous step are written as local model ratios'
+                'Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})',
+                { ratio: siteGroupRatio }
               )}
             </p>
           </div>
@@ -921,7 +1012,7 @@ export function NewAPIOnboardDialog({
           {t('{{n}} model(s) selected', { n: selectedModels.size })}
         </p>
         <p className='text-muted-foreground font-mono'>
-          {Array.from(selectedModels).join(', ')}
+          {[...selectedModels].join(', ')}
         </p>
       </div>
     </div>
@@ -966,18 +1057,10 @@ export function NewAPIOnboardDialog({
       open={open}
       onOpenChange={(v) => !v && handleClose()}
       title={t('Onboard NewAPI upstream')}
-      description={
-        step === 'connect'
-          ? t(
-              'Enter the upstream site address to discover its groups, models and pricing'
-            )
-          : step === 'select'
-            ? t(
-                'All groups at a glance: filter groups, tick models and set local prices'
-              )
-            : t('Set channel info and confirm pricing')
+      description={t(STEP_DESCRIPTIONS[step])}
+      contentClassName={
+        maximized ? 'max-w-[97vw] sm:max-w-[97vw]' : 'max-w-5xl'
       }
-      contentClassName='max-w-5xl'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={footer}
