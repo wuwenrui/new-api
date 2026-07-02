@@ -70,7 +70,8 @@ func TestProbeNewAPIUpstreamSuccess(t *testing.T) {
 				 "enable_groups": ["ClaudeCode-Max"], "supported_endpoint_types": ["anthropic", "openai"]}
 			],
 			"group_ratio": {"ClaudeCode-Max": 1.5},
-			"usable_group": {"ClaudeCode-Max": "Max pool"}
+			"usable_group": {"ClaudeCode-Max": "Max pool"},
+			"vendors": [{"id": 1, "name": "Anthropic", "icon": "Claude.Color"}]
 		}`))
 	}))
 	defer upstream.Close()
@@ -88,6 +89,7 @@ func TestProbeNewAPIUpstreamSuccess(t *testing.T) {
 			Models      []NewAPIProbeModel   `json:"models"`
 			GroupRatio  map[string]float64   `json:"group_ratio"`
 			UsableGroup map[string]string    `json:"usable_group"`
+			Vendors     []NewAPIProbeVendor  `json:"vendors"`
 			RateInfo    *NewAPIProbeRateInfo `json:"rate_info"`
 		} `json:"data"`
 	}
@@ -100,6 +102,8 @@ func TestProbeNewAPIUpstreamSuccess(t *testing.T) {
 	assert.Equal(t, []string{"ClaudeCode-Max"}, resp.Data.Models[0].EnableGroups)
 	assert.Equal(t, 1.5, resp.Data.GroupRatio["ClaudeCode-Max"])
 	assert.Equal(t, "Max pool", resp.Data.UsableGroup["ClaudeCode-Max"])
+	require.Len(t, resp.Data.Vendors, 1)
+	assert.Equal(t, "Anthropic", resp.Data.Vendors[0].Name)
 	require.NotNil(t, resp.Data.RateInfo)
 	assert.Equal(t, "CNY", resp.Data.RateInfo.QuotaDisplayType)
 	assert.Equal(t, 7.2, resp.Data.RateInfo.USDExchangeRate)

@@ -379,6 +379,7 @@ export interface AddChannelRequest {
 
 export interface NewAPIProbeModel {
   model_name: string
+  vendor_id: number
   quota_type: number
   model_ratio: number
   model_price: number
@@ -398,11 +399,18 @@ export interface NewAPIProbeRateInfo {
   price: number
 }
 
+export interface NewAPIProbeVendor {
+  id: number
+  name: string
+  icon: string
+}
+
 export interface NewAPIProbeResult {
   base_url: string
   models: NewAPIProbeModel[]
   group_ratio: Record<string, number> | null
   usable_group: Record<string, string> | null
+  vendors: NewAPIProbeVendor[] | null
   rate_info: NewAPIProbeRateInfo | null
 }
 

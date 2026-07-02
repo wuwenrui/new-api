@@ -27,6 +27,7 @@ type NewAPIProbeRequest struct {
 
 type NewAPIProbeModel struct {
 	ModelName              string   `json:"model_name"`
+	VendorID               int      `json:"vendor_id"`
 	QuotaType              int      `json:"quota_type"`
 	ModelRatio             float64  `json:"model_ratio"`
 	ModelPrice             float64  `json:"model_price"`
@@ -40,12 +41,20 @@ type NewAPIProbeModel struct {
 	SupportedEndpointTypes []string `json:"supported_endpoint_types"`
 }
 
+// NewAPIProbeVendor 上游模型广场的供应商条目
+type NewAPIProbeVendor struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Icon string `json:"icon"`
+}
+
 type newAPIProbePricingResponse struct {
-	Success     bool               `json:"success"`
-	Message     string             `json:"message"`
-	Data        []NewAPIProbeModel `json:"data"`
-	GroupRatio  map[string]float64 `json:"group_ratio"`
-	UsableGroup map[string]string  `json:"usable_group"`
+	Success     bool                `json:"success"`
+	Message     string              `json:"message"`
+	Data        []NewAPIProbeModel  `json:"data"`
+	GroupRatio  map[string]float64  `json:"group_ratio"`
+	UsableGroup map[string]string   `json:"usable_group"`
+	Vendors     []NewAPIProbeVendor `json:"vendors"`
 }
 
 // NewAPIProbeRateInfo 上游站点的货币展示与汇率设置（取自 /api/status）
@@ -176,6 +185,7 @@ func ProbeNewAPIUpstream(c *gin.Context) {
 			"models":       pricing.Data,
 			"group_ratio":  pricing.GroupRatio,
 			"usable_group": pricing.UsableGroup,
+			"vendors":      pricing.Vendors,
 			"rate_info":    fetchUpstreamRateInfo(client, baseURL),
 		},
 	})
