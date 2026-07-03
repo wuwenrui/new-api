@@ -33,6 +33,22 @@ func validUserInfo(username string, role int) bool {
 	return true
 }
 
+// logWebAuthFailure records why a dashboard session was rejected, with enough
+// request context (session cookie presence/length, New-Api-User header) to
+// tell apart "browser did not send the cookie", "cookie failed to decode" and
+// "uid header missing/mismatched" when investigating login-loss reports.
+func logWebAuthFailure(c *gin.Context, reason string) {
+	cookieState := "no-cookie"
+	if ck, err := c.Request.Cookie("session"); err == nil {
+		cookieState = fmt.Sprintf("cookie-len=%d", len(ck.Value))
+	}
+	common.SysLog(fmt.Sprintf(
+		"web auth failed: reason=%s %s new-api-user=%q path=%s ip=%s ua=%q",
+		reason, cookieState, c.Request.Header.Get("New-Api-User"),
+		c.Request.URL.Path, c.ClientIP(), c.Request.UserAgent(),
+	))
+}
+
 func authHelper(c *gin.Context, minRole int) {
 	session := sessions.Default(c)
 	username := session.Get("username")
@@ -44,6 +60,7 @@ func authHelper(c *gin.Context, minRole int) {
 		// Check access token
 		accessToken := c.Request.Header.Get("Authorization")
 		if accessToken == "" {
+			logWebAuthFailure(c, "session-empty")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn),
@@ -95,6 +112,7 @@ func authHelper(c *gin.Context, minRole int) {
 	// get header New-Api-User
 	apiUserIdStr := c.Request.Header.Get("New-Api-User")
 	if apiUserIdStr == "" {
+		logWebAuthFailure(c, "uid-header-missing")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserIdNotProvided),
@@ -104,6 +122,7 @@ func authHelper(c *gin.Context, minRole int) {
 	}
 	apiUserId, err := strconv.Atoi(apiUserIdStr)
 	if err != nil {
+		logWebAuthFailure(c, "uid-header-not-numeric")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserIdFormatError),
@@ -113,6 +132,7 @@ func authHelper(c *gin.Context, minRole int) {
 
 	}
 	if id != apiUserId {
+		logWebAuthFailure(c, fmt.Sprintf("uid-mismatch session-id=%v header-id=%d", id, apiUserId))
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserIdMismatch),
