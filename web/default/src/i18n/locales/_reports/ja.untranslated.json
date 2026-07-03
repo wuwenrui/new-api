@@ -66,5 +66,6 @@
   "Duplicate local model names: {{models}}": "Duplicate local model names: {{models}}",
   "Upstream recharge price: $1 quota = ¥{{price}}": "Upstream recharge price: $1 quota = ¥{{price}}",
   "display rate {{rate}} is cosmetic only": "display rate {{rate}} is cosmetic only",
-  "Our recharge price: $1 quota = ¥{{price}}": "Our recharge price: $1 quota = ¥{{price}}"
+  "Our recharge price: $1 quota = ¥{{price}}": "Our recharge price: $1 quota = ¥{{price}}",
+  "Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.": "Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly."
 }

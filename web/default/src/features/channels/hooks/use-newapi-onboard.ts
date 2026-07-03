@@ -164,8 +164,8 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
   })
   const availableLocalGroups = groupsResp?.data ?? ['default']
 
-  // 默认售价基准：模型在计费分组内用计费分组倍率；组外模型退回其可用分组中
-  // 倍率最低的一个（最保守估价），避免随机取到 x7 官方组把默认售价抬高数倍。
+  // 默认售价基准：模型在计费分组内用计费分组倍率；组外模型无法确定真实进货
+  // 分组，按其可用分组中倍率最高者估价——宁可偏贵，绝不因低估而亏钱。
   const baseGroupRatioFor = (m: NewAPIProbeModel): number => {
     const groups = m.enable_groups ?? []
     if (billingGroup && groups.includes(billingGroup)) {
@@ -174,8 +174,11 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     const ratios = groups
       .map((g) => groupRatio[g])
       .filter((r): r is number => typeof r === 'number' && r > 0)
-    return ratios.length > 0 ? Math.min(...ratios) : 1
+    return ratios.length > 0 ? Math.max(...ratios) : 1
   }
+
+  const isOutOfBillingGroup = (m: NewAPIProbeModel): boolean =>
+    !!billingGroup && !(m.enable_groups ?? []).includes(billingGroup)
 
   const saleInUSD = (m: NewAPIProbeModel): number =>
     saleOverrides[m.model_name]?.in ??
@@ -294,7 +297,17 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
       const groups = Object.keys(resp.data.group_ratio ?? {}).sort((a, b) =>
         a.localeCompare(b)
       )
-      setBillingGroup(groups[0] ?? '')
+      // 默认计费分组取覆盖模型最多的分组，避免落在不含任何所选模型的分组上
+      const modelCounts = new Map<string, number>()
+      resp.data.models.forEach((m) =>
+        (m.enable_groups ?? []).forEach((g) =>
+          modelCounts.set(g, (modelCounts.get(g) ?? 0) + 1)
+        )
+      )
+      const defaultGroup = [...groups].sort(
+        (a, b) => (modelCounts.get(b) ?? 0) - (modelCounts.get(a) ?? 0)
+      )[0]
+      setBillingGroup(defaultGroup ?? '')
       setStep('select')
       toast.success(
         t('Found {{models}} models and {{groups}} groups', {
@@ -577,6 +590,7 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     upstreamGroups,
     vendorSections,
     baseGroupRatioFor,
+    isOutOfBillingGroup,
     saleInUSD,
     saleOutUSD,
     symbol,

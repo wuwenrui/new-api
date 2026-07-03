@@ -135,7 +135,28 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
           className='bg-primary/[0.03] text-right'
           onClick={(e) => e.stopPropagation()}
         >
-          {renderSaleInput(m, 'in', sIn, override?.in !== undefined)}
+          <span className='inline-flex items-center gap-1'>
+            {ctl.isOutOfBillingGroup(m) && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Badge
+                      variant='outline'
+                      className='px-1 text-[10px] text-amber-600 dark:text-amber-500'
+                    >
+                      {t('est.')}
+                    </Badge>
+                  }
+                />
+                <TooltipContent className='max-w-64'>
+                  {t(
+                    'Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.'
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {renderSaleInput(m, 'in', sIn, override?.in !== undefined)}
+          </span>
         </TableCell>
         <TableCell
           className='bg-primary/[0.03] text-right'

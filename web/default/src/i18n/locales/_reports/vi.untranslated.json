@@ -14,5 +14,6 @@
   "All groups at a glance: filter groups, tick models and set local prices": "All groups at a glance: filter groups, tick models and set local prices",
   "Set channel info and confirm pricing": "Set channel info and confirm pricing",
   "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted": "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted",
-  "Rename a model for our site if you want; requests are mapped back to the upstream name automatically. Default keeps the original name.": "Rename a model for our site if you want; requests are mapped back to the upstream name automatically. Default keeps the original name."
+  "Rename a model for our site if you want; requests are mapped back to the upstream name automatically. Default keeps the original name.": "Rename a model for our site if you want; requests are mapped back to the upstream name automatically. Default keeps the original name.",
+  "Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.": "Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly."
 }
