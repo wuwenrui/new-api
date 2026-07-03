@@ -164,13 +164,17 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
   })
   const availableLocalGroups = groupsResp?.data ?? ['default']
 
+  // 默认售价基准：模型在计费分组内用计费分组倍率；组外模型退回其可用分组中
+  // 倍率最低的一个（最保守估价），避免随机取到 x7 官方组把默认售价抬高数倍。
   const baseGroupRatioFor = (m: NewAPIProbeModel): number => {
     const groups = m.enable_groups ?? []
     if (billingGroup && groups.includes(billingGroup)) {
       return groupRatio[billingGroup] ?? 1
     }
-    const own = groups[0]
-    return (own && groupRatio[own]) || 1
+    const ratios = groups
+      .map((g) => groupRatio[g])
+      .filter((r): r is number => typeof r === 'number' && r > 0)
+    return ratios.length > 0 ? Math.min(...ratios) : 1
   }
 
   const saleInUSD = (m: NewAPIProbeModel): number =>
