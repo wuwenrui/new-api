@@ -50,6 +50,15 @@ import type { NewAPIOnboardController } from '../../hooks/use-newapi-onboard'
 
 type Props = { ctl: NewAPIOnboardController }
 
+// 小数位自适应：大毛利取整，小毛利保留 1-2 位，避免微调价格后显示仍是 +0%
+function formatMarginPercent(margin: number): string {
+  const abs = Math.abs(margin)
+  if (abs >= 10) return margin.toFixed(0)
+  if (abs >= 1) return margin.toFixed(1)
+  if (abs < 0.005) return '0'
+  return margin.toFixed(2)
+}
+
 export function NewAPIOnboardSelectStep({ ctl }: Props) {
   const { t } = useTranslation()
 
@@ -149,7 +158,7 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
               )}
             >
               {margin >= 0 ? '+' : ''}
-              {margin.toFixed(0)}%
+              {formatMarginPercent(margin)}%
             </span>
           )}
         </TableCell>
