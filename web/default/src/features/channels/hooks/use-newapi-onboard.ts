@@ -180,6 +180,17 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
   const isOutOfBillingGroup = (m: NewAPIProbeModel): boolean =>
     !!billingGroup && !(m.enable_groups ?? []).includes(billingGroup)
 
+  // 切计费分组：清掉手改价并自动展开该分组，保证所见成本=计费成本
+  const selectBillingGroup = (group: string) => {
+    setBillingGroup(group)
+    setSaleOverrides({})
+    setHiddenGroups((prev) => {
+      const next = new Set(prev)
+      next.delete(group)
+      return next
+    })
+  }
+
   const saleInUSD = (m: NewAPIProbeModel): number =>
     saleOverrides[m.model_name]?.in ??
     upstreamCostInUSD(m, baseGroupRatioFor(m)) * markup
@@ -308,6 +319,14 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
         (a, b) => (modelCounts.get(b) ?? 0) - (modelCounts.get(a) ?? 0)
       )[0]
       setBillingGroup(defaultGroup ?? '')
+      // 默认只展开计费分组：所见成本即真实进货价，默认售价与之对齐；
+      // 其他分组收起，需要比价时用户自行点开（组外价带「估」标）。
+      // 全集须含仅出现在模型 enable_groups（模型可用分组）里的分组。
+      const allGroups = new Set(groups)
+      modelCounts.forEach((_, g) => allGroups.add(g))
+      setHiddenGroups(
+        new Set([...allGroups].filter((g) => g !== defaultGroup))
+      )
       setStep('select')
       toast.success(
         t('Found {{models}} models and {{groups}} groups', {
@@ -567,6 +586,7 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     // select
     billingGroup,
     setBillingGroup,
+    selectBillingGroup,
     hiddenGroups,
     toggleHiddenGroup,
     searchKeyword,

@@ -284,10 +284,7 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
           <Select
             value={ctl.billingGroup}
             onValueChange={(v) => {
-              if (v) {
-                ctl.setBillingGroup(v)
-                ctl.setSaleOverrides({})
-              }
+              if (v) ctl.selectBillingGroup(v)
             }}
           >
             <SelectTrigger className='w-60'>
