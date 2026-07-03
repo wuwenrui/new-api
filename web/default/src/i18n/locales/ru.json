@@ -5009,8 +5009,6 @@
     "Cost output /1M": "Cost output /1M",
     "Sale input /1M": "Sale input /1M",
     "Sale output /1M": "Sale output /1M",
-    "Upstream rate: 1$ = ¥{{rate}} (display: {{type}})": "Upstream rate: 1$ = ¥{{rate}} (display: {{type}})",
-    "Our rate: 1$ = ¥{{rate}}": "Our rate: 1$ = ¥{{rate}}",
     "Our group ratio: x{{ratio}} (already included in sale price)": "Our group ratio: x{{ratio}} (already included in sale price)",
     "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted": "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted",
     "Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})": "Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})",
@@ -5020,6 +5018,9 @@
     "Rename a model for our site if you want; requests are mapped back to the upstream name automatically. Default keeps the original name.": "Rename a model for our site if you want; requests are mapped back to the upstream name automatically. Default keeps the original name.",
     "Upstream model": "Upstream model",
     "Local model name (editable)": "Local model name (editable)",
-    "Duplicate local model names: {{models}}": "Duplicate local model names: {{models}}"
+    "Duplicate local model names: {{models}}": "Duplicate local model names: {{models}}",
+    "Upstream recharge price: $1 quota = ¥{{price}}": "Upstream recharge price: $1 quota = ¥{{price}}",
+    "display rate {{rate}} is cosmetic only": "display rate {{rate}} is cosmetic only",
+    "Our recharge price: $1 quota = ¥{{price}}": "Our recharge price: $1 quota = ¥{{price}}"
   }
 }

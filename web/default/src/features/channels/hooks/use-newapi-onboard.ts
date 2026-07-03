@@ -24,6 +24,7 @@ import {
   getSystemOptions,
   updateSystemOption,
 } from '@/features/system-settings/api'
+import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { createChannel, getGroups, probeNewAPIUpstream } from '../api'
 import { channelsQueryKeys } from '../lib'
@@ -48,6 +49,7 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const systemConfig = useSystemConfig()
+  const { status } = useStatus()
 
   const [step, setStep] = useState<WizardStep>('connect')
   const [maximized, setMaximized] = useState(false)
@@ -81,8 +83,12 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
   const [syncPricing, setSyncPricing] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const upstreamRate = probeResult?.rate_info?.usd_exchange_rate || 1
-  const ourRate = systemConfig.currency.usdExchangeRate || 1
+  // Real-money CNY conversion uses the RECHARGE price (CNY paid per $1 of
+  // quota), not the display-only usd_exchange_rate. Sites like packyapi sell
+  // $1 quota for ¥1 (price=1) while displaying an exchange rate of 7.
+  const upstreamRechargePrice = probeResult?.rate_info?.price || 1
+  const upstreamDisplayRate = probeResult?.rate_info?.usd_exchange_rate || 1
+  const ourRechargePrice = Math.max((status?.price as number) || 1, 0.001)
 
   const groupRatio = useMemo(
     () => probeResult?.group_ratio ?? {},
@@ -222,16 +228,17 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     modelAliases,
   ])
 
-  // Currency helpers: cost uses the upstream rate, sale uses our rate.
+  // Currency helpers: CNY mode converts by recharge prices — cost by the
+  // upstream's, sale by ours — so ¥ figures are real money on both sides.
   const symbol = currency === 'CNY' ? '¥' : '$'
   const fmtCost = (usd: number) =>
-    `${symbol}${roundRatio(usd * (currency === 'CNY' ? upstreamRate : 1))}`
+    `${symbol}${roundRatio(usd * (currency === 'CNY' ? upstreamRechargePrice : 1))}`
   const saleDisplayValue = (usd: number) =>
-    roundRatio(usd * (currency === 'CNY' ? ourRate : 1))
+    roundRatio(usd * (currency === 'CNY' ? ourRechargePrice : 1))
   const saleInputToUSD = (raw: string): number | undefined => {
     const parsed = Number(raw)
     if (!Number.isFinite(parsed) || parsed < 0) return undefined
-    return currency === 'CNY' ? parsed / ourRate : parsed
+    return currency === 'CNY' ? parsed / ourRechargePrice : parsed
   }
 
   const resetState = () => {
@@ -558,8 +565,9 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     setSaleOverrides,
     currency,
     setCurrency,
-    upstreamRate,
-    ourRate,
+    upstreamRechargePrice,
+    upstreamDisplayRate,
+    ourRechargePrice,
     groupRatio,
     usableGroup,
     upstreamGroups,

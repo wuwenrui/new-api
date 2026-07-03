@@ -350,13 +350,18 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
           </span>
         </span>
         <span className='text-muted-foreground'>
-          {t('Upstream rate: 1$ = ¥{{rate}} (display: {{type}})', {
-            rate: ctl.upstreamRate,
-            type: ctl.probeResult?.rate_info?.quota_display_type || 'USD',
+          {t('Upstream recharge price: $1 quota = ¥{{price}}', {
+            price: ctl.upstreamRechargePrice,
           })}
+          {ctl.upstreamDisplayRate !== ctl.upstreamRechargePrice &&
+            ` (${t('display rate {{rate}} is cosmetic only', {
+              rate: ctl.upstreamDisplayRate,
+            })})`}
         </span>
         <span className='text-muted-foreground'>
-          {t('Our rate: 1$ = ¥{{rate}}', { rate: ctl.ourRate })}
+          {t('Our recharge price: $1 quota = ¥{{price}}', {
+            price: ctl.ourRechargePrice,
+          })}
         </span>
         <span className='text-muted-foreground'>
           {t('Our group ratio: x{{ratio}} (already included in sale price)', {

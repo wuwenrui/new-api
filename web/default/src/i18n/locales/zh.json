@@ -5009,8 +5009,6 @@
     "Cost output /1M": "成本·输出 /1M",
     "Sale input /1M": "售价·输入 /1M",
     "Sale output /1M": "售价·输出 /1M",
-    "Upstream rate: 1$ = ¥{{rate}} (display: {{type}})": "对方汇率 1$ = ¥{{rate}}（展示币种 {{type}}）",
-    "Our rate: 1$ = ¥{{rate}}": "本站汇率 1$ = ¥{{rate}}",
     "Our group ratio: x{{ratio}} (already included in sale price)": "本站分组倍率 x{{ratio}}（售价已包含）",
     "Sale price is the FINAL end-user price (our group ratio included); edited prices are highlighted": "售价即用户最终支付价（已含本站分组倍率）；手改过的会高亮",
     "Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})": "售价为用户最终价；写入倍率 = 售价 ÷ 锚定价($2/1M) ÷ 本站分组倍率（x{{ratio}}）",
@@ -5020,6 +5018,9 @@
     "Rename a model for our site if you want; requests are mapped back to the upstream name automatically. Default keeps the original name.": "需要时可改成本站自己的模型名，请求会自动映射回上游原名；留空即用原名。",
     "Upstream model": "上游模型",
     "Local model name (editable)": "本站模型名（可改）",
-    "Duplicate local model names: {{models}}": "本站模型名重复：{{models}}"
+    "Duplicate local model names: {{models}}": "本站模型名重复：{{models}}",
+    "Upstream recharge price: $1 quota = ¥{{price}}": "对方充值价：1$ 额度 = ¥{{price}}",
+    "display rate {{rate}} is cosmetic only": "其页面展示汇率 {{rate}} 仅为显示用",
+    "Our recharge price: $1 quota = ¥{{price}}": "本站充值价：1$ 额度 = ¥{{price}}"
   }
 }
