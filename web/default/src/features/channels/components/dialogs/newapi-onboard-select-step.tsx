@@ -85,9 +85,15 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
 
   const renderModelRow = (m: NewAPIProbeModel, group: string) => {
     const isSel = ctl.selectedModels.has(m.model_name)
-    const gr = ctl.groupRatio[group] ?? 1
-    const costIn = upstreamCostInUSD(m, gr)
-    const costOut = upstreamCostOutUSD(m, gr)
+    const outOfGroup = ctl.isOutOfBillingGroup(m)
+    // Out-of-billing-group rows show the same estimate basis (most expensive
+    // group) in the cost columns as the default sale price, so cost, sale and
+    // margin always read from one consistent basis.
+    const costRatio = outOfGroup
+      ? ctl.baseGroupRatioFor(m)
+      : (ctl.groupRatio[group] ?? 1)
+    const costIn = upstreamCostInUSD(m, costRatio)
+    const costOut = upstreamCostOutUSD(m, costRatio)
     const sIn = ctl.saleInUSD(m)
     const sOut = ctl.saleOutUSD(m)
     const override = ctl.saleOverrides[m.model_name]
@@ -126,17 +132,8 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             : `${m.model_ratio} / ${m.completion_ratio || '-'}`}
         </TableCell>
         <TableCell className='text-right font-medium'>
-          {ctl.fmtCost(costIn)}
-        </TableCell>
-        <TableCell className='text-right font-medium'>
-          {costOut === null ? '-' : ctl.fmtCost(costOut)}
-        </TableCell>
-        <TableCell
-          className='bg-primary/[0.03] text-right'
-          onClick={(e) => e.stopPropagation()}
-        >
           <span className='inline-flex items-center gap-1'>
-            {ctl.isOutOfBillingGroup(m) && (
+            {outOfGroup && (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -150,13 +147,22 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
                 />
                 <TooltipContent className='max-w-64'>
                   {t(
-                    'Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.'
+                    'Not in the billing group: cost and default price are estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.'
                   )}
                 </TooltipContent>
               </Tooltip>
             )}
-            {renderSaleInput(m, 'in', sIn, override?.in !== undefined)}
+            {ctl.fmtCost(costIn)}
           </span>
+        </TableCell>
+        <TableCell className='text-right font-medium'>
+          {costOut === null ? '-' : ctl.fmtCost(costOut)}
+        </TableCell>
+        <TableCell
+          className='bg-primary/[0.03] text-right'
+          onClick={(e) => e.stopPropagation()}
+        >
+          {renderSaleInput(m, 'in', sIn, override?.in !== undefined)}
         </TableCell>
         <TableCell
           className='bg-primary/[0.03] text-right'

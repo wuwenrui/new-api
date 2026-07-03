@@ -5023,6 +5023,6 @@
     "display rate {{rate}} is cosmetic only": "display rate {{rate}} is cosmetic only",
     "Our recharge price: $1 quota = ¥{{price}}": "Our recharge price: $1 quota = ¥{{price}}",
     "est.": "est.",
-    "Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.": "Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly."
+    "Not in the billing group: cost and default price are estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.": "Not in the billing group: cost and default price are estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly."
   }
 }

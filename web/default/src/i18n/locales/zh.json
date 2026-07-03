@@ -5023,6 +5023,6 @@
     "display rate {{rate}} is cosmetic only": "其页面展示汇率 {{rate}} 仅为显示用",
     "Our recharge price: $1 quota = ¥{{price}}": "本站充值价：1$ 额度 = ¥{{price}}",
     "est.": "估",
-    "Not in the billing group: default price is estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.": "不在计费分组内：默认售价按其最贵分组估算，宁贵勿亏；切换计费分组后即为准确价。"
+    "Not in the billing group: cost and default price are estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.": "不在计费分组内：成本与默认售价均按其最贵分组估算，宁贵勿亏；切换计费分组后即为准确价。"
   }
 }
