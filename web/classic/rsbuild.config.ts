@@ -10,9 +10,12 @@ const semiUiDir = path.resolve(
   path.dirname(require.resolve('@douyinfe/semi-ui')),
   '../..',
 )
-const semiDateFnsDir = path.resolve(
-  semiUiDir,
-  '../semi-foundation/node_modules/date-fns',
+// Semi 依赖 date-fns v2；从 semi-foundation 的解析位置取它自带的 date-fns，
+// 不依赖 bun 具体 node_modules 布局（合并上游后按 semi-ui 相对路径推算已失效）
+const semiDateFnsDir = path.dirname(
+  require.resolve('date-fns/package.json', {
+    paths: [path.dirname(require.resolve('@douyinfe/semi-foundation'))],
+  }),
 )
 
 export default defineConfig(({ envMode }) => {
