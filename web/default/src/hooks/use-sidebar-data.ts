@@ -38,9 +38,10 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { ROLE } from '@/lib/roles'
+
 import { type SidebarData } from '@/components/layout/types'
 import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
 import { canAccessFinanceReport } from './sidebar-finance-access'
 
 /**
