@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, TrendingUp, WalletCards } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,12 +21,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+
 import {
   getFinanceReport,
   type FinanceModelRow,
   type FinanceUserRow,
   type FinanceReportData,
 } from './api'
+import { BalancesDrawer } from './drawers/balances-drawer'
+import { OrdersDrawer } from './drawers/orders-drawer'
+import { UserDetailDrawer } from './drawers/user-detail-drawer'
 import {
   formatFinanceAmount,
   formatFinancePercent,
@@ -37,7 +42,8 @@ import {
 } from './lib'
 
 const METRIC_TONE = {
-  revenue: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
+  revenue:
+    'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
   cost: 'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-400',
   profit: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
   cash: 'bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
@@ -49,14 +55,24 @@ function MetricCard({
   value,
   hint,
   tone,
+  onClick,
 }: {
   title: string
   value: string
   hint?: string
   tone: string
+  onClick?: () => void
 }) {
   return (
-    <Card>
+    <Card
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      className={
+        onClick
+          ? 'hover:bg-accent/50 cursor-pointer transition-colors'
+          : undefined
+      }
+    >
       <CardContent>
         <div className='flex items-start justify-between gap-3'>
           <div className='min-w-0'>
@@ -132,9 +148,11 @@ function ModelTable({
 function UserTable({
   rows,
   currency,
+  onSelectUser,
 }: {
   rows: FinanceUserRow[]
   currency: ReturnType<typeof getFinanceCurrencyConfig>
+  onSelectUser: (username: string) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -142,6 +160,8 @@ function UserTable({
       <TableHeader>
         <TableRow>
           <TableHead>{t('用户')}</TableHead>
+          <TableHead className='text-right'>{t('余额')}</TableHead>
+          <TableHead className='text-right'>{t('累计充值')}</TableHead>
           <TableHead className='w-20 text-right'>{t('请求数')}</TableHead>
           <TableHead className='text-right'>{t('实际使用')}</TableHead>
           <TableHead className='text-right'>{t('实际赚到')}</TableHead>
@@ -150,8 +170,18 @@ function UserTable({
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
-          <TableRow key={row.username}>
+          <TableRow
+            key={row.username}
+            className='cursor-pointer'
+            onClick={() => onSelectUser(row.username)}
+          >
             <TableCell className='font-medium'>{row.username}</TableCell>
+            <TableCell className='text-right'>
+              {formatFinanceAmount(row.balance, currency)}
+            </TableCell>
+            <TableCell className='text-right'>
+              {formatFinanceAmount(row.total_topup, currency)}
+            </TableCell>
             <TableCell className='text-right'>{row.requests}</TableCell>
             <TableCell className='text-right'>
               {formatFinanceAmount(row.consumption_amount, currency)}
@@ -177,6 +207,10 @@ export function FinanceReport() {
   const [endTime, setEndTime] = useState('')
   const [report, setReport] = useState<FinanceReportData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [ordersOpen, setOrdersOpen] = useState(false)
+  const [balancesOpen, setBalancesOpen] = useState(false)
+  const [detailUser, setDetailUser] = useState<string | null>(null)
+  const range = { start: toTimestamp(startTime), end: toTimestamp(endTime) }
 
   const setAllRange = useCallback(() => {
     setStartTime('')
@@ -283,6 +317,7 @@ export function FinanceReport() {
                 )}
                 hint={`${t('充值')} ${formatFinanceAmount(summary?.cash_topup_amount, currency)} / ${t('订阅')} ${formatFinanceAmount(summary?.cash_subscription_amount, currency)}`}
                 tone={METRIC_TONE.cash}
+                onClick={() => setOrdersOpen(true)}
               />
               <MetricCard
                 title={t('可能退款')}
@@ -290,8 +325,9 @@ export function FinanceReport() {
                   summary?.user_balance_amount,
                   currency
                 )}
-                hint={t('用户充值未使用的余额')}
+                hint={t('全部用户当前余额（含赠送）')}
                 tone={METRIC_TONE.refund}
+                onClick={() => setBalancesOpen(true)}
               />
             </div>
 
@@ -309,24 +345,48 @@ export function FinanceReport() {
                   </CardAction>
                 </CardHeader>
                 <CardContent className='p-0'>
-                  <ModelTable
-                    rows={report?.models ?? []}
-                    currency={currency}
-                  />
+                  <ModelTable rows={report?.models ?? []} currency={currency} />
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className='border-b'>
                   <CardTitle>{t('用户贡献排行')}</CardTitle>
+                  <span className='text-muted-foreground text-xs'>
+                    {t('余额与累计充值为当前快照，与时间区间无关')}
+                  </span>
                 </CardHeader>
                 <CardContent className='p-0'>
-                  <UserTable rows={report?.users ?? []} currency={currency} />
+                  <UserTable
+                    rows={report?.users ?? []}
+                    currency={currency}
+                    onSelectUser={setDetailUser}
+                  />
                 </CardContent>
               </Card>
             </div>
           </>
         )}
+        <OrdersDrawer
+          open={ordersOpen}
+          onOpenChange={setOrdersOpen}
+          range={range}
+        />
+        <BalancesDrawer
+          open={balancesOpen}
+          onOpenChange={setBalancesOpen}
+          onSelectUser={(username) => {
+            setBalancesOpen(false)
+            setDetailUser(username)
+          }}
+        />
+        <UserDetailDrawer
+          username={detailUser}
+          range={range}
+          onOpenChange={(open) => {
+            if (!open) setDetailUser(null)
+          }}
+        />
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )
