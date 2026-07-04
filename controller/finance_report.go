@@ -28,3 +28,42 @@ func GetFinanceReport(c *gin.Context) {
 	}
 	common.ApiSuccess(c, report)
 }
+
+func GetFinanceTopUps(c *gin.Context) {
+	getFinanceOrders(c, "top_ups")
+}
+
+func GetFinanceSubscriptionOrders(c *gin.Context) {
+	getFinanceOrders(c, "subscription_orders")
+}
+
+func getFinanceOrders(c *gin.Context, table string) {
+	pageInfo := common.GetPageQuery(c)
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	rows, total, err := service.ListFinanceOrders(service.FinanceOrderListParams{
+		Table:          table,
+		StartTimestamp: startTimestamp,
+		EndTimestamp:   endTimestamp,
+		Status:         c.Query("status"),
+		Username:       c.Query("username"),
+		Offset:         pageInfo.GetStartIdx(),
+		Limit:          pageInfo.GetPageSize(),
+	})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(rows)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func GetFinanceBalances(c *gin.Context) {
+	rows, err := service.BuildFinanceBalances()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rows)
+}

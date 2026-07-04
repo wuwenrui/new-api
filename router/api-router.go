@@ -294,6 +294,9 @@ func SetApiRouter(router *gin.Engine) {
 		financeRoute.Use(middleware.AdminAuth())
 		{
 			financeRoute.GET("/report", controller.GetFinanceReport)
+			financeRoute.GET("/topups", controller.GetFinanceTopUps)
+			financeRoute.GET("/subscription-orders", controller.GetFinanceSubscriptionOrders)
+			financeRoute.GET("/balances", controller.GetFinanceBalances)
 		}
 
 		systemTaskRoute := apiRouter.Group("/system-task")
