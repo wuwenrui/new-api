@@ -688,9 +688,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
-    },
+    }
+  )
 
-    {
+  if (isAdmin) {
+    columns.push({
       accessorKey: 'prompt_tokens',
       header: 'Tokens',
       cell: ({ row }) => {
@@ -736,8 +738,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
-    },
+    })
+  }
 
+  columns.push(
     {
       accessorKey: 'quota',
       header: t('Cost'),
@@ -788,9 +792,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
-    },
+    }
+  )
 
-    {
+  if (isAdmin) {
+    columns.push({
       accessorKey: 'content',
       header: t('Details'),
       cell: function DetailsCell({ row }) {
@@ -847,8 +853,8 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       },
       size: 180,
       maxSize: 200,
-    }
-  )
+    })
+  }
 
   return columns
 }
