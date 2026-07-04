@@ -134,11 +134,17 @@ func BuildFinanceBalances() ([]FinanceBalanceRow, error) {
 			GiftedEstimate: balance + consumed - topup,
 		})
 	}
-	sort.Slice(rows, func(i int, j int) bool { return rows[i].Balance > rows[j].Balance })
+	sort.Slice(rows, func(i int, j int) bool {
+		if rows[i].Balance != rows[j].Balance {
+			return rows[i].Balance > rows[j].Balance
+		}
+		return rows[i].Username < rows[j].Username
+	})
 	return rows, nil
 }
 
 // financeUserSnapshots 返回（按用户名索引的）当前余额与累计成功充值快照，均排除 wuwenrui。
+// 软删除用户不出现在快照中（走 GORM 默认作用域），其历史充值现金仍计入 sumFinanceCash。
 func financeUserSnapshots() (map[string]float64, map[string]float64, error) {
 	type userRow struct {
 		Id       int
