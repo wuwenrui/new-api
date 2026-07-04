@@ -1,4 +1,4 @@
-interface CurrencyConfig {
+export interface CurrencyConfig {
   symbol: string
   rate: number
   type: string
@@ -36,6 +36,16 @@ export function formatFinanceAmount(
           rate: finiteRate(currency?.rate, 1),
         }
   return `${config.symbol}${(amount * config.rate).toFixed(2)}`
+}
+
+// 赠送估算 = 余额 + 累计消费 - 累计充值；负值代表用户花超了赠送部分，展示时截 0
+export function formatGiftedEstimate(
+  value: unknown,
+  currency: CurrencyConfig | string = '$'
+): string {
+  const numeric = Number(value)
+  const clamped = Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+  return formatFinanceAmount(clamped, currency)
 }
 
 export function getFinanceCurrencyConfig(): CurrencyConfig {

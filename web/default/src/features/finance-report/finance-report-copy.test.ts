@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
+import { formatGiftedEstimate } from './lib'
+
 const financeReportSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'index.tsx'),
   'utf8'
@@ -37,5 +39,21 @@ describe('finance report copy', () => {
     }
 
     assert.equal(sidebarSource.includes("t('Finance Report')"), false)
+  })
+})
+
+describe('formatGiftedEstimate', () => {
+  test('clamps negative estimate to zero', () => {
+    assert.equal(
+      formatGiftedEstimate(-97, { symbol: '¥', rate: 1, type: 'CNY' }),
+      '¥0.00'
+    )
+  })
+
+  test('formats positive estimate with two decimals', () => {
+    assert.equal(
+      formatGiftedEstimate(12.345, { symbol: '¥', rate: 1, type: 'CNY' }),
+      '¥12.35'
+    )
   })
 })
