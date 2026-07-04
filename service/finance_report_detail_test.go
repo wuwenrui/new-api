@@ -68,3 +68,19 @@ func TestListFinanceOrdersSubscriptionTableAndUsernameFilter(t *testing.T) {
 	_, _, err = ListFinanceOrders(FinanceOrderListParams{Table: "users"})
 	assert.Error(t, err)
 }
+
+func TestBuildFinanceBalancesComputesGiftedEstimate(t *testing.T) {
+	setupFinanceReportTestDB(t)
+	seedFinanceOrders(t)
+	require.NoError(t, model.DB.Create(&model.Log{Username: "wyh", Type: model.LogTypeConsume, Quota: 500000, CreatedAt: 1000}).Error)
+	require.NoError(t, model.DB.Create(&model.Log{Username: "wuwenrui", Type: model.LogTypeConsume, Quota: 500000, CreatedAt: 1000}).Error)
+
+	rows, err := BuildFinanceBalances()
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "wyh", rows[0].Username)
+	requireFloatNear(t, 2.0, rows[0].Balance)
+	requireFloatNear(t, 100.0, rows[0].TotalTopUp)
+	requireFloatNear(t, 1.0, rows[0].TotalConsumed)
+	requireFloatNear(t, -97.0, rows[0].GiftedEstimate)
+}
