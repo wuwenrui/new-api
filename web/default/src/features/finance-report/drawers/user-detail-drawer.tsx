@@ -82,6 +82,10 @@ export function UserDetailDrawer({
   useEffect(() => {
     if (!username) return
     let cancelled = false
+    // 切换用户先清掉上一位的数据，避免新标题下闪现旧数字
+    setBalanceRow(null)
+    setReport(null)
+    setTopUps([])
     async function load(name: string) {
       setLoading(true)
       try {

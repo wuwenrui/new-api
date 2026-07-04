@@ -122,7 +122,9 @@ func BuildFinanceBalances() ([]FinanceBalanceRow, error) {
 	rows := make([]FinanceBalanceRow, 0, len(balanceByName))
 	for username, balance := range balanceByName {
 		topup := topupByName[username]
-		if balance <= 0 && topup <= 0 {
+		// 负余额也要保留：卡片的 user_balance_amount 是 SUM(quota) 不过滤，
+		// 抽屉合计需与卡片口径一致；只剔除既无余额也无充值的空账号。
+		if balance == 0 && topup <= 0 {
 			continue
 		}
 		consumed := consumedByName[username]
