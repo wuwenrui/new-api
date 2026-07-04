@@ -117,14 +117,16 @@ func GetJsonString(data any) string {
 	return string(b)
 }
 
-// NormalizeBillingPreference clamps the billing preference to valid values.
-func NormalizeBillingPreference(pref string) string {
-	switch strings.TrimSpace(pref) {
-	case "subscription_first", "wallet_first", "subscription_only", "wallet_only":
-		return strings.TrimSpace(pref)
-	default:
-		return "subscription_first"
-	}
+// NormalizeBillingPreference resolves a user's billing preference.
+//
+// 产品规则：订阅仅用于解锁功能（plan.feature_keys），消费一律从钱包余额
+// （users.quota）扣费，订阅永不作为扣费来源。历史支持 subscription_first /
+// subscription_only / wallet_first 等模式，其中任何会回退到订阅扣费的模式，都会让
+// 功能型订阅（plan.total_amount=0 语义为“不限量”）变成无限免费额度池，用户买了
+// 功能包后消费不扣钱包。故统一归一到 wallet_only，从计费决策、读取、保存三个入口
+// 一次堵死。如需恢复订阅扣费能力，改此处即可。
+func NormalizeBillingPreference(_ string) string {
+	return "wallet_only"
 }
 
 // MaskEmail masks a user email to prevent PII leakage in logs
