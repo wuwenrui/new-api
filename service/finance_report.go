@@ -68,6 +68,8 @@ type FinanceReportUserRow struct {
 	EstimatedUpstreamCost float64 `json:"estimated_upstream_cost"`
 	GrossProfit           float64 `json:"gross_profit"`
 	GrossMargin           float64 `json:"gross_margin"`
+	Balance               float64 `json:"balance"`     // 当前余额快照，与时间区间无关
+	TotalTopUp            float64 `json:"total_topup"` // 累计成功充值快照，与时间区间无关
 	PromptTokens          int64   `json:"prompt_tokens"`
 	CompletionTokens      int64   `json:"completion_tokens"`
 	CacheTokens           int64   `json:"cache_tokens"`
@@ -141,6 +143,12 @@ func BuildFinanceReport(params FinanceReportParams) (FinanceReport, error) {
 		return FinanceReport{}, err
 	}
 
+	// 逐用户余额与累计充值快照，同样与时间区间无关，供报表明细行展示。
+	balanceByName, topupByName, err := financeUserSnapshots()
+	if err != nil {
+		return FinanceReport{}, err
+	}
+
 	summary := FinanceReportSummary{
 		Requests:               summaryAgg.requests,
 		ConsumptionQuota:       summaryAgg.consumptionQuota,
@@ -163,7 +171,7 @@ func BuildFinanceReport(params FinanceReportParams) (FinanceReport, error) {
 		EndTimestamp:   params.EndTimestamp,
 		Summary:        summary,
 		Models:         buildFinanceModelRows(modelAggs),
-		Users:          buildFinanceUserRows(userAggs),
+		Users:          buildFinanceUserRows(userAggs, balanceByName, topupByName),
 	}, nil
 }
 
@@ -310,7 +318,7 @@ func buildFinanceModelRows(aggs map[string]*financeAggregate) []FinanceReportMod
 	return rows
 }
 
-func buildFinanceUserRows(aggs map[string]*financeAggregate) []FinanceReportUserRow {
+func buildFinanceUserRows(aggs map[string]*financeAggregate, balanceByName map[string]float64, topupByName map[string]float64) []FinanceReportUserRow {
 	rows := make([]FinanceReportUserRow, 0, len(aggs))
 	for username, agg := range aggs {
 		rows = append(rows, FinanceReportUserRow{
@@ -321,6 +329,8 @@ func buildFinanceUserRows(aggs map[string]*financeAggregate) []FinanceReportUser
 			EstimatedUpstreamCost: agg.estimatedUpstreamCost,
 			GrossProfit:           agg.consumptionAmount - agg.estimatedUpstreamCost,
 			GrossMargin:           financeMargin(agg.consumptionAmount, agg.estimatedUpstreamCost),
+			Balance:               balanceByName[username],
+			TotalTopUp:            topupByName[username],
 			PromptTokens:          agg.promptTokens,
 			CompletionTokens:      agg.completionTokens,
 			CacheTokens:           agg.cacheTokens,

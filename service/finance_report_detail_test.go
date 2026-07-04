@@ -84,3 +84,15 @@ func TestBuildFinanceBalancesComputesGiftedEstimate(t *testing.T) {
 	requireFloatNear(t, 1.0, rows[0].TotalConsumed)
 	requireFloatNear(t, -97.0, rows[0].GiftedEstimate)
 }
+
+func TestBuildFinanceReportUserRowsIncludeSnapshots(t *testing.T) {
+	setupFinanceReportTestDB(t)
+	seedFinanceOrders(t)
+	require.NoError(t, model.DB.Create(&model.Log{Username: "wyh", Type: model.LogTypeConsume, Quota: 250000, CreatedAt: 1000}).Error)
+
+	report, err := BuildFinanceReport(FinanceReportParams{})
+	require.NoError(t, err)
+	require.Len(t, report.Users, 1)
+	requireFloatNear(t, 2.0, report.Users[0].Balance)
+	requireFloatNear(t, 100.0, report.Users[0].TotalTopUp)
+}
