@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -39,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+
 import {
   getFinanceBalances,
   getFinanceReport,
@@ -216,7 +218,7 @@ export function UserDetailDrawer({
                     {topUps.map((row) => (
                       <TableRow key={row.id}>
                         <TableCell className='whitespace-nowrap'>
-                          {(row.complete_time || row.create_time)
+                          {row.complete_time || row.create_time
                             ? new Date(
                                 (row.complete_time || row.create_time) * 1000
                               ).toLocaleString()
@@ -229,9 +231,7 @@ export function UserDetailDrawer({
                         <TableCell>
                           <Badge
                             variant={
-                              row.status === 'success'
-                                ? 'secondary'
-                                : 'outline'
+                              row.status === 'success' ? 'secondary' : 'outline'
                             }
                           >
                             {row.status}

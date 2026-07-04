@@ -11,7 +11,10 @@ const financeReportSource = readFileSync(
   'utf8'
 )
 const sidebarSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../../hooks/use-sidebar-data.ts'),
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    '../../hooks/use-sidebar-data.ts'
+  ),
   'utf8'
 )
 

@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -39,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+
 import { getFinanceBalances, type FinanceBalanceRow } from '../api'
 import { formatFinanceAmount, formatGiftedEstimate } from '../lib'
 
