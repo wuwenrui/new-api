@@ -30,10 +30,20 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 	router.Use(middleware.GlobalWebRateLimit())
 	router.Use(middleware.Cache())
 	router.Use(static.Serve("/", themeFS))
-	router.NoRoute(func(c *gin.Context) {
+	router.NoRoute(webNoRouteHandler(assets))
+}
+
+func webNoRouteHandler(assets ThemeAssets) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		c.Set(middleware.RouteTagKey, "web")
 		if strings.HasPrefix(c.Request.RequestURI, "/v1") || strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/assets") {
 			controller.RelayNotFound(c)
+			return
+		}
+		// Hashed build assets must 404 when missing. Serving index.html here
+		// makes stale tabs execute HTML as JS after a deploy replaces chunks.
+		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
+			c.Status(http.StatusNotFound)
 			return
 		}
 		c.Header("Cache-Control", "no-cache")
@@ -42,5 +52,5 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 		} else {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", assets.DefaultIndexPage)
 		}
-	})
+	}
 }
