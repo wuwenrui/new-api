@@ -20,6 +20,7 @@ import (
 const (
 	defaultPACPriceMonitorTargetMargin = 60
 	defaultPackyPricingURL             = "https://www.packyapi.com/api/pricing"
+	pacMarginDisplayTolerance          = 0.005
 )
 
 type PACPriceMonitorParams struct {
@@ -332,7 +333,7 @@ func buildPACPriceMonitorRow(channel *model.Channel, modelName string, pricing p
 		upstreamModel.CompletionRatio,
 	)
 	row = row.withProfit()
-	if row.GrossMargin+floatingPointTolerance() < targetMargin {
+	if row.GrossMargin+pacMarginDisplayTolerance < targetMargin {
 		row.Status = "risk"
 		row.StatusReason = "gross margin below target"
 		return row
@@ -496,8 +497,4 @@ func lowerPACMargin(row PACPriceMonitorRow) float64 {
 	inputMargin := grossMargin(row.LocalInputPrice, row.UpstreamInputPrice)
 	outputMargin := grossMargin(row.LocalOutputPrice, row.UpstreamOutputPrice)
 	return math.Min(inputMargin, outputMargin)
-}
-
-func floatingPointTolerance() float64 {
-	return math.SmallestNonzeroFloat64
 }

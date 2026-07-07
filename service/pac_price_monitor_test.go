@@ -173,6 +173,26 @@ func TestBuildPACPriceMonitorReportUsesLowerOutputMargin(t *testing.T) {
 	requireFloatNear(t, 2.5, report.Rows[0].RecommendedOutputPrice)
 }
 
+func TestBuildPACPriceMonitorReportTreatsDisplayedTargetMarginAsHealthy(t *testing.T) {
+	setupPACPriceMonitorTestDB(t)
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"mimo-v2-pro":2.79999664}`))
+	require.NoError(t, ratio_setting.UpdateCompletionRatioByJSONString(`{"mimo-v2-pro":3}`))
+	seedPACMonitorChannel(t, 19, "pac-mimo0.8", "mimo-v2-pro")
+
+	report, err := BuildPACPriceMonitorReport(context.Background(), PACPriceMonitorParams{
+		TargetMargin: 60,
+		FetchPricing: staticPackyPricing(map[string]packyPricingModel{
+			"mimo-v2-pro": {ModelRatio: 3.5, CompletionRatio: 3},
+		}, map[string]float64{"mimo-officially": 0.8}),
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, 0, report.Summary.RiskModels)
+	require.Len(t, report.Rows, 1)
+	require.Equal(t, "healthy", report.Rows[0].Status)
+	require.InDelta(t, 60.0, report.Rows[0].GrossMargin, 0.005)
+}
+
 func TestBuildPACPriceMonitorReportDetectsUpstreamPriceChange(t *testing.T) {
 	setupPACPriceMonitorTestDB(t)
 	seedPACMonitorChannel(t, 9, "pac-bai", "qwen3-vl-flash")
