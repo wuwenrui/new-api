@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -29,6 +29,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
 import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
+import { buildPricingChannelLabels } from '../lib/channels'
 import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
@@ -51,6 +52,7 @@ export interface PricingColumnsOptions {
   priceRate?: number
   usdExchangeRate?: number
   showRechargePrice?: boolean
+  showChannels?: boolean
 }
 
 export function usePricingColumns(
@@ -62,11 +64,12 @@ export function usePricingColumns(
     priceRate = 1,
     usdExchangeRate = 1,
     showRechargePrice = false,
+    showChannels = false,
   } = options
 
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
 
-  return [
+  const columns: ColumnDef<PricingModel>[] = [
     // Model column
     {
       accessorKey: 'model_name',
@@ -338,6 +341,40 @@ export function usePricingColumns(
       enableSorting: false,
     },
 
+    ...(showChannels
+      ? [
+          {
+            accessorKey: 'channels',
+            header: t('Channels'),
+            cell: ({ row }) => {
+              const labels = buildPricingChannelLabels(row.original.channels)
+              if (labels.length === 0) {
+                return (
+                  <span className='text-muted-foreground/50 text-xs'>—</span>
+                )
+              }
+
+              return (
+                <BadgeListCell
+                  items={labels.map((label) => (
+                    <StatusBadge
+                      key={label}
+                      label={label}
+                      autoColor={label}
+                      size='sm'
+                      copyable={false}
+                    />
+                  ))}
+                  tooltipClassName='max-w-[320px] p-2'
+                />
+              )
+            },
+            size: 160,
+            enableSorting: false,
+          } satisfies ColumnDef<PricingModel>,
+        ]
+      : []),
+
     // Tags column
     {
       accessorKey: 'tags',
@@ -405,4 +442,6 @@ export function usePricingColumns(
       enableSorting: false,
     },
   ]
+
+  return columns
 }

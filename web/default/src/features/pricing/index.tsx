@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
+import { useIsAdmin } from '@/hooks/use-admin'
 
 import {
   LoadingSkeleton,
@@ -38,6 +39,7 @@ import { usePricingData } from './hooks/use-pricing-data'
 
 export function Pricing() {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
   const [selectedModelName, setSelectedModelName] = useState<string | null>(
     null
   )
@@ -143,6 +145,7 @@ export function Pricing() {
         usdExchangeRate={usdExchangeRate}
         tokenUnit={tokenUnit}
         showRechargePrice={showRechargePrice}
+        showChannels={isAdmin}
         onModelClick={handleModelClick}
       />
     )
