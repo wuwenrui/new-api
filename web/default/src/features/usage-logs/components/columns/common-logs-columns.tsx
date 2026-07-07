@@ -55,13 +55,13 @@ import {
   isViolationFeeLog,
   renderAuditContent,
 } from '../../lib/format'
+import { getVisibleGroupRatioText } from '../../lib/internal-billing-visibility'
 import {
   isDisplayableLogType,
   isTimingLogType,
   getLogTypeConfig,
   isPerCallBilling,
 } from '../../lib/utils'
-import { getVisibleGroupRatioText } from '../../lib/internal-billing-visibility'
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
 import { ModelBadge } from '../model-badge'
@@ -80,6 +80,29 @@ function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
 }
 
 function buildDetailSegments(
+  log: UsageLog,
+  other: LogOtherData | null,
+  canViewInternalBilling: boolean,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  isAdmin: boolean
+): DetailSegment[] {
+  const segments = buildTypeDetailSegments(
+    log,
+    other,
+    canViewInternalBilling,
+    t
+  )
+  // Quota saturation is a rare, admin-only anomaly marker; surface it first
+  // and in danger styling so it stands out on the related billing log. The
+  // backend already strips admin_info for non-admins; gate on isAdmin too as
+  // defense in depth so the marker never leaks if that changes.
+  if (isAdmin && other?.admin_info?.quota_saturation) {
+    return [{ text: t('Quota clamped'), danger: true }, ...segments]
+  }
+  return segments
+}
+
+function buildTypeDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
   canViewInternalBilling: boolean,
@@ -232,12 +255,13 @@ function buildDetailSegments(
       const ratioLabel = isUserGroup
         ? t('User Exclusive Ratio')
         : t('Group Ratio')
-      const ratioText = getVisibleGroupRatioText(
-        other,
-        canViewInternalBilling
-      )
+      const ratioText = getVisibleGroupRatioText(other, canViewInternalBilling)
 
-      if (effectiveRatio != null && Number.isFinite(effectiveRatio) && ratioText) {
+      if (
+        effectiveRatio != null &&
+        Number.isFinite(effectiveRatio) &&
+        ratioText
+      ) {
         segments.push({
           text: `${ratioLabel} ${ratioText}`,
         })
@@ -741,59 +765,57 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     })
   }
 
-  columns.push(
-    {
-      accessorKey: 'quota',
-      header: t('Cost'),
-      cell: ({ row }) => {
-        const log = row.original
-        if (!isDisplayableLogType(log.type)) return null
+  columns.push({
+    accessorKey: 'quota',
+    header: t('Cost'),
+    cell: ({ row }) => {
+      const log = row.original
+      if (!isDisplayableLogType(log.type)) return null
 
-        const quota = row.getValue('quota') as number
-        const other = parseLogOther(log.other)
-        const isSubscription = other?.billing_source === 'subscription'
+      const quota = row.getValue('quota') as number
+      const other = parseLogOther(log.other)
+      const isSubscription = other?.billing_source === 'subscription'
 
-        if (isSubscription) {
-          return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <StatusBadge
-                      label={t('Subscription')}
-                      variant='success'
-                      size='sm'
-                      copyable={false}
-                      className='cursor-help'
-                    />
-                  }
-                />
-                <TooltipContent>
-                  <span>
-                    {t('Deducted by subscription')}: {formatLogQuota(quota)}
-                  </span>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )
-        }
-
-        const quotaStr = formatLogQuota(quota)
-        const quotaDisplay = splitQuotaDisplay(quotaStr)
-
+      if (isSubscription) {
         return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='border-border/80 bg-muted/60 inline-flex h-6 w-fit items-center rounded-md border px-2 [font-family:var(--font-body)] text-sm leading-none font-semibold tabular-nums'>
-              {quotaDisplay.prefix && (
-                <span className='mr-1'>{quotaDisplay.prefix}</span>
-              )}
-              <span>{quotaDisplay.amount}</span>
-            </span>
-          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <StatusBadge
+                    label={t('Subscription')}
+                    variant='success'
+                    size='sm'
+                    copyable={false}
+                    className='cursor-help'
+                  />
+                }
+              />
+              <TooltipContent>
+                <span>
+                  {t('Deducted by subscription')}: {formatLogQuota(quota)}
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )
-      },
-    }
-  )
+      }
+
+      const quotaStr = formatLogQuota(quota)
+      const quotaDisplay = splitQuotaDisplay(quotaStr)
+
+      return (
+        <div className='flex flex-col gap-0.5'>
+          <span className='border-border/80 bg-muted/60 inline-flex h-6 w-fit items-center rounded-md border px-2 [font-family:var(--font-body)] text-sm leading-none font-semibold tabular-nums'>
+            {quotaDisplay.prefix && (
+              <span className='mr-1'>{quotaDisplay.prefix}</span>
+            )}
+            <span>{quotaDisplay.amount}</span>
+          </span>
+        </div>
+      )
+    },
+  })
 
   if (isAdmin) {
     columns.push({
@@ -804,7 +826,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const log = row.original
         const other = parseLogOther(log.other)
 
-        const segments = buildDetailSegments(log, other, isAdmin, t)
+        const segments = buildDetailSegments(log, other, isAdmin, t, isAdmin)
         const primary = segments[0]
         const hasMore = segments.length > 1
 
