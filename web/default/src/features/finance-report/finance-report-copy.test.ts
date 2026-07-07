@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { formatGiftedEstimate } from './lib'
+import { formatGiftedEstimate, formatPACMonitorStatus } from './lib'
 
 const financeReportSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'index.tsx'),
@@ -58,5 +58,14 @@ describe('formatGiftedEstimate', () => {
       formatGiftedEstimate(12.345, { symbol: '¥', rate: 1, type: 'CNY' }),
       '¥12.35'
     )
+  })
+})
+
+describe('formatPACMonitorStatus', () => {
+  test('formats monitor statuses for admin table', () => {
+    assert.equal(formatPACMonitorStatus('healthy'), '正常')
+    assert.equal(formatPACMonitorStatus('risk'), '低毛利')
+    assert.equal(formatPACMonitorStatus('changed'), '价格变更')
+    assert.equal(formatPACMonitorStatus('unknown'), '未知')
   })
 })

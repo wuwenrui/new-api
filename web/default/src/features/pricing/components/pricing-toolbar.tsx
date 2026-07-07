@@ -78,11 +78,13 @@ export interface PricingToolbarProps {
   endpointTypeFilter: string
   vendorFilter: string
   groupFilter: string
+  channelFilter: string
   tagFilter: string
   onQuotaTypeChange: (value: string) => void
   onEndpointTypeChange: (value: string) => void
   onVendorChange: (value: string) => void
   onGroupChange: (value: string) => void
+  onChannelChange: (value: string) => void
   onTagChange: (value: string) => void
   vendors: PricingVendor[]
   groups: string[]
@@ -134,7 +136,7 @@ function SegmentedControl(props: {
 
         return (
           <Tooltip key={option.value}>
-            <TooltipTrigger render={button}></TooltipTrigger>
+            <TooltipTrigger render={button} />
             <TooltipContent side='bottom' className='text-xs'>
               {option.tooltip}
             </TooltipContent>
@@ -290,11 +292,13 @@ export function PricingToolbar(props: PricingToolbarProps) {
               endpointTypeFilter={props.endpointTypeFilter}
               vendorFilter={props.vendorFilter}
               groupFilter={props.groupFilter}
+              channelFilter={props.channelFilter}
               tagFilter={props.tagFilter}
               onQuotaTypeChange={props.onQuotaTypeChange}
               onEndpointTypeChange={props.onEndpointTypeChange}
               onVendorChange={props.onVendorChange}
               onGroupChange={props.onGroupChange}
+              onChannelChange={props.onChannelChange}
               onTagChange={props.onTagChange}
               vendors={props.vendors}
               groups={props.groups}

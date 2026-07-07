@@ -39,6 +39,52 @@ export interface FinanceReportData {
   users: FinanceUserRow[]
 }
 
+export interface PACPriceMonitorSummary {
+  checked_models: number
+  has_baseline: boolean
+  changed_prices: number
+  risk_models: number
+  unknown_models: number
+  requests: number
+  revenue: number
+  estimated_upstream_cost: number
+  gross_profit: number
+  gross_margin: number
+}
+
+export interface PACPriceMonitorRow {
+  channel_id: number
+  channel_name: string
+  model_name: string
+  local_group: string
+  upstream_group: string
+  status: 'healthy' | 'risk' | 'changed' | 'unknown'
+  status_reason: string
+  price_changed: boolean
+  local_input_price: number
+  local_output_price: number
+  upstream_input_price: number
+  upstream_output_price: number
+  recommended_input_price: number
+  recommended_output_price: number
+  gross_margin: number
+  requests: number
+  prompt_tokens: number
+  completion_tokens: number
+  revenue: number
+  estimated_upstream_cost: number
+  gross_profit: number
+}
+
+export interface PACPriceMonitorData {
+  generated_at: number
+  start_timestamp: number
+  end_timestamp: number
+  target_margin: number
+  summary: PACPriceMonitorSummary
+  rows: PACPriceMonitorRow[]
+}
+
 interface FinanceReportResponse {
   success: boolean
   message: string
@@ -49,6 +95,8 @@ export async function getFinanceReport(params: {
   start_timestamp: number
   end_timestamp: number
   username?: string
+  model_name?: string
+  channel?: number
 }): Promise<FinanceReportData | null> {
   const query = buildFinanceReportQuery(params)
   const res = await api.get<FinanceReportResponse>(
@@ -57,6 +105,20 @@ export async function getFinanceReport(params: {
   const { success, data } = res.data
   if (!success) return null
   return data
+}
+
+export async function getPACPriceMonitorReport(params: {
+  start_timestamp: number
+  end_timestamp: number
+  model_name?: string
+  channel?: number
+}): Promise<PACPriceMonitorData | null> {
+  const query = buildFinanceReportQuery(params)
+  const res = await api.get<ApiEnvelope<PACPriceMonitorData>>(
+    `/api/finance/pac-price-monitor${query ? `?${query}` : ''}`
+  )
+  if (!res.data.success) return null
+  return res.data.data
 }
 
 export interface FinanceOrderRow {

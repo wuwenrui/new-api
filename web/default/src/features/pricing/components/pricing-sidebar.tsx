@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { ChevronDown, RotateCcw } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useIsAdmin } from '@/hooks/use-admin'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,6 +27,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
@@ -61,11 +62,13 @@ export interface PricingSidebarProps {
   endpointTypeFilter: string
   vendorFilter: string
   groupFilter: string
+  channelFilter: string
   tagFilter: string
   onQuotaTypeChange: (value: string) => void
   onEndpointTypeChange: (value: string) => void
   onVendorChange: (value: string) => void
   onGroupChange: (value: string) => void
+  onChannelChange: (value: string) => void
   onTagChange: (value: string) => void
   vendors: PricingVendor[]
   groups: string[]
@@ -82,6 +85,65 @@ function countBy(
   predicate: (model: PricingModel) => boolean
 ): number {
   return models.reduce((count, model) => count + (predicate(model) ? 1 : 0), 0)
+}
+
+function buildChannelOptions(
+  models: PricingModel[],
+  allLabel: string
+): FilterOption[] {
+  const channelCounts = new Map<
+    number,
+    { label: string; priority: number; count: number }
+  >()
+
+  for (const model of models) {
+    const seen = new Set<number>()
+    for (const channel of model.channels ?? []) {
+      if (seen.has(channel.id)) continue
+      seen.add(channel.id)
+
+      const existing = channelCounts.get(channel.id)
+      const label = channel.name
+        ? `${channel.name} #${channel.id}`
+        : `#${channel.id}`
+      if (existing) {
+        channelCounts.set(channel.id, {
+          ...existing,
+          priority: Math.max(existing.priority, channel.priority),
+          count: existing.count + 1,
+        })
+      } else {
+        channelCounts.set(channel.id, {
+          label,
+          priority: channel.priority,
+          count: 1,
+        })
+      }
+    }
+  }
+
+  return [
+    {
+      value: FILTER_ALL,
+      label: allLabel,
+      count: models.length,
+    },
+    ...[...channelCounts.entries()]
+      .sort(([leftId, left], [rightId, right]) => {
+        if (left.priority !== right.priority) {
+          return right.priority - left.priority
+        }
+        if (left.label !== right.label) {
+          return left.label.localeCompare(right.label)
+        }
+        return leftId - rightId
+      })
+      .map(([id, channel]) => ({
+        value: String(id),
+        label: channel.label,
+        count: channel.count,
+      })),
+  ]
 }
 
 function FilterChip(props: {
@@ -186,6 +248,8 @@ export function PricingSidebar(props: PricingSidebarProps) {
     })),
   ]
 
+  const channelOptions = buildChannelOptions(props.models, t('All Channels'))
+
   const quotaOptions: FilterOption[] = [
     {
       value: QUOTA_TYPES.ALL,
@@ -280,6 +344,14 @@ export function PricingSidebar(props: PricingSidebarProps) {
           options={vendorOptions}
           onChange={props.onVendorChange}
         />
+        {isAdmin && channelOptions.length > 1 && (
+          <FilterSection
+            title={t('Channels')}
+            value={props.channelFilter}
+            options={channelOptions}
+            onChange={props.onChannelChange}
+          />
+        )}
         <FilterSection
           title={t('Model Tags')}
           value={props.tagFilter}

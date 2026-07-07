@@ -1,4 +1,10 @@
-import { RefreshCw, TrendingUp, WalletCards } from 'lucide-react'
+import {
+  AlertTriangle,
+  Gauge,
+  RefreshCw,
+  TrendingUp,
+  WalletCards,
+} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -24,9 +30,12 @@ import {
 
 import {
   getFinanceReport,
+  getPACPriceMonitorReport,
   type FinanceModelRow,
   type FinanceUserRow,
   type FinanceReportData,
+  type PACPriceMonitorData,
+  type PACPriceMonitorRow,
 } from './api'
 import { BalancesDrawer } from './drawers/balances-drawer'
 import { OrdersDrawer } from './drawers/orders-drawer'
@@ -34,6 +43,7 @@ import { UserDetailDrawer } from './drawers/user-detail-drawer'
 import {
   formatFinanceAmount,
   formatFinancePercent,
+  formatPACMonitorStatus,
   type getFinanceCurrencyConfig,
   startOfToday,
   addDays,
@@ -199,13 +209,119 @@ function UserTable({
   )
 }
 
+function pacMonitorBadgeClass(status: PACPriceMonitorRow['status']): string {
+  if (status === 'risk') {
+    return 'bg-rose-50 text-rose-700 dark:bg-rose-950'
+  }
+  if (status === 'changed') {
+    return 'bg-amber-50 text-amber-700 dark:bg-amber-950'
+  }
+  if (status === 'unknown') {
+    return 'bg-slate-50 text-slate-700 dark:bg-slate-800'
+  }
+  return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950'
+}
+
+function PACMonitorTable({
+  rows,
+  currency,
+}: {
+  rows: PACPriceMonitorRow[]
+  currency: ReturnType<typeof getFinanceCurrencyConfig>
+}) {
+  const { t } = useTranslation()
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t('渠道')}</TableHead>
+          <TableHead>{t('模型')}</TableHead>
+          <TableHead>{t('状态')}</TableHead>
+          <TableHead className='text-right'>{t('我方价')}</TableHead>
+          <TableHead className='text-right'>{t('上游价')}</TableHead>
+          <TableHead className='text-right'>{t('毛利率')}</TableHead>
+          <TableHead className='text-right'>{t('区间收入')}</TableHead>
+          <TableHead className='text-right'>{t('区间成本')}</TableHead>
+          <TableHead className='text-right'>{t('区间盈利')}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={`${row.channel_id}:${row.model_name}`}>
+            <TableCell className='font-medium'>{row.channel_name}</TableCell>
+            <TableCell>{row.model_name}</TableCell>
+            <TableCell>
+              <Badge className={pacMonitorBadgeClass(row.status)}>
+                {formatPACMonitorStatus(row.status)}
+              </Badge>
+              {row.price_changed && row.status !== 'changed' ? (
+                <Badge variant='outline' className='ml-1'>
+                  {t('价格变更')}
+                </Badge>
+              ) : null}
+            </TableCell>
+            <TableCell className='text-right'>
+              <div>
+                {formatFinanceAmount(row.local_input_price, '$')} /{' '}
+                {formatFinanceAmount(row.local_output_price, '$')}
+              </div>
+              {row.upstream_group ? (
+                <div className='text-muted-foreground text-xs'>
+                  {t('建议')}{' '}
+                  {formatFinanceAmount(row.recommended_input_price, '$')} /{' '}
+                  {formatFinanceAmount(row.recommended_output_price, '$')}
+                </div>
+              ) : null}
+            </TableCell>
+            <TableCell className='text-right'>
+              {row.upstream_group ? (
+                <>
+                  {formatFinanceAmount(row.upstream_input_price, '$')} /{' '}
+                  {formatFinanceAmount(row.upstream_output_price, '$')}
+                </>
+              ) : (
+                '-'
+              )}
+            </TableCell>
+            <TableCell className='text-right'>
+              {formatFinancePercent(row.gross_margin)}
+            </TableCell>
+            <TableCell className='text-right'>
+              {formatFinanceAmount(row.revenue, currency)}
+            </TableCell>
+            <TableCell className='text-right'>
+              {formatFinanceAmount(row.estimated_upstream_cost, currency)}
+            </TableCell>
+            <TableCell className='text-right'>
+              <span
+                className={
+                  Number(row.gross_profit) < 0
+                    ? 'text-red-500'
+                    : 'text-green-600'
+                }
+              >
+                {formatFinanceAmount(row.gross_profit, currency)}
+              </span>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
 export function FinanceReport() {
   const { t } = useTranslation()
   const currency = { symbol: '¥', rate: 1, type: 'CNY' }
   // 默认全部范围：空值 -> toTimestamp 返回 0 -> 后端不按时间过滤
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
+  const [modelName, setModelName] = useState('')
+  const [channelId, setChannelId] = useState('')
   const [report, setReport] = useState<FinanceReportData | null>(null)
+  const [priceMonitor, setPriceMonitor] = useState<PACPriceMonitorData | null>(
+    null
+  )
   const [loading, setLoading] = useState(false)
   const [ordersOpen, setOrdersOpen] = useState(false)
   const [balancesOpen, setBalancesOpen] = useState(false)
@@ -226,15 +342,22 @@ export function FinanceReport() {
   const loadReport = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getFinanceReport({
+      const params = {
         start_timestamp: toTimestamp(startTime),
         end_timestamp: toTimestamp(endTime),
-      })
+        model_name: modelName.trim() || undefined,
+        channel: Number(channelId) > 0 ? Number(channelId) : undefined,
+      }
+      const [data, monitorData] = await Promise.all([
+        getFinanceReport(params),
+        getPACPriceMonitorReport(params),
+      ])
       setReport(data)
+      setPriceMonitor(monitorData)
     } finally {
       setLoading(false)
     }
-  }, [startTime, endTime])
+  }, [startTime, endTime, modelName, channelId])
 
   useEffect(() => {
     let cancelled = false
@@ -247,6 +370,7 @@ export function FinanceReport() {
   }, [loadReport])
 
   const summary = report?.summary
+  const monitorSummary = priceMonitor?.summary
 
   return (
     <SectionPageLayout>
@@ -270,6 +394,20 @@ export function FinanceReport() {
             type='datetime-local'
             value={endTime}
             onChange={(e) => setEndTime(e.target.value)}
+          />
+          <input
+            className='border-input bg-background h-8 w-40 rounded-md border px-2 text-sm'
+            placeholder={t('模型名')}
+            value={modelName}
+            onChange={(e) => setModelName(e.target.value)}
+          />
+          <input
+            className='border-input bg-background h-8 w-24 rounded-md border px-2 text-sm'
+            min={1}
+            placeholder={t('渠道 ID')}
+            type='number'
+            value={channelId}
+            onChange={(e) => setChannelId(e.target.value)}
           />
           <Button variant='outline' onClick={loadReport} disabled={loading}>
             {loading ? <Spinner /> : <RefreshCw size={14} />}
@@ -330,6 +468,73 @@ export function FinanceReport() {
                 onClick={() => setBalancesOpen(true)}
               />
             </div>
+
+            <Card className='mb-4'>
+              <CardHeader className='border-b'>
+                <CardTitle className='flex items-center gap-2'>
+                  <Gauge size={16} />
+                  {t('PAC 价格监控')}
+                </CardTitle>
+                <CardAction>
+                  <Badge
+                    variant={
+                      (monitorSummary?.risk_models ?? 0) > 0 ||
+                      (monitorSummary?.unknown_models ?? 0) > 0
+                        ? 'destructive'
+                        : 'secondary'
+                    }
+                  >
+                    {monitorSummary?.checked_models ?? 0} {t('个模型')}
+                  </Badge>
+                </CardAction>
+              </CardHeader>
+              <CardContent className='p-0'>
+                <div className='grid grid-cols-2 border-b md:grid-cols-4'>
+                  <div className='border-r p-4'>
+                    <div className='text-muted-foreground text-xs'>
+                      {t('价格变更')}
+                    </div>
+                    <div className='mt-1 text-xl font-semibold'>
+                      {monitorSummary?.changed_prices ?? 0}
+                    </div>
+                  </div>
+                  <div className='border-r p-4'>
+                    <div className='text-muted-foreground text-xs'>
+                      {t('低毛利')}
+                    </div>
+                    <div className='mt-1 flex items-center gap-2 text-xl font-semibold'>
+                      {(monitorSummary?.risk_models ?? 0) > 0 ? (
+                        <AlertTriangle className='text-destructive size-4' />
+                      ) : null}
+                      {monitorSummary?.risk_models ?? 0}
+                    </div>
+                  </div>
+                  <div className='border-r p-4'>
+                    <div className='text-muted-foreground text-xs'>
+                      {t('未知价格')}
+                    </div>
+                    <div className='mt-1 text-xl font-semibold'>
+                      {monitorSummary?.unknown_models ?? 0}
+                    </div>
+                  </div>
+                  <div className='p-4'>
+                    <div className='text-muted-foreground text-xs'>
+                      {t('区间盈利')}
+                    </div>
+                    <div className='mt-1 text-xl font-semibold'>
+                      {formatFinanceAmount(
+                        monitorSummary?.gross_profit,
+                        currency
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <PACMonitorTable
+                  rows={priceMonitor?.rows ?? []}
+                  currency={currency}
+                />
+              </CardContent>
+            </Card>
 
             <div className='grid grid-cols-1 gap-4 xl:grid-cols-3'>
               <Card className='xl:col-span-2'>

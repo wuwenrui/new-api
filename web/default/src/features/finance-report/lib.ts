@@ -75,6 +75,21 @@ export function formatFinancePercent(value: unknown): string {
   return `${percent.toFixed(2)}%`
 }
 
+export function formatPACMonitorStatus(value: unknown): string {
+  switch (value) {
+    case 'healthy':
+      return '正常'
+    case 'risk':
+      return '低毛利'
+    case 'changed':
+      return '价格变更'
+    case 'unknown':
+      return '未知'
+    default:
+      return '未知'
+  }
+}
+
 export function buildFinanceReportQuery(
   params: Record<string, unknown> = {}
 ): string {

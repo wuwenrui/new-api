@@ -20,6 +20,7 @@ import (
 func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(channelTestHandler{})
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
+	service.RegisterSystemTaskHandler(pacPriceMonitorHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 }
@@ -109,6 +110,40 @@ func (modelUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runne
 	}
 	summary := runChannelUpstreamModelUpdateTaskOnce(ctx, payload.Manual, !payload.Manual, service.NewSystemTaskProgressReporter(task, runnerID))
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+}
+
+type pacPriceMonitorHandler struct{}
+
+func (pacPriceMonitorHandler) Type() string { return model.SystemTaskTypePACPriceMonitor }
+
+func (pacPriceMonitorHandler) Enabled() bool {
+	return common.GetEnvOrDefaultBool("PAC_PRICE_MONITOR_TASK_ENABLED", true)
+}
+
+func (pacPriceMonitorHandler) Interval() time.Duration {
+	intervalHours := common.GetEnvOrDefault("PAC_PRICE_MONITOR_INTERVAL_HOURS", 24)
+	if intervalHours < 1 {
+		intervalHours = 24
+	}
+	return time.Duration(intervalHours) * time.Hour
+}
+
+func (pacPriceMonitorHandler) NewPayload() any { return nil }
+
+func (pacPriceMonitorHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	now := common.GetTimestamp()
+	report, err := service.BuildPACPriceMonitorReportWithLatestSnapshot(ctx, service.PACPriceMonitorParams{
+		StartTimestamp: now - int64((24 * time.Hour).Seconds()),
+		EndTimestamp:   now,
+	})
+	if err != nil {
+		service.NotifyUpstreamModelUpdateWatchers("PAC 价格巡检失败", "PAC 价格巡检失败："+err.Error())
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	subject, content := service.BuildPACPriceMonitorNotification(report)
+	service.NotifyUpstreamModelUpdateWatchers(subject, content)
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, report, nil)
 }
 
 // midjourneyPollHandler runs one Midjourney polling pass per scheduled run.

@@ -71,6 +71,19 @@ export function filterByGroup(
 }
 
 /**
+ * Filter models by channel
+ */
+export function filterByChannel(
+  models: PricingModel[],
+  channel: string
+): PricingModel[] {
+  if (channel === FILTER_ALL) return models
+  return models.filter((m) =>
+    m.channels?.some((item) => String(item.id) === channel)
+  )
+}
+
+/**
  * Filter models by quota type
  */
 export function filterByQuotaType(
@@ -143,12 +156,14 @@ export function filterAndSortModels(
     quotaType: string
     endpointType: string
     tag: string
+    channel: string
     sortBy: string
   }
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
   result = filterByVendor(result, filters.vendor)
   result = filterByGroup(result, filters.group)
+  result = filterByChannel(result, filters.channel)
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)
@@ -183,7 +198,7 @@ export function extractAllTags(models: PricingModel[]): string[] {
     }
   })
 
-  return Array.from(tagSet).sort((a, b) => a.localeCompare(b))
+  return [...tagSet].sort((a, b) => a.localeCompare(b))
 }
 
 /**

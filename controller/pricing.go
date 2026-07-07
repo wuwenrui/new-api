@@ -33,6 +33,19 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 	return filtered
 }
 
+func filterPricingChannels(pricing []model.Pricing, includeChannels bool) []model.Pricing {
+	if includeChannels || len(pricing) == 0 {
+		return pricing
+	}
+
+	filtered := make([]model.Pricing, len(pricing))
+	copy(filtered, pricing)
+	for i := range filtered {
+		filtered[i].Channels = nil
+	}
+	return filtered
+}
+
 func GetPricing(c *gin.Context) {
 	pricing := model.GetPricing()
 	userId, exists := c.Get("id")
@@ -57,6 +70,7 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	pricing = filterPricingChannels(pricing, c.GetInt("role") >= common.RoleAdminUser)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {

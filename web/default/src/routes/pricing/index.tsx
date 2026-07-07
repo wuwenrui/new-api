@@ -28,6 +28,7 @@ const pricingSearchSchema = z.object({
   sort: z.string().optional(),
   vendor: z.string().optional(),
   group: z.string().optional(),
+  channel: z.string().optional(),
   quotaType: z.string().optional(),
   endpointType: z.string().optional(),
   tag: z.string().optional(),

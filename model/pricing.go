@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"sync"
@@ -36,6 +37,14 @@ type Pricing struct {
 	BillingMode            string                  `json:"billing_mode,omitempty"`
 	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	Channels               []PricingChannel        `json:"channels,omitempty"`
+}
+
+type PricingChannel struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Type     int    `json:"type"`
+	Priority int64  `json:"priority"`
 }
 
 type PricingVendor struct {
@@ -189,6 +198,7 @@ func updatePricing() {
 	}
 
 	modelGroupsMap := make(map[string]*types.Set[string])
+	modelChannelsMap := make(map[string]map[int]PricingChannel)
 
 	for _, ability := range enableAbilities {
 		groups, ok := modelGroupsMap[ability.Model]
@@ -197,6 +207,26 @@ func updatePricing() {
 			modelGroupsMap[ability.Model] = groups
 		}
 		groups.Add(ability.Group)
+
+		if ability.ChannelId > 0 {
+			channels, ok := modelChannelsMap[ability.Model]
+			if !ok {
+				channels = make(map[int]PricingChannel)
+				modelChannelsMap[ability.Model] = channels
+			}
+			priority := int64(0)
+			if ability.Priority != nil {
+				priority = *ability.Priority
+			}
+			if existing, ok := channels[ability.ChannelId]; !ok || priority > existing.Priority {
+				channels[ability.ChannelId] = PricingChannel{
+					ID:       ability.ChannelId,
+					Name:     ability.ChannelName,
+					Type:     ability.ChannelType,
+					Priority: priority,
+				}
+			}
+		}
 	}
 
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
@@ -283,6 +313,7 @@ func updatePricing() {
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
+			Channels:               pricingChannelsFromMap(modelChannelsMap[model]),
 		}
 
 		// 补充模型元数据（描述、标签、供应商、状态）
@@ -348,6 +379,27 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
+}
+
+func pricingChannelsFromMap(channelMap map[int]PricingChannel) []PricingChannel {
+	if len(channelMap) == 0 {
+		return nil
+	}
+
+	channels := make([]PricingChannel, 0, len(channelMap))
+	for _, channel := range channelMap {
+		channels = append(channels, channel)
+	}
+	sort.Slice(channels, func(i, j int) bool {
+		if channels[i].Priority != channels[j].Priority {
+			return channels[i].Priority > channels[j].Priority
+		}
+		if channels[i].Name != channels[j].Name {
+			return channels[i].Name < channels[j].Name
+		}
+		return channels[i].ID < channels[j].ID
+	})
+	return channels
 }
 
 func mergeModelEndpointTypes(defaultEndpoints []string, endpointsConfig string) []string {
