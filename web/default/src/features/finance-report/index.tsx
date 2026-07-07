@@ -23,6 +23,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -44,6 +45,7 @@ import {
   formatFinanceAmount,
   formatFinancePercent,
   formatPACMonitorStatus,
+  sumFinanceReportRows,
   type getFinanceCurrencyConfig,
   startOfToday,
   addDays,
@@ -59,6 +61,10 @@ const METRIC_TONE = {
   cash: 'bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
   refund: 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-400',
 } as const
+
+function profitAmountClass(value: unknown): string {
+  return Number(value) < 0 ? 'text-red-500' : 'text-green-600'
+}
 
 function MetricCard({
   title,
@@ -111,6 +117,7 @@ function ModelTable({
   currency: ReturnType<typeof getFinanceCurrencyConfig>
 }) {
   const { t } = useTranslation()
+  const totals = sumFinanceReportRows(rows)
   return (
     <Table>
       <TableHeader>
@@ -135,13 +142,7 @@ function ModelTable({
               {formatFinanceAmount(row.estimated_upstream_cost, currency)}
             </TableCell>
             <TableCell className='text-right'>
-              <span
-                className={
-                  Number(row.gross_profit) < 0
-                    ? 'text-red-500'
-                    : 'text-green-600'
-                }
-              >
+              <span className={profitAmountClass(row.gross_profit)}>
                 {formatFinanceAmount(row.gross_profit, currency)}
               </span>
             </TableCell>
@@ -151,6 +152,26 @@ function ModelTable({
           </TableRow>
         ))}
       </TableBody>
+      <TableFooter>
+        <TableRow>
+          <TableCell className='font-semibold'>{t('总计')}</TableCell>
+          <TableCell className='text-right'>{totals.requests}</TableCell>
+          <TableCell className='text-right'>
+            {formatFinanceAmount(totals.usage_amount, currency)}
+          </TableCell>
+          <TableCell className='text-right'>
+            {formatFinanceAmount(totals.estimated_upstream_cost, currency)}
+          </TableCell>
+          <TableCell className='text-right'>
+            <span className={profitAmountClass(totals.gross_profit)}>
+              {formatFinanceAmount(totals.gross_profit, currency)}
+            </span>
+          </TableCell>
+          <TableCell className='text-right'>
+            {formatFinancePercent(totals.gross_margin)}
+          </TableCell>
+        </TableRow>
+      </TableFooter>
     </Table>
   )
 }
@@ -165,6 +186,7 @@ function UserTable({
   onSelectUser: (username: string) => void
 }) {
   const { t } = useTranslation()
+  const totals = sumFinanceReportRows(rows)
   return (
     <Table>
       <TableHeader>
@@ -205,6 +227,29 @@ function UserTable({
           </TableRow>
         ))}
       </TableBody>
+      <TableFooter>
+        <TableRow>
+          <TableCell className='font-semibold'>{t('总计')}</TableCell>
+          <TableCell className='text-right'>
+            {formatFinanceAmount(totals.balance, currency)}
+          </TableCell>
+          <TableCell className='text-right'>
+            {formatFinanceAmount(totals.total_topup, currency)}
+          </TableCell>
+          <TableCell className='text-right'>{totals.requests}</TableCell>
+          <TableCell className='text-right'>
+            {formatFinanceAmount(totals.usage_amount, currency)}
+          </TableCell>
+          <TableCell className='text-right'>
+            <span className={profitAmountClass(totals.gross_profit)}>
+              {formatFinanceAmount(totals.gross_profit, currency)}
+            </span>
+          </TableCell>
+          <TableCell className='text-right'>
+            {formatFinancePercent(totals.gross_margin)}
+          </TableCell>
+        </TableRow>
+      </TableFooter>
     </Table>
   )
 }
@@ -230,6 +275,7 @@ function PACMonitorTable({
   currency: ReturnType<typeof getFinanceCurrencyConfig>
 }) {
   const { t } = useTranslation()
+  const totals = sumFinanceReportRows(rows)
   return (
     <Table>
       <TableHeader>
@@ -293,19 +339,36 @@ function PACMonitorTable({
               {formatFinanceAmount(row.estimated_upstream_cost, currency)}
             </TableCell>
             <TableCell className='text-right'>
-              <span
-                className={
-                  Number(row.gross_profit) < 0
-                    ? 'text-red-500'
-                    : 'text-green-600'
-                }
-              >
+              <span className={profitAmountClass(row.gross_profit)}>
                 {formatFinanceAmount(row.gross_profit, currency)}
               </span>
             </TableCell>
           </TableRow>
         ))}
       </TableBody>
+      <TableFooter>
+        <TableRow>
+          <TableCell className='font-semibold'>{t('总计')}</TableCell>
+          <TableCell />
+          <TableCell />
+          <TableCell />
+          <TableCell />
+          <TableCell className='text-right'>
+            {formatFinancePercent(totals.gross_margin)}
+          </TableCell>
+          <TableCell className='text-right'>
+            {formatFinanceAmount(totals.usage_amount, currency)}
+          </TableCell>
+          <TableCell className='text-right'>
+            {formatFinanceAmount(totals.estimated_upstream_cost, currency)}
+          </TableCell>
+          <TableCell className='text-right'>
+            <span className={profitAmountClass(totals.gross_profit)}>
+              {formatFinanceAmount(totals.gross_profit, currency)}
+            </span>
+          </TableCell>
+        </TableRow>
+      </TableFooter>
     </Table>
   )
 }
