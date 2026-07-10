@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import type { PricingModel } from '../types'
-import { formatGroupDiscountLabel } from './price'
+import {
+  formatDisplayDiscountLabel,
+  formatGroupDiscountLabel,
+  formatPrice,
+} from './price'
 
 function tokenModel(overrides: Partial<PricingModel> = {}): PricingModel {
   return {
@@ -18,6 +22,25 @@ function tokenModel(overrides: Partial<PricingModel> = {}): PricingModel {
 }
 
 describe('pricing discount labels', () => {
+  test('formats the user-visible discount with the displayed group ratio', () => {
+    const model = tokenModel({
+      model_ratio: 5,
+      completion_ratio: 5,
+      group_ratio: { default: 2.5 },
+    })
+
+    assert.equal(formatPrice(model, 'input', 'M', false, 1, 1, 'default'), '$25')
+    assert.equal(formatPrice(model, 'output', 'M', false, 1, 1, 'default'), '$125')
+    assert.equal(
+      formatDisplayDiscountLabel(model, 'default', {
+        showRechargePrice: false,
+        priceRate: 1,
+        usdExchangeRate: 1,
+      }),
+      '3.6折'
+    )
+  })
+
   test('formats configured original price as a discount label', () => {
     assert.equal(
       formatGroupDiscountLabel(tokenModel(), 'default', {
@@ -40,6 +63,18 @@ describe('pricing discount labels', () => {
           showRechargePrice: true,
           priceRate: 5,
           usdExchangeRate: 7,
+        }
+      ),
+      null
+    )
+    assert.equal(
+      formatDisplayDiscountLabel(
+        tokenModel({ original_price: undefined }),
+        'default',
+        {
+          showRechargePrice: false,
+          priceRate: 1,
+          usdExchangeRate: 1,
         }
       ),
       null

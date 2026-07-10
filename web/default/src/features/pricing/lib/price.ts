@@ -174,6 +174,20 @@ export function formatGroupDiscountLabel(
   )
 }
 
+export function formatDisplayDiscountLabel(
+  model: PricingModel,
+  selectedGroup: string | undefined,
+  options: Omit<DiscountOptions, 'groupRatio'>
+): string | null {
+  const displayGroup = '_display'
+  return formatGroupDiscountLabel(model, displayGroup, {
+    ...options,
+    groupRatio: {
+      [displayGroup]: getDisplayGroupRatio(model, selectedGroup),
+    },
+  })
+}
+
 /**
  * Apply recharge rate to price
  *

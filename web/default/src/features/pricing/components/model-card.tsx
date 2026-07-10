@@ -32,7 +32,11 @@ import {
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
-import { formatPrice, formatRequestPrice } from '../lib/price'
+import {
+  formatDisplayDiscountLabel,
+  formatPrice,
+  formatRequestPrice,
+} from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
 
@@ -78,6 +82,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         ),
       })
     : null
+  const discountLabel =
+    isTokenBased && !isDynamicPricing
+      ? formatDisplayDiscountLabel(props.model, props.selectedGroup, {
+          showRechargePrice,
+          priceRate,
+          usdExchangeRate,
+        })
+      : null
 
   const primaryGroup = groups[0]
   const bottomTags = [...endpoints.slice(0, 2), ...tags.slice(0, 2)]
@@ -219,6 +231,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             </h3>
             <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs sm:mt-1 sm:gap-x-3'>
               {priceSummary}
+              {discountLabel && (
+                <StatusBadge
+                  label={discountLabel}
+                  variant='warning'
+                  size='sm'
+                  copyable={false}
+                />
+              )}
             </div>
           </div>
         </div>

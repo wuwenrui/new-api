@@ -289,6 +289,7 @@ export function Pricing() {
               usdExchangeRate={usdExchangeRate ?? 1}
               tokenUnit={tokenUnit}
               showRechargePrice={showRechargePrice}
+              selectedGroup={groupFilter}
             />
           )}
         </PageTransition>

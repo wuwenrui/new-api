@@ -38,6 +38,7 @@ import { StaticDataTable } from '@/components/data-table'
 import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
+import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -62,6 +63,7 @@ import { cn } from '@/lib/utils'
 import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
 import { usePricingData } from '../hooks/use-pricing-data'
 import {
+  getDynamicDisplayGroupRatio,
   getDynamicPriceEntries,
   getDynamicPricingSummary,
   getDynamicPricingTiers,
@@ -70,9 +72,12 @@ import {
 import { parseTags } from '../lib/filters'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
 import {
+  formatDisplayDiscountLabel,
   formatFixedPrice,
   formatGroupDiscountLabel,
   formatGroupPrice,
+  formatPrice,
+  formatRequestPrice,
 } from '../lib/price'
 import type {
   ModelCapability,
@@ -597,18 +602,20 @@ function PriceSection(props: {
   usdExchangeRate: number
   tokenUnit: TokenUnit
   showRechargePrice: boolean
+  selectedGroup?: string
 }) {
   const { t } = useTranslation()
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = props.tokenUnit === 'K' ? '1K' : '1M'
-  const baseGroupKey = '_base'
-  const baseGroupRatioMap = { [baseGroupKey]: 1 }
   const dynamicSummary = getDynamicPricingSummary(props.model, {
     tokenUnit: props.tokenUnit,
     showRechargePrice: props.showRechargePrice,
     priceRate: props.priceRate,
     usdExchangeRate: props.usdExchangeRate,
-    groupRatioMultiplier: 1,
+    groupRatioMultiplier: getDynamicDisplayGroupRatio(
+      props.model,
+      props.selectedGroup
+    ),
   })
 
   const primaryPriceTypes: { label: string; type: PriceType }[] = [
@@ -736,13 +743,12 @@ function PriceSection(props: {
             {t('Per request')}
           </span>
           <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
-            {formatFixedPrice(
+            {formatRequestPrice(
               props.model,
-              baseGroupKey,
               props.showRechargePrice,
               props.priceRate,
               props.usdExchangeRate,
-              baseGroupRatioMap
+              props.selectedGroup
             )}
           </span>
         </div>
@@ -750,18 +756,26 @@ function PriceSection(props: {
     )
   }
 
+  const discountLabel = formatDisplayDiscountLabel(
+    props.model,
+    props.selectedGroup,
+    {
+      showRechargePrice: props.showRechargePrice,
+      priceRate: props.priceRate,
+      usdExchangeRate: props.usdExchangeRate,
+    }
+  )
   const secondaryItems = secondaryPriceTypes.filter((p) => p.available)
   const renderPrice = (type: PriceType) => (
     <>
-      {formatGroupPrice(
+      {formatPrice(
         props.model,
-        baseGroupKey,
         type,
         props.tokenUnit,
         props.showRechargePrice,
         props.priceRate,
         props.usdExchangeRate,
-        baseGroupRatioMap
+        props.selectedGroup
       )}
       <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
         / {tokenUnitLabel}
@@ -771,7 +785,20 @@ function PriceSection(props: {
 
   return (
     <section>
-      <SectionTitle>{t('Base Price')}</SectionTitle>
+      <SectionTitle>
+        <span className='inline-flex items-center gap-2'>
+          {t('Price')}
+          {discountLabel && (
+            <StatusBadge
+              label={discountLabel}
+              variant='warning'
+              size='sm'
+              copyable={false}
+              className='normal-case'
+            />
+          )}
+        </span>
+      </SectionTitle>
       <div className='grid grid-cols-2 gap-2'>
         {primaryPriceTypes.map((item) => (
           <div key={item.type} className='bg-muted/20 rounded-lg border p-3'>
@@ -1174,6 +1201,7 @@ export interface ModelDetailsContentProps {
   usdExchangeRate: number
   tokenUnit: TokenUnit
   showRechargePrice?: boolean
+  selectedGroup?: string
 }
 
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
@@ -1217,6 +1245,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
               usdExchangeRate={props.usdExchangeRate}
               tokenUnit={props.tokenUnit}
               showRechargePrice={showRechargePrice}
+              selectedGroup={props.selectedGroup}
             />
             {isDynamic && (
               <DynamicPricingBreakdown billingExpr={props.model.billing_expr} />
@@ -1380,6 +1409,7 @@ export function ModelDetails() {
           usdExchangeRate={usdExchangeRate ?? 1}
           tokenUnit={tokenUnit}
           showRechargePrice={search.rechargePrice ?? false}
+          selectedGroup={search.group}
           endpointMap={
             (endpointMap as Record<
               string,
