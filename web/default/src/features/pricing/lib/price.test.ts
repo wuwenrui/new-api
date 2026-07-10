@@ -59,6 +59,9 @@ describe('pricing discount labels', () => {
       { modelRatio: 1.5, completionRatio: 5, input: 21, output: 105, expected: '3.6折' },
       { modelRatio: 1, completionRatio: 5, input: 14, output: 70, expected: '3.6折' },
       { modelRatio: 0.4, completionRatio: 3, input: 14, output: 42, expected: '1.4折' },
+      { modelRatio: 3, completionRatio: 6, input: 35, output: 210, expected: '4.3折' },
+      { modelRatio: 1.8, completionRatio: 6, input: 17.5, output: 105, expected: '5.1折' },
+      { modelRatio: 1.2, completionRatio: 6, input: 7, output: 42, expected: '8.6折' },
     ]
 
     for (const item of cases) {
