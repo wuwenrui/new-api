@@ -134,3 +134,30 @@ func TestGetPricingIncludesConfiguredOriginalPrice(t *testing.T) {
 	require.Equal(t, 70.0, pricing.OriginalPrice.Input)
 	require.Equal(t, 350.0, pricing.OriginalPrice.Output)
 }
+
+func TestGetPricingIncludesDefaultOriginalPrice(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       2104,
+		Username: "pricing-default-original-price-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+		Role:     common.RoleCommonUser,
+		AffCode:  "pricing_default_original_price",
+	}).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: "default", Model: "grok-4.5", ChannelId: 3104, Enabled: true,
+	}).Error)
+	ratio_setting.InitRatioSettings()
+	model.InvalidatePricingCache()
+
+	payload := callPricing(t, 2104, common.RoleCommonUser)
+
+	byName := pricingByModelName(payload.Data)
+	pricing, ok := byName["grok-4.5"]
+	require.True(t, ok)
+	require.NotNil(t, pricing.OriginalPrice)
+	require.Equal(t, 14.0, pricing.OriginalPrice.Input)
+	require.Equal(t, 42.0, pricing.OriginalPrice.Output)
+}

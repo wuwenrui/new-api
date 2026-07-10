@@ -6,12 +6,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultModelOriginalPriceIncludesFable5(t *testing.T) {
+func TestDefaultModelOriginalPricesIncludeDiscountedModels(t *testing.T) {
 	InitRatioSettings()
 
-	price, ok := GetModelOriginalPrice("claude-fable-5")
+	expected := map[string]ModelOriginalPrice{
+		"claude-fable-5":    {Input: 70, Output: 350},
+		"claude-opus-4-6":   {Input: 35, Output: 175},
+		"claude-opus-4-8":   {Input: 35, Output: 175},
+		"claude-sonnet-4-6": {Input: 21, Output: 105},
+		"claude-sonnet-5":   {Input: 14, Output: 70},
+		"grok-4.5":          {Input: 14, Output: 42},
+	}
 
-	require.True(t, ok)
-	require.Equal(t, 70.0, price.Input)
-	require.Equal(t, 350.0, price.Output)
+	for model, expectedPrice := range expected {
+		price, ok := GetModelOriginalPrice(model)
+		require.True(t, ok, model)
+		require.Equal(t, expectedPrice, price, model)
+	}
 }

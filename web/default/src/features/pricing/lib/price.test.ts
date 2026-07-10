@@ -53,6 +53,35 @@ describe('pricing discount labels', () => {
     )
   })
 
+  test('formats configured model discounts for the default group', () => {
+    const cases = [
+      { modelRatio: 2.5, completionRatio: 5, input: 35, output: 175, expected: '3.6折' },
+      { modelRatio: 1.5, completionRatio: 5, input: 21, output: 105, expected: '3.6折' },
+      { modelRatio: 1, completionRatio: 5, input: 14, output: 70, expected: '3.6折' },
+      { modelRatio: 0.4, completionRatio: 3, input: 14, output: 42, expected: '1.4折' },
+    ]
+
+    for (const item of cases) {
+      assert.equal(
+        formatDisplayDiscountLabel(
+          tokenModel({
+            model_ratio: item.modelRatio,
+            completion_ratio: item.completionRatio,
+            group_ratio: { default: 2.5 },
+            original_price: { input: item.input, output: item.output },
+          }),
+          'default',
+          {
+            showRechargePrice: false,
+            priceRate: 1,
+            usdExchangeRate: 1,
+          }
+        ),
+        item.expected
+      )
+    }
+  })
+
   test('hides discount when original price is missing', () => {
     assert.equal(
       formatGroupDiscountLabel(
