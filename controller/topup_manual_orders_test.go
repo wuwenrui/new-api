@@ -101,3 +101,21 @@ func TestGetManualTopUpOrdersFiltersSearchesAndSummarizes(t *testing.T) {
 	require.Len(t, response.Data.Summary.ByMethod, 1)
 	require.Equal(t, model.PaymentMethodManualWechat, response.Data.Summary.ByMethod[0].PaymentMethod)
 }
+
+func TestGetManualTopUpOrdersSummaryExcludesFailedFromTotals(t *testing.T) {
+	setupTopUpAdminCompleteTestDB(t)
+	seedManualTopUpOrderForList(t, "alice", "MANUAL-PENDING-TOTAL", model.PaymentProviderManualTopUp, common.TopUpStatusPending, 50, 50, 1000)
+	seedManualTopUpOrderForList(t, "bob", "MANUAL-SUCCESS-TOTAL", model.PaymentProviderManualTopUp, common.TopUpStatusSuccess, 80, 80, 1200)
+	seedManualTopUpOrderForList(t, "carol", "MANUAL-FAILED-TOTAL", model.PaymentProviderManualTopUp, common.TopUpStatusFailed, 90, 90, 1300)
+
+	response := callManualTopUpOrders(t, "/api/user/topup/manual?p=1&page_size=20")
+
+	require.Equal(t, 3, response.Data.Total)
+	require.Equal(t, int64(2), response.Data.Summary.TotalCount)
+	require.InDelta(t, 130, response.Data.Summary.TotalMoney, 0.000001)
+	require.InDelta(t, 80, response.Data.Summary.SuccessMoney, 0.000001)
+	require.Len(t, response.Data.Summary.ByStatus, 3)
+	require.Len(t, response.Data.Summary.ByMethod, 1)
+	require.Equal(t, int64(2), response.Data.Summary.ByMethod[0].Count)
+	require.InDelta(t, 130, response.Data.Summary.ByMethod[0].Money, 0.000001)
+}

@@ -836,3 +836,24 @@ func ConfirmManualTopUpStatus(c *gin.Context) {
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("人工充值 批量确认状态(不充值) count=%d all=%v operator_ip=%s", count, req.All, c.ClientIP()))
 	common.ApiSuccess(c, gin.H{"count": count})
 }
+
+// CancelManualTopUpStatus 批量作废人工充值订单（仅改为 failed，不给用户充值）。
+func CancelManualTopUpStatus(c *gin.Context) {
+	var req ConfirmManualTopUpStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if !req.All && len(req.TradeNos) == 0 {
+		common.ApiErrorMsg(c, "未选择订单")
+		return
+	}
+
+	count, err := model.CancelManualTopUpStatus(req.TradeNos, req.All)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("人工充值 批量作废 count=%d all=%v operator_ip=%s", count, req.All, c.ClientIP()))
+	common.ApiSuccess(c, gin.H{"count": count})
+}

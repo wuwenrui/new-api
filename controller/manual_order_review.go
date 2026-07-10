@@ -163,6 +163,7 @@ func buildManualOrderSummary(query *gorm.DB, tableAlias string) (manualOrderSumm
 
 	var byMethod []manualMethodBreakdown
 	if err := query.Session(&gorm.Session{}).
+		Where(tableAlias+".status IN ?", []string{common.TopUpStatusPending, common.TopUpStatusSuccess}).
 		Select(tableAlias + ".payment_method AS payment_method, COUNT(*) AS count, COALESCE(SUM(" + tableAlias + ".money), 0) AS money").
 		Group(tableAlias + ".payment_method").
 		Order(tableAlias + ".payment_method ASC").
@@ -175,15 +176,17 @@ func buildManualOrderSummary(query *gorm.DB, tableAlias string) (manualOrderSumm
 		ByMethod: byMethod,
 	}
 	for _, item := range byStatus {
-		summary.TotalCount += item.Count
-		summary.TotalMoney += item.Money
 		switch item.Status {
 		case common.TopUpStatusPending:
 			summary.PendingCount = item.Count
 			summary.PendingMoney = item.Money
+			summary.TotalCount += item.Count
+			summary.TotalMoney += item.Money
 		case common.TopUpStatusSuccess:
 			summary.SuccessCount = item.Count
 			summary.SuccessMoney = item.Money
+			summary.TotalCount += item.Count
+			summary.TotalMoney += item.Money
 		case common.TopUpStatusFailed:
 			summary.FailedCount = item.Count
 			summary.FailedMoney = item.Money

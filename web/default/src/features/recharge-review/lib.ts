@@ -89,6 +89,16 @@ export function buildManualOrderQueryParams(
   return query.toString()
 }
 
+export function buildManualStatusPayload(
+  tradeNos: readonly string[] = [],
+  all = false
+): { trade_nos: string[]; all: boolean } {
+  return {
+    trade_nos: [...tradeNos],
+    all,
+  }
+}
+
 export function normalizeManualOrderSummary(
   summary: Partial<ManualOrderSummary> | null | undefined
 ): ManualOrderSummary {

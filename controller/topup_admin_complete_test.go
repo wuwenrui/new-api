@@ -80,6 +80,16 @@ func callAdminCompleteTopUp(t *testing.T, body string) *httptest.ResponseRecorde
 	return recorder
 }
 
+func callCancelManualTopUpStatus(t *testing.T, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/user/topup/cancel-status", bytes.NewBufferString(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	CancelManualTopUpStatus(ctx)
+	return recorder
+}
+
 func reloadUserQuota(t *testing.T, userID int) int {
 	t.Helper()
 	var u model.User
@@ -130,4 +140,26 @@ func TestAdminCompleteTopUpAmountSetRejectsNonManualOrder(t *testing.T) {
 	tp := model.GetTopUpByTradeNo("ADMC_nonmanual1")
 	require.NotNil(t, tp)
 	require.Equal(t, common.TopUpStatusPending, tp.Status)
+}
+
+func TestCancelManualTopUpStatusMarksFailedWithoutCrediting(t *testing.T) {
+	setupTopUpAdminCompleteTestDB(t)
+	user := seedManualTopUpOrder(t, "ADMC_cancel1", model.PaymentProviderManualTopUp, 50, 50)
+
+	recorder := callCancelManualTopUpStatus(t, `{"trade_nos":["ADMC_cancel1"]}`)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count int64 `json:"count"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Equal(t, int64(1), response.Data.Count)
+
+	require.Equal(t, 0, reloadUserQuota(t, user.Id))
+	tp := model.GetTopUpByTradeNo("ADMC_cancel1")
+	require.NotNil(t, tp)
+	require.Equal(t, common.TopUpStatusFailed, tp.Status)
 }

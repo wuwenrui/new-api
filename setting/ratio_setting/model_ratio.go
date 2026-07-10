@@ -303,6 +303,15 @@ var defaultModelPrice = map[string]float64{
 	"veo-3.1-fast-generate-preview":  0.15,
 }
 
+type ModelOriginalPrice struct {
+	Input  float64 `json:"input,omitempty"`
+	Output float64 `json:"output,omitempty"`
+}
+
+var defaultModelOriginalPrice = map[string]ModelOriginalPrice{
+	"claude-fable-5": {Input: 70, Output: 350},
+}
+
 var defaultAudioRatio = map[string]float64{
 	"gpt-4o-audio-preview":         16,
 	"gpt-4o-mini-audio-preview":    66.67,
@@ -322,6 +331,7 @@ var defaultAudioCompletionRatio = map[string]float64{
 }
 
 var modelPriceMap = types.NewRWMap[string, float64]()
+var modelOriginalPriceMap = types.NewRWMap[string, ModelOriginalPrice]()
 var modelRatioMap = types.NewRWMap[string, float64]()
 var completionRatioMap = types.NewRWMap[string, float64]()
 
@@ -335,6 +345,7 @@ var defaultCompletionRatio = map[string]float64{
 // InitRatioSettings initializes all model related settings maps
 func InitRatioSettings() {
 	modelPriceMap.AddAll(defaultModelPrice)
+	modelOriginalPriceMap.AddAll(defaultModelOriginalPrice)
 	modelRatioMap.AddAll(defaultModelRatio)
 	completionRatioMap.AddAll(defaultCompletionRatio)
 	cacheRatioMap.AddAll(defaultCacheRatio)
@@ -354,6 +365,22 @@ func ModelPrice2JSONString() string {
 
 func UpdateModelPriceByJSONString(jsonStr string) error {
 	return types.LoadFromJsonStringWithCallback(modelPriceMap, jsonStr, InvalidateExposedDataCache)
+}
+
+func ModelOriginalPrice2JSONString() string {
+	return modelOriginalPriceMap.MarshalJSONString()
+}
+
+func UpdateModelOriginalPriceByJSONString(jsonStr string) error {
+	return types.LoadFromJsonStringWithCallback(modelOriginalPriceMap, jsonStr, InvalidateExposedDataCache)
+}
+
+func GetModelOriginalPrice(name string) (ModelOriginalPrice, bool) {
+	return modelOriginalPriceMap.Get(FormatMatchingModelName(name))
+}
+
+func GetModelOriginalPriceCopy() map[string]ModelOriginalPrice {
+	return modelOriginalPriceMap.ReadAll()
 }
 
 // GetModelPrice 返回模型的价格，如果模型不存在则返回-1，false

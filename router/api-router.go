@@ -134,6 +134,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/topup/pending-manual", controller.GetPendingManualTopUps)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
 				adminRoute.POST("/topup/confirm-status", controller.ConfirmManualTopUpStatus)
+				adminRoute.POST("/topup/cancel-status", controller.CancelManualTopUpStatus)
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)

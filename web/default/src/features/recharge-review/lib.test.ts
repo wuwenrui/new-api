@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
   buildManualOrderQueryParams,
+  buildManualStatusPayload,
   buildCompletePayload,
   findOrderIndexByTradeNo,
   normalizeManualOrderSummary,
@@ -124,6 +125,22 @@ describe('buildManualOrderQueryParams', () => {
       }),
       'p=1&page_size=20'
     )
+  })
+})
+
+describe('buildManualStatusPayload', () => {
+  test('keeps trade numbers and defaults all to false', () => {
+    assert.deepEqual(buildManualStatusPayload(['TN-001']), {
+      trade_nos: ['TN-001'],
+      all: false,
+    })
+  })
+
+  test('supports all orders', () => {
+    assert.deepEqual(buildManualStatusPayload(undefined, true), {
+      trade_nos: [],
+      all: true,
+    })
   })
 })
 

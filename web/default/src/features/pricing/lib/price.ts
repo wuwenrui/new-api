@@ -36,11 +36,11 @@ export function stripTrailingZeros(formatted: string): string {
   const [, symbol, number, suffix] = match
 
   // Remove commas for processing
-  const cleanNumber = number.replace(/,/g, '')
+  const cleanNumber = number.replaceAll(',', '')
 
   // Convert to number and back to remove trailing zeros
-  const parsed = parseFloat(cleanNumber)
-  if (isNaN(parsed)) return formatted
+  const parsed = Number.parseFloat(cleanNumber)
+  if (Number.isNaN(parsed)) return formatted
 
   // Convert to string, which automatically removes trailing zeros
   let result = parsed.toString()
@@ -95,31 +95,103 @@ function calculateTokenPrice(
     case 'cache':
       return hasRatio(model.cache_ratio)
         ? base * Number(model.cache_ratio)
-        : NaN
+        : Number.NaN
     case 'create_cache':
       return hasRatio(model.create_cache_ratio)
         ? base * Number(model.create_cache_ratio)
-        : NaN
+        : Number.NaN
     case 'image':
       return hasRatio(model.image_ratio)
         ? base * Number(model.image_ratio)
-        : NaN
+        : Number.NaN
     case 'audio_input':
       return hasRatio(model.audio_ratio)
         ? base * Number(model.audio_ratio)
-        : NaN
+        : Number.NaN
     case 'audio_output':
       return hasRatio(model.audio_ratio) &&
         hasRatio(model.audio_completion_ratio)
         ? base *
             Number(model.audio_ratio) *
             Number(model.audio_completion_ratio)
-        : NaN
+        : Number.NaN
   }
 }
 
 function hasRatio(value: number | null | undefined): boolean {
   return value !== undefined && value !== null && Number.isFinite(Number(value))
+}
+
+type DiscountOptions = {
+  groupRatio: Record<string, number>
+  showRechargePrice?: boolean
+  priceRate?: number
+  usdExchangeRate?: number
+}
+
+function calculateDisplayTokenPricePerM(
+  model: PricingModel,
+  group: string,
+  type: 'input' | 'output',
+  options: DiscountOptions
+): number {
+  const ratio = options.groupRatio[group] || 1
+  const priceRate = options.priceRate ?? 1
+  const usdExchangeRate = options.usdExchangeRate ?? 1
+  const priceInUSD = applyRechargeRate(
+    calculateTokenPrice(model, type, ratio),
+    options.showRechargePrice ?? false,
+    priceRate,
+    usdExchangeRate
+  )
+  return priceInUSD * usdExchangeRate
+}
+
+function formatDiscountValue(value: number): string {
+  const rounded = Math.round(value * 10) / 10
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}折`
+}
+
+export function formatGroupDiscountLabel(
+  model: PricingModel,
+  group: string,
+  options: DiscountOptions
+): string | null {
+  if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) return null
+
+  const originalInput = model.original_price?.input
+  const originalOutput = model.original_price?.output
+  if (
+    !originalInput ||
+    !originalOutput ||
+    originalInput <= 0 ||
+    originalOutput <= 0
+  ) {
+    return null
+  }
+
+  const currentInput = calculateDisplayTokenPricePerM(
+    model,
+    group,
+    'input',
+    options
+  )
+  const currentOutput = calculateDisplayTokenPricePerM(
+    model,
+    group,
+    'output',
+    options
+  )
+  if (!Number.isFinite(currentInput) || !Number.isFinite(currentOutput)) {
+    return null
+  }
+
+  return formatDiscountValue(
+    Math.max(
+      (currentInput / originalInput) * 10,
+      (currentOutput / originalOutput) * 10
+    )
+  )
 }
 
 /**

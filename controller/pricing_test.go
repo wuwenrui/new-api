@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -99,4 +100,37 @@ func TestGetPricingIncludesChannelsForAdmin(t *testing.T) {
 		{ID: 3101, Name: "primary-openai", Type: 1, Priority: 10},
 		{ID: 3102, Name: "backup-openai", Type: 1, Priority: 0},
 	}, pricing.Channels)
+}
+
+func TestGetPricingIncludesConfiguredOriginalPrice(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       2103,
+		Username: "pricing-original-price-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+		Role:     common.RoleCommonUser,
+		AffCode:  "pricing_original_price",
+	}).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: "default", Model: "zz-original-price-model", ChannelId: 3103, Enabled: true,
+	}).Error)
+	require.NoError(t, ratio_setting.UpdateModelOriginalPriceByJSONString(
+		`{"zz-original-price-model":{"input":70,"output":350}}`,
+	))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelOriginalPriceByJSONString(`{}`))
+		model.InvalidatePricingCache()
+	})
+	model.InvalidatePricingCache()
+
+	payload := callPricing(t, 2103, common.RoleCommonUser)
+
+	byName := pricingByModelName(payload.Data)
+	pricing, ok := byName["zz-original-price-model"]
+	require.True(t, ok)
+	require.NotNil(t, pricing.OriginalPrice)
+	require.Equal(t, 70.0, pricing.OriginalPrice.Input)
+	require.Equal(t, 350.0, pricing.OriginalPrice.Output)
 }

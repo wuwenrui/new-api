@@ -17,27 +17,28 @@ import (
 )
 
 type Pricing struct {
-	ModelName              string                  `json:"model_name"`
-	Description            string                  `json:"description,omitempty"`
-	Icon                   string                  `json:"icon,omitempty"`
-	Tags                   string                  `json:"tags,omitempty"`
-	VendorID               int                     `json:"vendor_id,omitempty"`
-	QuotaType              int                     `json:"quota_type"`
-	ModelRatio             float64                 `json:"model_ratio"`
-	ModelPrice             float64                 `json:"model_price"`
-	OwnerBy                string                  `json:"owner_by"`
-	CompletionRatio        float64                 `json:"completion_ratio"`
-	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
-	CreateCacheRatio       *float64                `json:"create_cache_ratio,omitempty"`
-	ImageRatio             *float64                `json:"image_ratio,omitempty"`
-	AudioRatio             *float64                `json:"audio_ratio,omitempty"`
-	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
-	EnableGroup            []string                `json:"enable_groups"`
-	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
-	BillingMode            string                  `json:"billing_mode,omitempty"`
-	BillingExpr            string                  `json:"billing_expr,omitempty"`
-	PricingVersion         string                  `json:"pricing_version,omitempty"`
-	Channels               []PricingChannel        `json:"channels,omitempty"`
+	ModelName              string                            `json:"model_name"`
+	Description            string                            `json:"description,omitempty"`
+	Icon                   string                            `json:"icon,omitempty"`
+	Tags                   string                            `json:"tags,omitempty"`
+	VendorID               int                               `json:"vendor_id,omitempty"`
+	QuotaType              int                               `json:"quota_type"`
+	ModelRatio             float64                           `json:"model_ratio"`
+	ModelPrice             float64                           `json:"model_price"`
+	OriginalPrice          *ratio_setting.ModelOriginalPrice `json:"original_price,omitempty"`
+	OwnerBy                string                            `json:"owner_by"`
+	CompletionRatio        float64                           `json:"completion_ratio"`
+	CacheRatio             *float64                          `json:"cache_ratio,omitempty"`
+	CreateCacheRatio       *float64                          `json:"create_cache_ratio,omitempty"`
+	ImageRatio             *float64                          `json:"image_ratio,omitempty"`
+	AudioRatio             *float64                          `json:"audio_ratio,omitempty"`
+	AudioCompletionRatio   *float64                          `json:"audio_completion_ratio,omitempty"`
+	EnableGroup            []string                          `json:"enable_groups"`
+	SupportedEndpointTypes []constant.EndpointType           `json:"supported_endpoint_types"`
+	BillingMode            string                            `json:"billing_mode,omitempty"`
+	BillingExpr            string                            `json:"billing_expr,omitempty"`
+	PricingVersion         string                            `json:"pricing_version,omitempty"`
+	Channels               []PricingChannel                  `json:"channels,omitempty"`
 }
 
 type PricingChannel struct {
@@ -339,6 +340,9 @@ func updatePricing() {
 		}
 		if cacheRatio, ok := ratio_setting.GetCacheRatio(model); ok {
 			pricing.CacheRatio = &cacheRatio
+		}
+		if originalPrice, ok := ratio_setting.GetModelOriginalPrice(model); ok {
+			pricing.OriginalPrice = &originalPrice
 		}
 		if createCacheRatio, ok := ratio_setting.GetCreateCacheRatio(model); ok {
 			pricing.CreateCacheRatio = &createCacheRatio

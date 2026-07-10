@@ -517,6 +517,17 @@ func AdminCompleteManualTopUp(tradeNo string, overrideAmount int64, callerIp str
 // 仅影响 payment_provider=manual_topup 且 status=pending 的订单；返回实际更新条数。
 // all=true 时忽略 tradeNos，确认所有待确认人工充值订单。
 func ConfirmManualTopUpStatus(tradeNos []string, all bool) (int64, error) {
+	return updateManualTopUpStatus(tradeNos, all, common.TopUpStatusSuccess)
+}
+
+// CancelManualTopUpStatus 批量作废人工充值订单（标记为 failed，不给用户充值）。
+// 仅影响 payment_provider=manual_topup 且 status=pending 的订单；返回实际更新条数。
+// all=true 时忽略 tradeNos，作废所有待确认人工充值订单。
+func CancelManualTopUpStatus(tradeNos []string, all bool) (int64, error) {
+	return updateManualTopUpStatus(tradeNos, all, common.TopUpStatusFailed)
+}
+
+func updateManualTopUpStatus(tradeNos []string, all bool, targetStatus string) (int64, error) {
 	if !all && len(tradeNos) == 0 {
 		return 0, errors.New("未提供订单号")
 	}
@@ -529,7 +540,7 @@ func ConfirmManualTopUpStatus(tradeNos []string, all bool) (int64, error) {
 	}
 
 	result := query.Updates(map[string]interface{}{
-		"status":        common.TopUpStatusSuccess,
+		"status":        targetStatus,
 		"complete_time": common.GetTimestamp(),
 	})
 	if result.Error != nil {

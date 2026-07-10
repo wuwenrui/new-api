@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react'
+import { Ban, RefreshCw } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -65,6 +65,7 @@ import {
 import { formatNumber, formatTimestampToDate } from '@/lib/format'
 
 import {
+  cancelManualTopUpStatus,
   completeOrderWithAmount,
   confirmManualTopUpStatus,
   getManualTopUpOrders,
@@ -208,6 +209,64 @@ function BatchConfirmDialog({
   )
 }
 
+function CancelTopUpDialog({
+  target,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  target: PendingManualTopUp | null
+  submitting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Dialog
+      open={target !== null}
+      onOpenChange={(next) => {
+        if (!next) onCancel()
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('作废充值')}</DialogTitle>
+          <DialogDescription>
+            {t('作废后订单会标记为失败，不给用户充值，也不计入统计。')}
+          </DialogDescription>
+        </DialogHeader>
+        {target ? (
+          <div className='text-muted-foreground space-y-1 text-xs'>
+            <div>
+              {t('用户')}: {target.username || target.email}
+              {' (ID: '}
+              {target.user_id})
+            </div>
+            <div className='font-mono'>
+              {t('订单号')}: {target.trade_no}
+            </div>
+          </div>
+        ) : null}
+        <DialogFooter>
+          <DialogClose
+            render={<Button variant='outline' disabled={submitting} />}
+          >
+            {t('取消')}
+          </DialogClose>
+          <Button
+            variant='destructive'
+            onClick={onConfirm}
+            disabled={submitting || !target}
+          >
+            {submitting ? <Spinner /> : <Ban size={14} />}
+            {t('确认作废')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<ManualOrderTab>('pending')
@@ -215,6 +274,10 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<PendingManualTopUp | null>(
+    null
+  )
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
   const [highlightTradeNo, setHighlightTradeNo] = useState<string | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [batchOpen, setBatchOpen] = useState(false)
@@ -411,6 +474,27 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
     }
   }, [selected, loadOrders, t])
 
+  const handleCancelTopUp = useCallback(async () => {
+    if (!cancelTarget) return
+    setCancelSubmitting(true)
+    try {
+      const response = await cancelManualTopUpStatus({
+        trade_nos: [cancelTarget.trade_no],
+      })
+      if (isApiSuccess(response)) {
+        toast.success(t('作废成功'))
+        setCancelTarget(null)
+        await loadOrders()
+      } else {
+        toast.error(response.message || t('作废失败'))
+      }
+    } catch {
+      toast.error(t('作废失败'))
+    } finally {
+      setCancelSubmitting(false)
+    }
+  }, [cancelTarget, loadOrders, t])
+
   const applyHistoryFilters = useCallback(() => {
     if (historyPage === 1) void loadHistory(1)
     else setHistoryPage(1)
@@ -565,12 +649,21 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
                             </div>
                           </div>
 
-                          <div className='mt-4 flex justify-end'>
+                          <div className='mt-4 flex justify-end gap-2'>
+                            <Button
+                              size='sm'
+                              variant='destructive'
+                              onClick={() => setCancelTarget(order)}
+                              disabled={submitting || cancelSubmitting}
+                            >
+                              <Ban size={14} />
+                              {t('作废')}
+                            </Button>
                             <Button
                               size='sm'
                               variant='outline'
                               onClick={() => openConfirm(order)}
-                              disabled={submitting}
+                              disabled={submitting || cancelSubmitting}
                             >
                               {t('确认充值')}
                             </Button>
@@ -728,6 +821,13 @@ export function RechargeReview({ tradeNo }: { tradeNo?: string }) {
         submitting={batchSubmitting}
         onCancel={() => setBatchOpen(false)}
         onConfirm={handleBatchConfirm}
+      />
+
+      <CancelTopUpDialog
+        target={cancelTarget}
+        submitting={cancelSubmitting}
+        onCancel={() => setCancelTarget(null)}
+        onConfirm={handleCancelTopUp}
       />
     </>
   )

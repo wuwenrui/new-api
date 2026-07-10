@@ -17,7 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { buildCompletePayload, buildManualOrderQueryParams } from './lib'
+import {
+  buildCompletePayload,
+  buildManualOrderQueryParams,
+  buildManualStatusPayload,
+} from './lib'
 import type {
   ApiResponse,
   ManualOrderQueryParams,
@@ -87,9 +91,25 @@ export async function confirmManualTopUpStatus(input: {
   trade_nos?: string[]
   all?: boolean
 }): Promise<ApiResponse<{ count: number }>> {
+  const payload = buildManualStatusPayload(input.trade_nos, input.all)
   const res = await api.post<ApiResponse<{ count: number }>>(
     '/api/user/topup/confirm-status',
-    { trade_nos: input.trade_nos ?? [], all: input.all ?? false }
+    payload
+  )
+  return res.data
+}
+
+/**
+ * Mark pending manual orders as failed WITHOUT crediting the user (admin only).
+ */
+export async function cancelManualTopUpStatus(input: {
+  trade_nos?: string[]
+  all?: boolean
+}): Promise<ApiResponse<{ count: number }>> {
+  const payload = buildManualStatusPayload(input.trade_nos, input.all)
+  const res = await api.post<ApiResponse<{ count: number }>>(
+    '/api/user/topup/cancel-status',
+    payload
   )
   return res.data
 }
