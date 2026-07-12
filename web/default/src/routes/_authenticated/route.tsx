@@ -56,8 +56,10 @@ export const Route = createFileRoute('/_authenticated')({
           : null
       )
       if (res?.success && res.data) {
-        // 验证成功，更新用户信息（可能有变化）
+        // 验证成功，更新用户信息（可能有变化）；同时补写 uid 备份
+        // cookie，让改动上线前就已登录的会话也获得 localStorage 清空防护
         auth.setUser(res.data)
+        saveUserId(res.data.id)
         sessionVerified = true
       } else if (res) {
         // 验证失败，清除本地缓存并跳转登录页
