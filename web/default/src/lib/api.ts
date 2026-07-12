@@ -20,6 +20,7 @@ import axios, { type AxiosRequestConfig } from 'axios'
 import { t } from 'i18next'
 import { toast } from 'sonner'
 
+import { getUserId } from '@/features/auth/lib/storage'
 import { useAuthStore } from '@/stores/auth-store'
 
 declare module 'axios' {
@@ -124,20 +125,6 @@ api.interceptors.response.use(
 // ============================================================================
 // Common Headers Utility
 // ============================================================================
-
-/**
- * Get user ID from localStorage
- */
-function getUserId(): string | null {
-  try {
-    if (typeof window !== 'undefined') {
-      return window.localStorage.getItem('uid')
-    }
-  } catch {
-    /* empty */
-  }
-  return null
-}
 
 /**
  * Get common request headers (for both axios and SSE requests)

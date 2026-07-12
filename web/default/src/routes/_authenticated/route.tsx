@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { AuthenticatedLayout } from '@/components/layout'
+import { getUserId, saveUserId } from '@/features/auth/lib/storage'
 import { getSelf } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -29,12 +30,21 @@ export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ location }) => {
     const { auth } = useAuthStore.getState()
 
-    // 如果本地没有用户信息，直接跳转登录页
+    // 本地没有用户信息时，可能是第三方扩展清空了 localStorage 而
+    // session cookie 仍有效：若能从备份（user 快照 / uid cookie）恢复
+    // uid，则先尝试用 session 拉回用户信息，失败才跳转登录页
     if (!auth.user) {
-      throw redirect({
-        to: '/sign-in',
-        search: { redirect: location.href },
-      })
+      const res = getUserId() ? await getSelf().catch(() => null) : null
+      if (res?.success && res.data) {
+        auth.setUser(res.data)
+        saveUserId(res.data.id)
+        sessionVerified = true
+      } else {
+        throw redirect({
+          to: '/sign-in',
+          search: { redirect: location.href },
+        })
+      }
     }
 
     // 本地有用户信息，但需要验证 session 是否有效（每个会话只验证一次）

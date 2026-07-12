@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { logout } from '@/features/auth/api'
+import { removeUserId } from '@/features/auth/lib/storage'
 import { useAuthStore } from '@/stores/auth-store'
 
 interface SignOutDialogProps {
@@ -39,13 +40,7 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
       /* empty */
     }
     auth.reset()
-    try {
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('uid')
-      }
-    } catch {
-      /* empty */
-    }
+    removeUserId()
     toast.success(t('Signed out'))
     // Refresh the page to clear all state and update UI
     if (typeof window !== 'undefined') {
