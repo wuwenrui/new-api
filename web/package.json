@@ -5,6 +5,9 @@
     "default",
     "classic"
   ],
+  "overrides": {
+    "minimist": "1.2.8"
+  },
   "catalog": {
     "@lobehub/icons": "^5.10.1",
     "@rsbuild/core": "^2.1.4",
