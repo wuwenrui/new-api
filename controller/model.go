@@ -272,9 +272,21 @@ func ListModels(c *gin.Context, modelType int) {
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
 	}
+	imageInputByModel := map[string]bool{}
+	if modelType == constant.ChannelTypeOpenAI {
+		imageInputByModel, err = model.GetModelImageInputCapabilities(userModelNames)
+		if err != nil {
+			common.SysLog(fmt.Sprintf("GetModelImageInputCapabilities error: %v", err))
+			imageInputByModel = map[string]bool{}
+		}
+	}
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
-		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+		oaiModel := buildOpenAIModel(modelName, ownerByModel)
+		if imageInput, ok := imageInputByModel[modelName]; ok {
+			oaiModel.Capabilities = &dto.ModelCapabilities{ImageInput: imageInput}
+		}
+		userOpenAiModels = append(userOpenAiModels, oaiModel)
 	}
 
 	switch modelType {

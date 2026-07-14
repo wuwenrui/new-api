@@ -9,6 +9,11 @@ type OpenAIModels struct {
 	Created                int                     `json:"created"`
 	OwnedBy                string                  `json:"owned_by"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
+	Capabilities           *ModelCapabilities      `json:"capabilities,omitempty"`
+}
+
+type ModelCapabilities struct {
+	ImageInput bool `json:"image_input"`
 }
 
 type AnthropicModel struct {

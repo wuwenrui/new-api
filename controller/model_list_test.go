@@ -375,6 +375,80 @@ func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	require.NotContains(t, ids, "zz-token-unpriced-model")
 }
 
+func TestListModelsIncludesOptionalImageInputCapability(t *testing.T) {
+	originalSelfUseMode := operation_setting.SelfUseModeEnabled
+	operation_setting.SelfUseModeEnabled = true
+	t.Cleanup(func() {
+		operation_setting.SelfUseModeEnabled = originalSelfUseMode
+	})
+
+	db := setupModelListControllerTestDB(t)
+	modelNames := []string{
+		"zz-vision-capability-model",
+		"zz-text-capability-model",
+		"zz-empty-tags-capability-model",
+		"zz-separators-only-capability-model",
+		"zz-missing-meta-capability-model",
+	}
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: modelNames[0], ChannelId: 1, Enabled: true},
+		{Group: "default", Model: modelNames[1], ChannelId: 1, Enabled: true},
+		{Group: "default", Model: modelNames[2], ChannelId: 1, Enabled: true},
+		{Group: "default", Model: modelNames[3], ChannelId: 1, Enabled: true},
+		{Group: "default", Model: modelNames[4], ChannelId: 1, Enabled: true},
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Model{
+		{ModelName: modelNames[0], Tags: "chat,tools;audio|reasoning vIsIoN"},
+		{ModelName: modelNames[1], Tags: "chat, tools"},
+		{ModelName: modelNames[2], Tags: "  \t"},
+		{ModelName: modelNames[3], Tags: ", ; |\t"},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload struct {
+		Success bool             `json:"success"`
+		Data    []map[string]any `json:"data"`
+		Object  string           `json:"object"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+	require.Equal(t, "list", payload.Object)
+	require.Len(t, payload.Data, len(modelNames))
+
+	itemsByID := make(map[string]map[string]any, len(payload.Data))
+	for _, item := range payload.Data {
+		id, ok := item["id"].(string)
+		require.True(t, ok)
+		itemsByID[id] = item
+	}
+	for _, modelName := range modelNames {
+		item := itemsByID[modelName]
+		require.Equal(t, "model", item["object"])
+		require.Equal(t, float64(1626777600), item["created"])
+		require.Equal(t, "custom", item["owned_by"])
+		require.Contains(t, item, "supported_endpoint_types")
+	}
+
+	visionCapabilities, ok := itemsByID[modelNames[0]]["capabilities"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, visionCapabilities["image_input"])
+
+	textCapabilities, ok := itemsByID[modelNames[1]]["capabilities"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, false, textCapabilities["image_input"])
+
+	require.NotContains(t, itemsByID[modelNames[2]], "capabilities")
+	require.NotContains(t, itemsByID[modelNames[3]], "capabilities")
+	require.NotContains(t, itemsByID[modelNames[4]], "capabilities")
+}
+
 func TestCheckUpdatePasswordRequiresCurrentPassword(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	hashedPassword, err := common.Password2Hash("CurrentPassword123")

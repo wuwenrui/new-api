@@ -3,6 +3,7 @@ package model
 import (
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -107,6 +108,42 @@ func GetVendorModelCounts() (map[int64]int64, error) {
 func GetAllModels(offset int, limit int) ([]*Model, error) {
 	models, _, err := SearchModels("", "", "", "", offset, limit)
 	return models, err
+}
+
+func GetModelImageInputCapabilities(modelNames []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	modelNames = normalizeLookupValues(modelNames)
+	if len(modelNames) == 0 {
+		return result, nil
+	}
+
+	var rows []struct {
+		ModelName string
+		Tags      string
+	}
+	if err := DB.Model(&Model{}).
+		Select("model_name", "tags").
+		Where("model_name IN ?", modelNames).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		tags := strings.FieldsFunc(row.Tags, func(r rune) bool {
+			return r == ',' || r == ';' || r == '|' || unicode.IsSpace(r)
+		})
+		if len(tags) == 0 {
+			continue
+		}
+		result[row.ModelName] = false
+		for _, tag := range tags {
+			if strings.EqualFold(tag, "vision") {
+				result[row.ModelName] = true
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 func GetBoundChannelsByModelsMap(modelNames []string) (map[string][]BoundChannel, error) {
