@@ -331,6 +331,8 @@ func TestUploadImageRejectsMismatchedDeclaredFormat(t *testing.T) {
 func TestUploadImageStreamsMultipartBody(t *testing.T) {
 	var received atomic.Int64
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		require.Greater(t, request.ContentLength, int64(0))
+		require.Empty(t, request.TransferEncoding)
 		file, header, err := request.FormFile("media")
 		require.NoError(t, err)
 		require.Equal(t, "body.png", header.Filename)

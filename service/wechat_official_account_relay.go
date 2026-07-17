@@ -714,28 +714,42 @@ func validateImageData(encoded string, mimeType string) *WeChatRelayError {
 	return nil
 }
 
-func multipartImageStream(encoded string, fileName string) (io.Reader, string, <-chan error) {
-	pipeReader, pipeWriter := io.Pipe()
-	writer := multipart.NewWriter(pipeWriter)
+type knownLengthReader struct {
+	io.Reader
+	length int64
+}
+
+func (reader *knownLengthReader) contentLength() int64 {
+	return reader.length
+}
+
+func multipartImageStream(encoded string, fileName string) (*knownLengthReader, string, error) {
+	var envelope bytes.Buffer
+	writer := multipart.NewWriter(&envelope)
 	contentType := writer.FormDataContentType()
-	result := make(chan error, 1)
-	go func() {
-		part, err := writer.CreateFormFile("media", fileName)
-		if err == nil {
-			decoder := base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(encoded))
-			_, err = io.Copy(part, decoder)
-		}
-		if err == nil {
-			err = writer.Close()
-		}
-		if err != nil {
-			_ = pipeWriter.CloseWithError(err)
-		} else {
-			_ = pipeWriter.Close()
-		}
-		result <- err
-	}()
-	return pipeReader, contentType, result
+	if _, err := writer.CreateFormFile("media", fileName); err != nil {
+		return nil, "", err
+	}
+	headerLength := envelope.Len()
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	envelopeBytes := envelope.Bytes()
+	decodedLength := int64(base64.StdEncoding.DecodedLen(len(encoded)))
+	if strings.HasSuffix(encoded, "==") {
+		decodedLength -= 2
+	} else if strings.HasSuffix(encoded, "=") {
+		decodedLength--
+	}
+	stream := io.MultiReader(
+		bytes.NewReader(envelopeBytes[:headerLength]),
+		base64.NewDecoder(base64.StdEncoding.Strict(), strings.NewReader(encoded)),
+		bytes.NewReader(envelopeBytes[headerLength:]),
+	)
+	return &knownLengthReader{
+		Reader: stream,
+		length: int64(len(envelopeBytes)) + decodedLength,
+	}, contentType, nil
 }
 
 func (relay *wechatRelay) uploadImage(ctx context.Context, userID int, appID string, accessToken string, operation relayOperation, permanent bool) (any, *WeChatRelayError) {
@@ -757,15 +771,17 @@ func (relay *wechatRelay) uploadImage(ctx context.Context, userID int, appID str
 		}
 		fileName = permanentMaterialFilename(operation.Fingerprint, operation.MIMEType)
 	}
-	stream, contentType, streamResult := multipartImageStream(operation.Data, fileName)
+	stream, contentType, streamErr := multipartImageStream(operation.Data, fileName)
+	if streamErr != nil {
+		return nil, relayServiceError()
+	}
 	path := "/cgi-bin/media/uploadimg?access_token=" + url.QueryEscape(accessToken)
 	kind := "material"
 	if permanent {
 		path = "/cgi-bin/material/add_material?access_token=" + url.QueryEscape(accessToken) + "&type=image"
 	}
 	responseBody, requestErr := relay.do(ctx, http.MethodPost, path, contentType, stream)
-	streamErr := <-streamResult
-	if requestErr != nil || streamErr != nil {
+	if requestErr != nil {
 		if permanent {
 			relay.markRequestUnknown(ctx, stateKey, operation.Fingerprint)
 		}
@@ -1022,6 +1038,9 @@ func (relay *wechatRelay) do(ctx context.Context, method string, path string, co
 	}
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
+	}
+	if sizedBody, ok := body.(interface{ contentLength() int64 }); ok {
+		request.ContentLength = sizedBody.contentLength()
 	}
 	response, err := relay.client.Do(request)
 	if err != nil {
