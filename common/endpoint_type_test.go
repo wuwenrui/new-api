@@ -23,7 +23,7 @@ func TestGetEndpointTypesByChannelTypeKeepsOpenAIOnlyForUnsupportedAliModel(t *t
 }
 
 func TestGetEndpointTypesByChannelTypeIncludesImageGenerationForWan(t *testing.T) {
-	endpoints := GetEndpointTypesByChannelType(constant.ChannelTypeAli, "wan2.7-image")
+	endpoints := GetEndpointTypesByChannelType(constant.ChannelTypeAli, "wan2.7-image-pro")
 
 	require.Equal(t, []constant.EndpointType{
 		constant.EndpointTypeImageGeneration,
@@ -32,7 +32,7 @@ func TestGetEndpointTypesByChannelTypeIncludesImageGenerationForWan(t *testing.T
 }
 
 func TestGetEndpointTypesByChannelTypeRejectsWanLookalikes(t *testing.T) {
-	for _, modelName := range []string{"foo-wan2.7-image", "wan2.7-image-edit", "wan2.7-image-plus"} {
+	for _, modelName := range []string{"wan2.7-image", "foo-wan2.7-image-pro", "wan2.7-image-pro-edit", "wan2.7-image-pro-plus"} {
 		t.Run(modelName, func(t *testing.T) {
 			endpoints := GetEndpointTypesByChannelType(constant.ChannelTypeAli, modelName)
 			require.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, endpoints)

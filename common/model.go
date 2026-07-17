@@ -16,7 +16,7 @@ var (
 		"prefix:imagen-",
 		"flux-",
 		"flux.1-",
-		"exact:wan2.7-image",
+		"exact:wan2.7-image-pro",
 	}
 	OpenAITextModels = []string{
 		"gpt-",
