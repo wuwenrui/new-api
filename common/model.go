@@ -16,6 +16,7 @@ var (
 		"prefix:imagen-",
 		"flux-",
 		"flux.1-",
+		"exact:wan2.7-image",
 	}
 	OpenAITextModels = []string{
 		"gpt-",
@@ -38,10 +39,13 @@ func IsOpenAIResponseOnlyModel(modelName string) bool {
 func IsImageGenerationModel(modelName string) bool {
 	modelName = strings.ToLower(modelName)
 	for _, m := range ImageGenerationModels {
-		if strings.Contains(modelName, m) {
+		if strings.HasPrefix(m, "exact:") && modelName == strings.TrimPrefix(m, "exact:") {
 			return true
 		}
 		if strings.HasPrefix(m, "prefix:") && strings.HasPrefix(modelName, strings.TrimPrefix(m, "prefix:")) {
+			return true
+		}
+		if !strings.Contains(m, ":") && strings.Contains(modelName, m) {
 			return true
 		}
 	}

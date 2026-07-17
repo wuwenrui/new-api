@@ -22,6 +22,24 @@ func TestGetEndpointTypesByChannelTypeKeepsOpenAIOnlyForUnsupportedAliModel(t *t
 	require.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, endpoints)
 }
 
+func TestGetEndpointTypesByChannelTypeIncludesImageGenerationForWan(t *testing.T) {
+	endpoints := GetEndpointTypesByChannelType(constant.ChannelTypeAli, "wan2.7-image")
+
+	require.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeImageGeneration,
+		constant.EndpointTypeOpenAI,
+	}, endpoints)
+}
+
+func TestGetEndpointTypesByChannelTypeRejectsWanLookalikes(t *testing.T) {
+	for _, modelName := range []string{"foo-wan2.7-image", "wan2.7-image-edit", "wan2.7-image-plus"} {
+		t.Run(modelName, func(t *testing.T) {
+			endpoints := GetEndpointTypesByChannelType(constant.ChannelTypeAli, modelName)
+			require.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, endpoints)
+		})
+	}
+}
+
 func TestSupportsAliAnthropicMessagesUsesConfiguredPatterns(t *testing.T) {
 	t.Setenv(aliAnthropicMessagesModelsEnv, "custom-claude-compatible")
 
