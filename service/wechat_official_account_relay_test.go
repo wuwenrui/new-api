@@ -78,6 +78,24 @@ func testArticle() wechatArticle {
 		OnlyFansCanComment: 0,
 	}
 }
+func TestWeChatRelayHTTPClientRejectsRedirects(t *testing.T) {
+	var redirected atomic.Bool
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		redirected.Store(true)
+	}))
+	t.Cleanup(target.Close)
+	source := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		http.Redirect(response, request, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(source.Close)
+
+	response, err := newWeChatRelayHTTPClient().Post(source.URL, "application/json", strings.NewReader(`{"secret":"must-stay-on-wechat"}`))
+
+	require.NoError(t, err)
+	t.Cleanup(func() { response.Body.Close() })
+	require.Equal(t, http.StatusTemporaryRedirect, response.StatusCode)
+	require.False(t, redirected.Load())
+}
 
 func TestParseArticleRejectsTitleOverWechatCharacterLimit(t *testing.T) {
 	article := testArticle()
@@ -90,15 +108,33 @@ func TestParseArticleRejectsTitleOverWechatCharacterLimit(t *testing.T) {
 	require.Contains(t, relayErr.Message, "32 个字")
 }
 
-func TestParseArticleRejectsAuthorOverWechatUTF8ByteLimit(t *testing.T) {
+func TestParseArticleAcceptsTitleAtWechatCharacterLimit(t *testing.T) {
 	article := testArticle()
-	article.Author = strings.Repeat("测", 6)
+	article.Title = strings.Repeat("测", 32)
+
+	_, relayErr := parseArticle(article)
+
+	require.Nil(t, relayErr)
+}
+
+func TestParseArticleRejectsAuthorOverWechatCharacterLimit(t *testing.T) {
+	article := testArticle()
+	article.Author = strings.Repeat("测", 17)
 
 	_, relayErr := parseArticle(article)
 
 	require.NotNil(t, relayErr)
 	require.Equal(t, "invalid_request", relayErr.Code)
-	require.Contains(t, relayErr.Message, "16 字节")
+	require.Contains(t, relayErr.Message, "16 个字")
+}
+
+func TestParseArticleAcceptsAuthorAtWechatCharacterLimit(t *testing.T) {
+	article := testArticle()
+	article.Author = strings.Repeat("测", 16)
+
+	_, relayErr := parseArticle(article)
+
+	require.Nil(t, relayErr)
 }
 
 func TestWeChatRelayCredentialEnvelopeBindsIdentityExpiryAndNonce(t *testing.T) {

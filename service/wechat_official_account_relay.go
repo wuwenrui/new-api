@@ -354,6 +354,15 @@ func ExecuteWeChatOfficialAccountRelay(
 	return relay.execute(ctx, userID, credentials, parsed)
 }
 
+func newWeChatRelayHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: wechatRelayRequestTimeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
 func newProductionWeChatRelay() (*wechatRelay, *WeChatRelayError) {
 	currentID := strings.TrimSpace(os.Getenv("WECHAT_RELAY_KEY_ID"))
 	currentPath := strings.TrimSpace(os.Getenv("WECHAT_RELAY_PRIVATE_KEY_PATH"))
@@ -384,7 +393,7 @@ func newProductionWeChatRelay() (*wechatRelay, *WeChatRelayError) {
 	}
 	return &wechatRelay{
 		baseURL:     wechatOfficialAPIBaseURL,
-		client:      &http.Client{Timeout: wechatRelayRequestTimeout},
+		client:      newWeChatRelayHTTPClient(),
 		currentKey:  currentID,
 		privateKeys: keys,
 		store:       store,
@@ -600,8 +609,8 @@ func parseArticle(value any) (wechatArticle, *WeChatRelayError) {
 	if article.Title == "" || len([]rune(article.Title)) > 32 {
 		return wechatArticle{}, invalidRelayRequest("标题不能超过微信 32 个字限制")
 	}
-	if len(article.Author) > 16 {
-		return wechatArticle{}, invalidRelayRequest("作者不能超过微信 16 字节限制")
+	if len([]rune(article.Author)) > 16 {
+		return wechatArticle{}, invalidRelayRequest("作者不能超过微信 16 个字限制")
 	}
 	if len([]rune(article.Digest)) > 120 {
 		return wechatArticle{}, invalidRelayRequest("摘要长度无效")
