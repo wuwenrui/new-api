@@ -79,6 +79,28 @@ func testArticle() wechatArticle {
 	}
 }
 
+func TestParseArticleRejectsTitleOverWechatCharacterLimit(t *testing.T) {
+	article := testArticle()
+	article.Title = strings.Repeat("测", 33)
+
+	_, relayErr := parseArticle(article)
+
+	require.NotNil(t, relayErr)
+	require.Equal(t, "invalid_request", relayErr.Code)
+	require.Contains(t, relayErr.Message, "32 个字")
+}
+
+func TestParseArticleRejectsAuthorOverWechatUTF8ByteLimit(t *testing.T) {
+	article := testArticle()
+	article.Author = strings.Repeat("测", 6)
+
+	_, relayErr := parseArticle(article)
+
+	require.NotNil(t, relayErr)
+	require.Equal(t, "invalid_request", relayErr.Code)
+	require.Contains(t, relayErr.Message, "16 字节")
+}
+
 func TestWeChatRelayCredentialEnvelopeBindsIdentityExpiryAndNonce(t *testing.T) {
 	relay, credentials := testRelay(t, http.NotFoundHandler())
 	publicKey := &relay.privateKeys[relay.currentKey].PublicKey
@@ -271,11 +293,15 @@ func TestPermanentMaterialUnknownCanRecoverAndCompleteState(t *testing.T) {
 
 func TestFindDraftCompletesPersistentRequestState(t *testing.T) {
 	article := testArticle()
+	article.Content = `<p>正文</p><img src="http://mmbiz.qpic.cn/sz_mmbiz_png/image-token/0?from=appmsg" style="max-width:100%" alt="正文图片1" />`
 	fingerprint := articleFingerprint(article)
 	updateTime := time.Now().Unix()
+	wechatArticle := article
+	wechatArticle.Content = `<p>正文</p><img alt="正文图片1" data-src="https://mmbiz.qpic.cn/sz_mmbiz_png/image-token/640?from=appmsg" style="max-width:100%">`
+	wechatArticle.ShowCoverPic = 0
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		require.Equal(t, "/cgi-bin/draft/batchget", request.URL.Path)
-		payload, err := common.Marshal(article)
+		payload, err := common.Marshal(wechatArticle)
 		require.NoError(t, err)
 		_, _ = fmt.Fprintf(response, `{"total_count":1,"item_count":1,"item":[{"media_id":"draft-media-id","update_time":%d,"content":{"news_item":[%s]}}]}`, updateTime, payload)
 	})
@@ -488,4 +514,13 @@ func TestArticleFingerprintNormalizesWhitespace(t *testing.T) {
 	require.Equal(t, articleFingerprint(left), articleFingerprint(right))
 	require.Len(t, articleFingerprint(left), 64)
 	require.False(t, strings.Contains(articleFingerprint(left), left.Content))
+}
+
+func TestArticleMatchesRejectsDifferentWechatImage(t *testing.T) {
+	left := testArticle()
+	left.Content = `<p>正文</p><img src="http://mmbiz.qpic.cn/sz_mmbiz_png/image-a/0?from=appmsg">`
+	right := left
+	right.Content = `<p>正文</p><img data-src="https://mmbiz.qpic.cn/sz_mmbiz_png/image-b/640?from=appmsg">`
+
+	require.False(t, articleMatches(left, right))
 }

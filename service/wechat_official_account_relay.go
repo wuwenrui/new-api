@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"mime/multipart"
 	"net"
@@ -43,6 +44,8 @@ var (
 	relayRequestIDPattern       = regexp.MustCompile(`^[A-Za-z0-9-]{16,64}$`)
 	relayNoncePattern           = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 	relayFingerprint            = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	wechatImageTagPattern       = regexp.MustCompile(`(?i)<img\b[^>]*>`)
+	wechatImageSourcePattern    = regexp.MustCompile(`(?i)\b(?:data-src|src)\s*=\s*["']([^"']+)["']`)
 	productionRelayLimit        = newRelayConcurrencyLimiter(4, 2)
 	errRelayRequestStateMissing = errors.New("relay request state missing")
 )
@@ -594,8 +597,14 @@ func parseArticle(value any) (wechatArticle, *WeChatRelayError) {
 	article.Author = strings.TrimSpace(article.Author)
 	article.Digest = strings.TrimSpace(article.Digest)
 	article.ThumbMediaID = strings.TrimSpace(article.ThumbMediaID)
-	if article.Title == "" || len([]rune(article.Title)) > 64 || len([]rune(article.Author)) > 16 || len([]rune(article.Digest)) > 120 {
-		return wechatArticle{}, invalidRelayRequest("标题、作者或摘要长度无效")
+	if article.Title == "" || len([]rune(article.Title)) > 32 {
+		return wechatArticle{}, invalidRelayRequest("标题不能超过微信 32 个字限制")
+	}
+	if len(article.Author) > 16 {
+		return wechatArticle{}, invalidRelayRequest("作者不能超过微信 16 字节限制")
+	}
+	if len([]rune(article.Digest)) > 120 {
+		return wechatArticle{}, invalidRelayRequest("摘要长度无效")
 	}
 	if len(article.Content) == 0 || len(article.Content) > 1_000_000 || article.ThumbMediaID == "" || len(article.ThumbMediaID) > 256 {
 		return wechatArticle{}, invalidRelayRequest("正文或封面 mediaId 无效")
@@ -896,7 +905,7 @@ func (relay *wechatRelay) createDraft(ctx context.Context, userID int, appID str
 	zeroBytes(payload)
 	if requestErr != nil {
 		if startedAt, stateErr := relay.requestStartedAt(ctx, stateKey); stateErr == nil {
-			if mediaID, findErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, operation.Fingerprint, startedAt); findErr == nil && mediaID != "" {
+			if mediaID, findErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, startedAt); findErr == nil && mediaID != "" {
 				if stateErr := relay.completeRequest(ctx, stateKey, operation.Fingerprint, mediaID); stateErr == nil {
 					return map[string]any{"found": true, "mediaId": mediaID, "recovered": true, "fingerprint": operation.Fingerprint}, nil
 				}
@@ -953,7 +962,7 @@ func (relay *wechatRelay) findDraft(ctx context.Context, userID int, appID strin
 	if stateErr != nil {
 		return nil, relayStateUnavailableError()
 	}
-	mediaID, relayErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, operation.Fingerprint, startedAt)
+	mediaID, relayErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, startedAt)
 	if relayErr != nil {
 		return nil, relayErr
 	}
@@ -966,7 +975,7 @@ func (relay *wechatRelay) findDraft(ctx context.Context, userID int, appID strin
 	return map[string]any{"found": true, "mediaId": mediaID, "fingerprint": operation.Fingerprint}, nil
 }
 
-func (relay *wechatRelay) findDraftMediaID(ctx context.Context, accessToken string, article wechatArticle, fingerprint string, startedAt int64) (string, *WeChatRelayError) {
+func (relay *wechatRelay) findDraftMediaID(ctx context.Context, accessToken string, article wechatArticle, startedAt int64) (string, *WeChatRelayError) {
 	matches := make([]string, 0, 1)
 	offset := 0
 	for {
@@ -991,7 +1000,7 @@ func (relay *wechatRelay) findDraftMediaID(ctx context.Context, accessToken stri
 				continue
 			}
 			candidate := item.Content.NewsItem[0]
-			if articleMatches(candidate, article) && articleFingerprint(candidate) == fingerprint {
+			if articleMatches(candidate, article) {
 				matches = append(matches, item.MediaID)
 			}
 		}
@@ -1011,7 +1020,42 @@ func (relay *wechatRelay) findDraftMediaID(ctx context.Context, accessToken stri
 }
 
 func articleMatches(left wechatArticle, right wechatArticle) bool {
-	return left.Title == right.Title && left.Author == right.Author && left.Digest == right.Digest && left.ThumbMediaID == right.ThumbMediaID
+	return left.Title == right.Title &&
+		left.Author == right.Author &&
+		left.Digest == right.Digest &&
+		left.ContentSourceURL == right.ContentSourceURL &&
+		left.ThumbMediaID == right.ThumbMediaID &&
+		left.NeedOpenComment == right.NeedOpenComment &&
+		left.OnlyFansCanComment == right.OnlyFansCanComment &&
+		canonicalWechatArticleContent(left.Content) == canonicalWechatArticleContent(right.Content)
+}
+
+func canonicalWechatArticleContent(content string) string {
+	unescaped := html.UnescapeString(content)
+	withCanonicalImages := wechatImageTagPattern.ReplaceAllStringFunc(unescaped, func(tag string) string {
+		match := wechatImageSourcePattern.FindStringSubmatch(tag)
+		if len(match) != 2 {
+			return strings.Join(strings.Fields(tag), " ")
+		}
+		return `<img src="` + canonicalWechatImageSource(match[1]) + `">`
+	})
+	return strings.Join(strings.Fields(withCanonicalImages), " ")
+}
+
+func canonicalWechatImageSource(source string) string {
+	parsed, err := url.Parse(strings.TrimSpace(source))
+	if err != nil || !strings.EqualFold(parsed.Hostname(), "mmbiz.qpic.cn") {
+		return strings.TrimSpace(source)
+	}
+	path := parsed.EscapedPath()
+	lastSlash := strings.LastIndexByte(path, '/')
+	if lastSlash >= 0 {
+		size := path[lastSlash+1:]
+		if size != "" && strings.Trim(size, "0123456789") == "" {
+			path = path[:lastSlash]
+		}
+	}
+	return "mmbiz.qpic.cn" + path
 }
 
 func articleFingerprint(article wechatArticle) string {
