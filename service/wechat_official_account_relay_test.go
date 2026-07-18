@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -271,23 +272,123 @@ func TestPermanentMaterialUnknownCanRecoverAndCompleteState(t *testing.T) {
 func TestFindDraftCompletesPersistentRequestState(t *testing.T) {
 	article := testArticle()
 	fingerprint := articleFingerprint(article)
+	updateTime := time.Now().Unix()
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		require.Equal(t, "/cgi-bin/draft/batchget", request.URL.Path)
 		payload, err := common.Marshal(article)
 		require.NoError(t, err)
-		_, _ = response.Write([]byte(`{"total_count":1,"item_count":1,"item":[{"media_id":"draft-media-id","content":{"news_item":[` + string(payload) + `]}}]}`))
+		_, _ = fmt.Fprintf(response, `{"total_count":1,"item_count":1,"item":[{"media_id":"draft-media-id","update_time":%d,"content":{"news_item":[%s]}}]}`, updateTime, payload)
 	})
 	relay, credentials := testRelay(t, handler)
 	operation := relayOperation{Action: "find_draft", RequestID: "request-find-draft-1234", Fingerprint: fingerprint, Article: article}
+	stateKey := relayRequestStateKey(testRelayUserID, credentials.AppID, "create_draft", operation.RequestID)
+	_, stateErr := relay.beginRequest(context.Background(), stateKey, fingerprint)
+	require.Nil(t, stateErr)
 
 	found, relayErr := relay.findDraft(context.Background(), testRelayUserID, credentials.AppID, "token", operation)
 	require.Nil(t, relayErr)
 	require.Equal(t, true, found.(map[string]any)["found"])
 
-	stateKey := relayRequestStateKey(testRelayUserID, credentials.AppID, "create_draft", operation.RequestID)
 	cached, stateErr := relay.beginRequest(context.Background(), stateKey, fingerprint)
 	require.Nil(t, stateErr)
 	require.Equal(t, "draft-media-id", cached)
+}
+
+func TestFindDraftIgnoresOlderIdenticalDraft(t *testing.T) {
+	article := testArticle()
+	fingerprint := articleFingerprint(article)
+	updateTime := time.Now().Add(-time.Hour).Unix()
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		require.Equal(t, "/cgi-bin/draft/batchget", request.URL.Path)
+		payload, err := common.Marshal(article)
+		require.NoError(t, err)
+		_, _ = fmt.Fprintf(response, `{"total_count":1,"item_count":1,"item":[{"media_id":"old-draft-media-id","update_time":%d,"content":{"news_item":[%s]}}]}`, updateTime, payload)
+	})
+	relay, credentials := testRelay(t, handler)
+	operation := relayOperation{Action: "find_draft", RequestID: "request-find-old-draft", Fingerprint: fingerprint, Article: article}
+	stateKey := relayRequestStateKey(testRelayUserID, credentials.AppID, "create_draft", operation.RequestID)
+	_, stateErr := relay.beginRequest(context.Background(), stateKey, fingerprint)
+	require.Nil(t, stateErr)
+
+	found, relayErr := relay.findDraft(context.Background(), testRelayUserID, credentials.AppID, "token", operation)
+	require.Nil(t, relayErr)
+	require.Equal(t, false, found.(map[string]any)["found"])
+
+	cached, stateErr := relay.beginRequest(context.Background(), stateKey, fingerprint)
+	require.Empty(t, cached)
+	require.NotNil(t, stateErr)
+	require.Equal(t, "unknown", stateErr.Outcome)
+}
+
+func TestFindDraftReportsExpiredRequestStateWithoutScanningDrafts(t *testing.T) {
+	var calls atomic.Int32
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		http.NotFound(response, request)
+	})
+	relay, credentials := testRelay(t, handler)
+	article := testArticle()
+	operation := relayOperation{
+		Action:      "find_draft",
+		RequestID:   "request-expired-draft",
+		Fingerprint: articleFingerprint(article),
+		Article:     article,
+	}
+
+	found, relayErr := relay.findDraft(
+		context.Background(),
+		testRelayUserID,
+		credentials.AppID,
+		"token",
+		operation,
+	)
+
+	require.Nil(t, found)
+	require.NotNil(t, relayErr)
+	require.Equal(t, "request_state_expired", relayErr.Code)
+	require.Equal(t, "unknown", relayErr.Outcome)
+	require.Equal(t, int32(0), calls.Load())
+}
+
+func TestFindDraftReportsLegacyRequestStateAsExpired(t *testing.T) {
+	var calls atomic.Int32
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		http.NotFound(response, request)
+	})
+	relay, credentials := testRelay(t, handler)
+	article := testArticle()
+	fingerprint := articleFingerprint(article)
+	operation := relayOperation{
+		Action:      "find_draft",
+		RequestID:   "request-legacy-draft",
+		Fingerprint: fingerprint,
+		Article:     article,
+	}
+	stateKey := relayRequestStateKey(
+		testRelayUserID,
+		credentials.AppID,
+		"create_draft",
+		operation.RequestID,
+	)
+	require.NoError(t, relay.setRequestState(context.Background(), stateKey, requestState{
+		Fingerprint: fingerprint,
+		Status:      "unknown",
+	}))
+
+	found, relayErr := relay.findDraft(
+		context.Background(),
+		testRelayUserID,
+		credentials.AppID,
+		"token",
+		operation,
+	)
+
+	require.Nil(t, found)
+	require.NotNil(t, relayErr)
+	require.Equal(t, "request_state_expired", relayErr.Code)
+	require.Equal(t, "unknown", relayErr.Outcome)
+	require.Equal(t, int32(0), calls.Load())
 }
 
 func TestRelayConcurrencyLimitsGlobalAndPerUser(t *testing.T) {

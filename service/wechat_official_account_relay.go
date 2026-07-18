@@ -36,13 +36,15 @@ const (
 	wechatRelayEnvelopeMaxTTL  = 2 * time.Minute
 	wechatRelayStateTTL        = 24 * time.Hour
 	wechatRelayFutureClockSkew = 30 * time.Second
+	wechatDraftMatchClockSkew  = 10 * time.Second
 )
 
 var (
-	relayRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{16,64}$`)
-	relayNoncePattern     = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
-	relayFingerprint      = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	productionRelayLimit  = newRelayConcurrencyLimiter(4, 2)
+	relayRequestIDPattern       = regexp.MustCompile(`^[A-Za-z0-9-]{16,64}$`)
+	relayNoncePattern           = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
+	relayFingerprint            = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	productionRelayLimit        = newRelayConcurrencyLimiter(4, 2)
+	errRelayRequestStateMissing = errors.New("relay request state missing")
 )
 
 type WeChatRelayPublicKey struct {
@@ -153,6 +155,7 @@ type requestState struct {
 	Status      string `json:"status"`
 	MediaID     string `json:"mediaId,omitempty"`
 	Fingerprint string `json:"fingerprint"`
+	StartedAt   int64  `json:"startedAt"`
 }
 
 type relayStateStore interface {
@@ -892,9 +895,11 @@ func (relay *wechatRelay) createDraft(ctx context.Context, userID int, appID str
 	body, requestErr := relay.do(ctx, http.MethodPost, "/cgi-bin/draft/add?access_token="+url.QueryEscape(accessToken), "application/json", bytes.NewReader(payload))
 	zeroBytes(payload)
 	if requestErr != nil {
-		if mediaID, findErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, operation.Fingerprint); findErr == nil && mediaID != "" {
-			if stateErr := relay.completeRequest(ctx, stateKey, operation.Fingerprint, mediaID); stateErr == nil {
-				return map[string]any{"found": true, "mediaId": mediaID, "recovered": true, "fingerprint": operation.Fingerprint}, nil
+		if startedAt, stateErr := relay.requestStartedAt(ctx, stateKey); stateErr == nil {
+			if mediaID, findErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, operation.Fingerprint, startedAt); findErr == nil && mediaID != "" {
+				if stateErr := relay.completeRequest(ctx, stateKey, operation.Fingerprint, mediaID); stateErr == nil {
+					return map[string]any{"found": true, "mediaId": mediaID, "recovered": true, "fingerprint": operation.Fingerprint}, nil
+				}
 			}
 		}
 		relay.markRequestUnknown(ctx, stateKey, operation.Fingerprint)
@@ -940,21 +945,28 @@ func (relay *wechatRelay) findDraft(ctx context.Context, userID int, appID strin
 	if relay.store == nil {
 		return nil, relayStateUnavailableError()
 	}
-	mediaID, relayErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, operation.Fingerprint)
+	stateKey := relayRequestStateKey(userID, appID, "create_draft", operation.RequestID)
+	startedAt, stateErr := relay.requestStartedAt(ctx, stateKey)
+	if errors.Is(stateErr, errRelayRequestStateMissing) {
+		return nil, requestStateExpiredError()
+	}
+	if stateErr != nil {
+		return nil, relayStateUnavailableError()
+	}
+	mediaID, relayErr := relay.findDraftMediaID(ctx, accessToken, operation.Article, operation.Fingerprint, startedAt)
 	if relayErr != nil {
 		return nil, relayErr
 	}
 	if mediaID == "" {
 		return map[string]any{"found": false, "fingerprint": operation.Fingerprint}, nil
 	}
-	stateKey := relayRequestStateKey(userID, appID, "create_draft", operation.RequestID)
 	if stateErr := relay.completeRequest(ctx, stateKey, operation.Fingerprint, mediaID); stateErr != nil {
 		return nil, relayStateUnavailableError()
 	}
 	return map[string]any{"found": true, "mediaId": mediaID, "fingerprint": operation.Fingerprint}, nil
 }
 
-func (relay *wechatRelay) findDraftMediaID(ctx context.Context, accessToken string, article wechatArticle, fingerprint string) (string, *WeChatRelayError) {
+func (relay *wechatRelay) findDraftMediaID(ctx context.Context, accessToken string, article wechatArticle, fingerprint string, startedAt int64) (string, *WeChatRelayError) {
 	matches := make([]string, 0, 1)
 	offset := 0
 	for {
@@ -972,6 +984,9 @@ func (relay *wechatRelay) findDraftMediaID(ctx context.Context, accessToken stri
 			return "", classifyWechatError(response.ErrCode, "draft")
 		}
 		for _, item := range response.Items {
+			if item.UpdateTime < startedAt-int64(wechatDraftMatchClockSkew/time.Second) {
+				continue
+			}
 			if len(item.Content.NewsItem) != 1 {
 				continue
 			}
@@ -1126,7 +1141,7 @@ func relayRequestStateKey(userID int, appID string, action string, requestID str
 }
 
 func (relay *wechatRelay) beginRequest(ctx context.Context, key string, fingerprint string) (string, *WeChatRelayError) {
-	state := requestState{Status: "pending", Fingerprint: fingerprint}
+	state := requestState{Status: "pending", Fingerprint: fingerprint, StartedAt: time.Now().Unix()}
 	encoded, err := common.Marshal(state)
 	if err != nil {
 		return "", relayServiceError()
@@ -1157,11 +1172,52 @@ func (relay *wechatRelay) beginRequest(ctx context.Context, key string, fingerpr
 }
 
 func (relay *wechatRelay) completeRequest(ctx context.Context, key string, fingerprint string, mediaID string) error {
-	return relay.setRequestState(ctx, key, requestState{Status: "completed", MediaID: mediaID, Fingerprint: fingerprint})
+	state, err := relay.readRequestState(ctx, key)
+	if err != nil {
+		return err
+	}
+	if state.Fingerprint != fingerprint {
+		return errors.New("request fingerprint mismatch")
+	}
+	state.Status = "completed"
+	state.MediaID = mediaID
+	return relay.setRequestState(ctx, key, state)
 }
 
 func (relay *wechatRelay) markRequestUnknown(ctx context.Context, key string, fingerprint string) {
-	_ = relay.setRequestState(ctx, key, requestState{Status: "unknown", Fingerprint: fingerprint})
+	state, err := relay.readRequestState(ctx, key)
+	if err != nil || state.Fingerprint != fingerprint {
+		return
+	}
+	state.Status = "unknown"
+	state.MediaID = ""
+	_ = relay.setRequestState(ctx, key, state)
+}
+
+func (relay *wechatRelay) requestStartedAt(ctx context.Context, key string) (int64, error) {
+	state, err := relay.readRequestState(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	if state.StartedAt <= 0 {
+		return 0, errRelayRequestStateMissing
+	}
+	return state.StartedAt, nil
+}
+
+func (relay *wechatRelay) readRequestState(ctx context.Context, key string) (requestState, error) {
+	encoded, err := relay.store.Get(ctx, key)
+	if errors.Is(err, redis.Nil) {
+		return requestState{}, errRelayRequestStateMissing
+	}
+	if err != nil {
+		return requestState{}, err
+	}
+	var state requestState
+	if err := common.Unmarshal([]byte(encoded), &state); err != nil {
+		return requestState{}, err
+	}
+	return state, nil
 }
 
 func (relay *wechatRelay) setRequestState(ctx context.Context, key string, state requestState) error {
@@ -1197,6 +1253,16 @@ func relayServiceError() *WeChatRelayError {
 
 func relayStateUnavailableError() *WeChatRelayError {
 	return &WeChatRelayError{Code: "relay_state_unavailable", Category: "wechat_unavailable", Message: "公众号请求状态服务暂不可用，未执行本次操作", Retryable: true}
+}
+
+func requestStateExpiredError() *WeChatRelayError {
+	return &WeChatRelayError{
+		Code:      "request_state_expired",
+		Category:  "invalid_request",
+		Message:   "这次草稿请求状态已过期，请先到微信公众平台人工确认结果",
+		Retryable: false,
+		Outcome:   "unknown",
+	}
 }
 
 func relayBusyError() *WeChatRelayError {
