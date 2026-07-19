@@ -74,7 +74,7 @@ func seedSubscriptionEntitlementUserAndPlan(t *testing.T) (*model.User, *model.S
 		DurationUnit:  model.SubscriptionDurationMonth,
 		DurationValue: 1,
 		Enabled:       true,
-		FeatureKeys:   model.SubscriptionFeatureWechatBridge,
+		FeatureKeys:   model.SubscriptionFeatureWechatBridge + "," + model.SubscriptionFeatureWechatArticle,
 	}
 	require.NoError(t, model.DB.Create(plan).Error)
 	return user, plan

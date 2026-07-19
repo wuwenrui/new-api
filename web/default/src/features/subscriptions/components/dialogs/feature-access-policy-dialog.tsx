@@ -43,6 +43,7 @@ const POLICY_FREE = 'free'
 // Feature keys must match model.SubscriptionFeatureKeys on the backend.
 const FEATURE_ITEMS = [
   { key: 'wechat_bridge', labelKey: 'WeChat advanced features' },
+  { key: 'wechat_article', labelKey: 'WeChat official account articles' },
   { key: 'roundtable', labelKey: 'Roundtable meeting' },
 ] as const
 

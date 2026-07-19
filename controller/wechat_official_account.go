@@ -20,13 +20,13 @@ type wechatRelayRequest struct {
 func requireWeChatAdvancedSubscription(c *gin.Context) bool {
 	active, err := model.UserCanAccessSubscriptionFeature(
 		c.GetInt("id"),
-		model.SubscriptionFeatureWechatBridge,
+		model.SubscriptionFeatureWechatArticle,
 	)
 	if err != nil {
 		writeWeChatRelayError(c, &service.WeChatRelayError{
 			Code:      "entitlement_check_failed",
 			Category:  "wechat_unavailable",
-			Message:   "暂时无法核对微信高级功能订阅状态，请稍后重试",
+			Message:   "暂时无法核对公众号文章订阅状态，请稍后重试",
 			Retryable: true,
 		})
 		return false
@@ -36,11 +36,11 @@ func requireWeChatAdvancedSubscription(c *gin.Context) bool {
 	}
 	c.JSON(http.StatusForbidden, gin.H{
 		"success": false,
-		"message": "公众号文章需要开通微信高级功能订阅后使用",
+		"message": "公众号文章需要开通包含该功能的订阅后使用",
 		"error": gin.H{
 			"code":      "subscription_required",
 			"category":  "subscription_required",
-			"message":   "公众号文章需要开通微信高级功能订阅后使用",
+			"message":   "公众号文章需要开通包含该功能的订阅后使用",
 			"retryable": false,
 		},
 	})

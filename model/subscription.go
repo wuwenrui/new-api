@@ -36,14 +36,16 @@ const (
 
 // Subscription feature keys grant access to paid product capabilities.
 const (
-	SubscriptionFeatureWechatBridge = "wechat_bridge"
-	SubscriptionFeatureRoundtable   = "roundtable"
+	SubscriptionFeatureWechatBridge  = "wechat_bridge"
+	SubscriptionFeatureWechatArticle = "wechat_article"
+	SubscriptionFeatureRoundtable    = "roundtable"
 )
 
 // SubscriptionFeatureKeys lists every subscription feature key the platform recognizes.
 // Entitlement responses always include each key so clients can rely on its presence.
 var SubscriptionFeatureKeys = []string{
 	SubscriptionFeatureWechatBridge,
+	SubscriptionFeatureWechatArticle,
 	SubscriptionFeatureRoundtable,
 }
 
