@@ -2031,7 +2031,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相关项目",
     "footer.defaultCopyright": "版权所有。",
-    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
+    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "强制返回语法合法的 JSON",
@@ -5259,7 +5259,6 @@
     "Channel created with {{count}} models": "渠道已创建，包含 {{count}} 个模型",
     "Please pick a billing group": "请先选择计费分组",
     "per-call": "按次",
-    "Billing group": "计费分组",
     "Select all in group": "全选本组",
     "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.": "转发令牌必须属于该分组。勾选了组外模型时，上游仍按此分组计费，实际成本可能有偏差。",
     "Global markup": "全局加价",
@@ -5287,5 +5286,11 @@
     "Our recharge price: $1 quota = ¥{{price}}": "本站充值价：1$ 额度 = ¥{{price}}",
     "est.": "估",
     "Not in the billing group: cost and default price are estimated from its MOST EXPENSIVE group so you never undercharge. Switch the billing group to price it exactly.": "不在计费分组内：成本与默认售价均按其最贵分组估算，宁贵勿亏；切换计费分组后即为准确价。"
-  }
+  },
+  "Feature Access Policy": "功能访问策略",
+  "Features marked free are available to all users; otherwise an active subscription containing the feature is required. Takes effect immediately without a client update.": "设为免费的功能对所有用户开放；否则需持有包含该功能的有效订阅。保存后立即生效，无需更新客户端。",
+  "WeChat advanced features": "微信高级功能",
+  "Roundtable meeting": "圆桌会议",
+  "Free for all users": "全员免费",
+  "Subscription required": "需订阅"
 }

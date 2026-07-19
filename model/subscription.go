@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/cachex"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -36,7 +37,15 @@ const (
 // Subscription feature keys grant access to paid product capabilities.
 const (
 	SubscriptionFeatureWechatBridge = "wechat_bridge"
+	SubscriptionFeatureRoundtable   = "roundtable"
 )
+
+// SubscriptionFeatureKeys lists every subscription feature key the platform recognizes.
+// Entitlement responses always include each key so clients can rely on its presence.
+var SubscriptionFeatureKeys = []string{
+	SubscriptionFeatureWechatBridge,
+	SubscriptionFeatureRoundtable,
+}
 
 var (
 	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
@@ -950,6 +959,16 @@ func GetActiveSubscriptionFeatureEntitlements(userId int) (map[string]Subscripti
 		}
 	}
 	return entitlements, nil
+}
+
+// UserCanAccessSubscriptionFeature reports whether a user may use the feature,
+// honoring the admin access policy: a feature marked free is open to everyone,
+// otherwise an active subscription containing the feature key is required.
+func UserCanAccessSubscriptionFeature(userId int, featureKey string) (bool, error) {
+	if operation_setting.IsSubscriptionFeatureFree(featureKey) {
+		return true, nil
+	}
+	return HasActiveUserSubscriptionFeature(userId, featureKey)
 }
 
 // HasActiveUserSubscriptionFeature returns whether a user has an active subscription with the feature key.

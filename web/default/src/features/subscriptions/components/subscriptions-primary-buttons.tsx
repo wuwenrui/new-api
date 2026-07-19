@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus } from 'lucide-react'
+import { Plus, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,14 @@ export function SubscriptionsPrimaryButtons() {
   const { setOpen, complianceConfirmed } = useSubscriptions()
   return (
     <div className='flex gap-2'>
+      <Button
+        size='sm'
+        variant='outline'
+        onClick={() => setOpen('feature-access-policy')}
+      >
+        <Settings2 className='h-4 w-4' />
+        {t('Feature Access Policy')}
+      </Button>
       <Button
         size='sm'
         onClick={() => setOpen('create')}

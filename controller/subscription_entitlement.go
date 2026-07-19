@@ -25,8 +25,9 @@ func GetEntitlementsSelf(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	features := map[string]bool{
-		model.SubscriptionFeatureWechatBridge: false,
+	features := make(map[string]bool, len(model.SubscriptionFeatureKeys))
+	for _, featureKey := range model.SubscriptionFeatureKeys {
+		features[featureKey] = operation_setting.IsSubscriptionFeatureFree(featureKey)
 	}
 	for featureKey := range entitlements {
 		features[featureKey] = true

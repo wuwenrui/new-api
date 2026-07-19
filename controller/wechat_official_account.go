@@ -18,7 +18,7 @@ type wechatRelayRequest struct {
 }
 
 func requireWeChatAdvancedSubscription(c *gin.Context) bool {
-	active, err := model.HasActiveUserSubscriptionFeature(
+	active, err := model.UserCanAccessSubscriptionFeature(
 		c.GetInt("id"),
 		model.SubscriptionFeatureWechatBridge,
 	)

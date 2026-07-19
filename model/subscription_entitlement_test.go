@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,6 +71,33 @@ func TestHasActiveUserSubscriptionFeatureRequiresPlanFeature(t *testing.T) {
 	has, err = HasActiveUserSubscriptionFeature(711, SubscriptionFeatureWechatBridge)
 	require.NoError(t, err)
 	require.True(t, has)
+}
+
+func TestUserCanAccessSubscriptionFeatureHonorsAccessPolicy(t *testing.T) {
+	truncateTables(t)
+	insertUserForPaymentGuardTest(t, 712, 0)
+
+	setting := operation_setting.GetSubscriptionFeatureSetting()
+	originalPolicies := setting.AccessPolicies
+	t.Cleanup(func() {
+		setting.AccessPolicies = originalPolicies
+	})
+
+	setting.AccessPolicies = map[string]string{}
+	can, err := UserCanAccessSubscriptionFeature(712, SubscriptionFeatureRoundtable)
+	require.NoError(t, err)
+	require.False(t, can)
+
+	setting.AccessPolicies = map[string]string{
+		SubscriptionFeatureRoundtable: operation_setting.SubscriptionFeaturePolicyFree,
+	}
+	can, err = UserCanAccessSubscriptionFeature(712, SubscriptionFeatureRoundtable)
+	require.NoError(t, err)
+	require.True(t, can)
+
+	can, err = UserCanAccessSubscriptionFeature(712, SubscriptionFeatureWechatBridge)
+	require.NoError(t, err)
+	require.False(t, can)
 }
 
 func TestCompleteManualSubscriptionOrderActivatesFeature(t *testing.T) {

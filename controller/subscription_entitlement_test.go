@@ -112,6 +112,61 @@ func TestGetEntitlementsSelfReturnsWechatBridgeFeature(t *testing.T) {
 	require.True(t, response.Data.Features[model.SubscriptionFeatureWechatBridge])
 }
 
+func setSubscriptionFeaturePoliciesForTest(t *testing.T, policies map[string]string) {
+	t.Helper()
+	setting := operation_setting.GetSubscriptionFeatureSetting()
+	original := setting.AccessPolicies
+	setting.AccessPolicies = policies
+	t.Cleanup(func() {
+		setting.AccessPolicies = original
+	})
+}
+
+func fetchEntitlementFeatures(t *testing.T, userId int) map[string]bool {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", userId)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/entitlements/self", nil)
+
+	GetEntitlementsSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Features map[string]bool `json:"features"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	return response.Data.Features
+}
+
+func TestGetEntitlementsSelfIncludesAllFeatureKeysWithoutSubscription(t *testing.T) {
+	setupSubscriptionEntitlementControllerTestDB(t)
+	user, _ := seedSubscriptionEntitlementUserAndPlan(t)
+	setSubscriptionFeaturePoliciesForTest(t, map[string]string{})
+
+	features := fetchEntitlementFeatures(t, user.Id)
+	for _, featureKey := range model.SubscriptionFeatureKeys {
+		require.Contains(t, features, featureKey)
+		require.False(t, features[featureKey])
+	}
+}
+
+func TestGetEntitlementsSelfHonorsFreeAccessPolicy(t *testing.T) {
+	setupSubscriptionEntitlementControllerTestDB(t)
+	user, _ := seedSubscriptionEntitlementUserAndPlan(t)
+	setSubscriptionFeaturePoliciesForTest(t, map[string]string{
+		model.SubscriptionFeatureRoundtable: operation_setting.SubscriptionFeaturePolicyFree,
+	})
+
+	features := fetchEntitlementFeatures(t, user.Id)
+	require.True(t, features[model.SubscriptionFeatureRoundtable])
+	require.False(t, features[model.SubscriptionFeatureWechatBridge])
+}
+
 func TestRequestWechatBridgeManualSubscriptionCreatesPendingOrder(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	resetManualTopUpSettingsForTest(t)
