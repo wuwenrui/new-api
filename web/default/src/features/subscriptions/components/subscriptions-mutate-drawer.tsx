@@ -32,6 +32,7 @@ import {
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Form,
   FormControl,
@@ -62,6 +63,8 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+
+import { SUBSCRIPTION_FEATURE_ITEMS } from '../feature-catalog'
 
 import {
   createPlan,
@@ -583,20 +586,57 @@ export function SubscriptionsMutateDrawer({
               <FormField
                 control={form.control}
                 name='feature_keys'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Feature Keys')}</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder='wechat_bridge' />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'Use wechat_bridge to unlock the WeChat advanced feature. Multiple keys can be separated by commas.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const selected = (field.value || '')
+                    .split(',')
+                    .map((key) => key.trim())
+                    .filter(Boolean)
+                  const knownKeys = new Set(
+                    SUBSCRIPTION_FEATURE_ITEMS.map((item) => item.key)
+                  )
+                  const unknownKeys = selected.filter(
+                    (key) => !knownKeys.has(key)
+                  )
+                  const toggleFeature = (key: string, checked: boolean) => {
+                    const next = checked
+                      ? [...selected, key]
+                      : selected.filter((value) => value !== key)
+                    field.onChange(next.join(','))
+                  }
+                  return (
+                    <FormItem>
+                      <FormLabel>{t('Included features')}</FormLabel>
+                      <div className='flex flex-col gap-2'>
+                        {SUBSCRIPTION_FEATURE_ITEMS.map((item) => (
+                          <label
+                            key={item.key}
+                            className='flex items-center gap-2 text-sm'
+                          >
+                            <Checkbox
+                              checked={selected.includes(item.key)}
+                              onCheckedChange={(checked) =>
+                                toggleFeature(item.key, checked === true)
+                              }
+                            />
+                            <span>{t(item.labelKey)}</span>
+                            <span className='text-muted-foreground text-xs'>
+                              {item.key}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <FormDescription>
+                        {t(
+                          'Select the features this plan unlocks. Subscribers can use every selected feature while the subscription is active.'
+                        )}
+                        {unknownKeys.length > 0
+                          ? ` ${t('Unrecognized feature keys are kept unchanged')}: ${unknownKeys.join(', ')}`
+                          : null}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
               />
             </SideDrawerSection>
 

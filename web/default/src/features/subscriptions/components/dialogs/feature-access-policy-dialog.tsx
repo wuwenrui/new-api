@@ -35,17 +35,11 @@ import {
 } from '@/features/system-settings/hooks/use-system-options'
 import { useUpdateOption } from '@/features/system-settings/hooks/use-update-option'
 
+import { SUBSCRIPTION_FEATURE_ITEMS } from '../../feature-catalog'
 import { useSubscriptions } from '../subscriptions-provider'
 
 const ACCESS_POLICIES_OPTION_KEY = 'subscription_feature_setting.access_policies'
 const POLICY_FREE = 'free'
-
-// Feature keys must match model.SubscriptionFeatureKeys on the backend.
-const FEATURE_ITEMS = [
-  { key: 'wechat_bridge', labelKey: 'WeChat advanced features' },
-  { key: 'wechat_article', labelKey: 'WeChat official account articles' },
-  { key: 'roundtable', labelKey: 'Roundtable meeting' },
-] as const
 
 function parsePolicies(raw: string): Record<string, string> {
   if (!raw) return {}
@@ -113,7 +107,7 @@ export function FeatureAccessPolicyDialog() {
           </DialogDescription>
         </DialogHeader>
         <div className='flex flex-col gap-4 py-2'>
-          {FEATURE_ITEMS.map((item) => (
+          {SUBSCRIPTION_FEATURE_ITEMS.map((item) => (
             <div
               key={item.key}
               className='flex items-center justify-between gap-4'

@@ -5292,6 +5292,9 @@
     "Roundtable meeting": "圆桌会议",
     "Free for all users": "全员免费",
     "Subscription required": "需订阅",
-    "WeChat official account articles": "微信公众号文章"
+    "WeChat official account articles": "微信公众号文章",
+    "Included features": "订阅包含的功能",
+    "Select the features this plan unlocks. Subscribers can use every selected feature while the subscription is active.": "勾选该套餐解锁的功能；订阅生效期间，用户可使用所有勾选的功能。",
+    "Unrecognized feature keys are kept unchanged": "以下未识别的功能标识将原样保留"
   }
 }
