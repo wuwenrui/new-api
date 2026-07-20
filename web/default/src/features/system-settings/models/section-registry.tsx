@@ -24,6 +24,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { PeakRatioCard } from './peak-ratio-card'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
@@ -163,6 +164,25 @@ const MODELS_SECTIONS = [
             settings['channel_affinity_setting.default_ttl_seconds'],
           'channel_affinity_setting.rules':
             settings['channel_affinity_setting.rules'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'peak-ratio',
+    titleKey: 'Peak Pricing',
+    build: (settings: ModelSettings) => (
+      <PeakRatioCard
+        defaultValues={{
+          'peak_ratio_setting.enabled':
+            settings['peak_ratio_setting.enabled'],
+          'peak_ratio_setting.multiplier':
+            settings['peak_ratio_setting.multiplier'],
+          'peak_ratio_setting.timezone':
+            settings['peak_ratio_setting.timezone'],
+          'peak_ratio_setting.models': settings['peak_ratio_setting.models'],
+          'peak_ratio_setting.windows':
+            settings['peak_ratio_setting.windows'],
         }}
       />
     ),

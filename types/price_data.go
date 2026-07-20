@@ -17,7 +17,12 @@ type PriceData struct {
 	FreeModel            bool
 	ModelPrice           float64
 	ModelRatio           float64
-	CompletionRatio      float64
+	// BaseModelRatio 是应用峰谷系数之前的原始模型倍率；IsPeak 为 false 时与 ModelRatio 相等。
+	BaseModelRatio float64
+	// IsPeak 标记本次请求是否命中高峰时段，PeakMultiplier 为已乘入 ModelRatio 的峰值系数。
+	IsPeak          bool
+	PeakMultiplier  float64
+	CompletionRatio float64
 	CacheRatio           float64
 	CacheCreationRatio   float64
 	CacheCreation5mRatio float64

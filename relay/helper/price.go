@@ -79,6 +79,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		return modelPriceHelperTiered(c, info, promptTokens, meta, groupRatioInfo)
 	}
 
+	// 峰谷计价：命中高峰时段的模型，其模型倍率（按价格计费时为模型价格）按配置系数放大。
+	// 系数只在此处乘一次，预扣（preConsume）与最终结算（settle）共用同一放大后的值，天然一致。
+	peakMultiplier, isPeak := ratio_setting.GetPeakMultiplier(info.OriginModelName)
+
+	var baseModelRatio float64
 	var preConsumedQuota int
 	var modelRatio float64
 	var completionRatio float64
@@ -107,6 +112,10 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				return types.PriceData{}, modelPriceNotConfiguredError(matchName, info.UserId)
 			}
 		}
+		baseModelRatio = modelRatio
+		if isPeak {
+			modelRatio *= peakMultiplier
+		}
 		completionRatio = ratio_setting.GetCompletionRatio(info.OriginModelName)
 		cacheRatio, _ = ratio_setting.GetCacheRatio(info.OriginModelName)
 		cacheCreationRatio, _ = ratio_setting.GetCreateCacheRatio(info.OriginModelName)
@@ -123,6 +132,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 		preConsumedQuota = quota
 	} else {
+		if isPeak {
+			modelPrice *= peakMultiplier
+		}
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
@@ -151,6 +163,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		FreeModel:            freeModel,
 		ModelPrice:           modelPrice,
 		ModelRatio:           modelRatio,
+		BaseModelRatio:       baseModelRatio,
+		IsPeak:               isPeak,
+		PeakMultiplier:       peakMultiplier,
 		CompletionRatio:      completionRatio,
 		GroupRatioInfo:       groupRatioInfo,
 		UsePrice:             usePrice,

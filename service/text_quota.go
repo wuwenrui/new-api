@@ -424,6 +424,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	} else {
 		other = GenerateTextOtherInfo(ctx, relayInfo, summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio, summary.CacheTokens, summary.CacheRatio, summary.ModelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
+	// 峰谷计价标记：命中高峰时段时记录 peak 及已放大的系数，日志页据此区分高峰单。
+	// model_ratio 字段此时为放大后的倍率，base_model_ratio 保留放大前的原值。
+	if relayInfo.PriceData.IsPeak {
+		other["peak"] = true
+		other["peak_multiplier"] = relayInfo.PriceData.PeakMultiplier
+		if relayInfo.PriceData.BaseModelRatio > 0 {
+			other["base_model_ratio"] = relayInfo.PriceData.BaseModelRatio
+		}
+	}
 	appendUsageBillingPathForLog(other, common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens), originUsage)
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason

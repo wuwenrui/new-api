@@ -220,6 +220,12 @@ export function ModelMutateDrawer({
       'channel_affinity_setting.max_entries': 100000,
       'channel_affinity_setting.default_ttl_seconds': 3600,
       'channel_affinity_setting.rules': '[]',
+      'peak_ratio_setting.enabled': false,
+      'peak_ratio_setting.multiplier': 2,
+      'peak_ratio_setting.timezone': 'Asia/Shanghai',
+      'peak_ratio_setting.models': '["deepseek"]',
+      'peak_ratio_setting.windows':
+        '[{"start":"09:00","end":"12:00"},{"start":"14:00","end":"18:00"}]',
       'model_deployment.ionet.api_key': '',
       'model_deployment.ionet.enabled': false,
     }

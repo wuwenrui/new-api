@@ -635,6 +635,8 @@ func handleConfigUpdate(key, value string) bool {
 		ratio_setting.InvalidateExposedDataCache()
 	} else if configName == "theme" {
 		system_setting.UpdateAndSyncTheme()
+	} else if configName == "peak_ratio_setting" {
+		ratio_setting.ReloadPeakRatioFromSetting()
 	}
 
 	return true // 已处理
