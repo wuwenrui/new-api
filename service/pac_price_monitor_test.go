@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -324,4 +325,54 @@ func TestBuildPACPriceMonitorNotificationReportsMissingBaseline(t *testing.T) {
 	})
 
 	require.Contains(t, content, "暂无历史价格基准")
+}
+
+// packyapi 渠道用公开定价，coderelay 类探测上游按 base_url 用探测定价，未配置的上游得到空快照。
+func TestPickPACChannelPricingSelectsUpstreamByBase(t *testing.T) {
+	packy := packyPricingSnapshot{Models: map[string]packyPricingModel{"m": {ModelRatio: 1}}}
+	probeBase := "https://cdn.example.com"
+	probe := map[string]packyPricingSnapshot{
+		probeBase: {Models: map[string]packyPricingModel{"m": {ModelRatio: 5}}},
+	}
+
+	packyBase := "https://api.packyapi.com"
+	packyCh := &model.Channel{Name: "pac-x", BaseURL: &packyBase}
+	require.True(t, isPACPackyChannel(packyCh))
+	require.EqualValues(t, 1, pickPACChannelPricing(packyCh, packy, probe).Models["m"].ModelRatio)
+
+	upBase := probeBase
+	upCh := &model.Channel{Name: "coderelay-max", BaseURL: &upBase}
+	require.False(t, isPACPackyChannel(upCh))
+	require.EqualValues(t, 5, pickPACChannelPricing(upCh, packy, probe).Models["m"].ModelRatio)
+
+	otherBase := "https://unknown.example.com"
+	otherCh := &model.Channel{Name: "coderelay-other", BaseURL: &otherBase}
+	require.Empty(t, pickPACChannelPricing(otherCh, packy, probe).Models)
+}
+
+func TestUpstreamToPackySnapshotKeepsInputOutputRatios(t *testing.T) {
+	out := upstreamToPackySnapshot(upstreamPricingSnapshot{
+		GroupRatios: map[string]float64{"g": 0.3},
+		Models:      map[string]upstreamPricingModel{"m": {ModelRatio: 5, CompletionRatio: 5, CacheRatio: 0.1, CreateCacheRatio: 1.25}},
+	})
+	require.InDelta(t, 0.3, out.GroupRatios["g"], 1e-9)
+	require.InDelta(t, 5, out.Models["m"].ModelRatio, 1e-9)
+	require.InDelta(t, 5, out.Models["m"].CompletionRatio, 1e-9)
+}
+
+// packyapi 定价获取失败时，报告应降级（不整体失败），packyapi 渠道标未知，其他上游不受影响。
+func TestBuildPACPriceMonitorReportDegradesWhenPackyFails(t *testing.T) {
+	setupPACPriceMonitorTestDB(t)
+	seedPACMonitorChannel(t, 9, "pac-bai", "qwen3-vl-flash")
+
+	report, err := BuildPACPriceMonitorReport(context.Background(), PACPriceMonitorParams{
+		TargetMargin: 60,
+		FetchPricing: func(context.Context) (packyPricingSnapshot, error) {
+			return packyPricingSnapshot{}, errors.New("packy pricing status: 520")
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	require.Equal(t, "unknown", report.Rows[0].Status)
+	require.Equal(t, 1, report.Summary.UnknownModels)
 }

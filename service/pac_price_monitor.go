@@ -125,7 +125,9 @@ func BuildPACPriceMonitorReport(ctx context.Context, params PACPriceMonitorParam
 	}
 	pricing, err := fetchPricing(ctx)
 	if err != nil {
-		return PACPriceMonitorReport{}, err
+		// packyapi 定价获取失败不应阻断其他上游（如 coderelay）；降级为空快照，packyapi 渠道会标为未知
+		common.SysError("PAC 巡检 packyapi 定价获取失败，降级仅处理其他上游: " + err.Error())
+		pricing = packyPricingSnapshot{}
 	}
 
 	channels, err := loadPACPriceMonitorChannels(params)
@@ -136,12 +138,15 @@ func BuildPACPriceMonitorReport(ctx context.Context, params PACPriceMonitorParam
 	if err != nil {
 		return PACPriceMonitorReport{}, err
 	}
+	// 非 packyapi 的 new-api 类上游（如 coderelay）按 base_url 实时探测定价
+	probePricing := loadProbeUpstreamPricingForPAC(ctx, channels)
 
 	rows := make([]PACPriceMonitorRow, 0)
 	for _, channel := range channels {
 		if channel == nil {
 			continue
 		}
+		channelPricing := pickPACChannelPricing(channel, pricing, probePricing)
 		for _, modelName := range channel.GetModels() {
 			modelName = strings.TrimSpace(modelName)
 			if modelName == "" {
@@ -150,7 +155,7 @@ func BuildPACPriceMonitorReport(ctx context.Context, params PACPriceMonitorParam
 			if params.ModelName != "" && modelName != params.ModelName {
 				continue
 			}
-			row := buildPACPriceMonitorRow(channel, modelName, pricing, usage[pacUsageKey(channel.Id, modelName)], targetMargin)
+			row := buildPACPriceMonitorRow(channel, modelName, channelPricing, usage[pacUsageKey(channel.Id, modelName)], targetMargin)
 			rows = append(rows, row)
 		}
 	}
@@ -235,8 +240,13 @@ func LoadLatestPACPriceMonitorReport() (*PACPriceMonitorReport, error) {
 func loadPACPriceMonitorChannels(params PACPriceMonitorParams) ([]*model.Channel, error) {
 	query := model.DB.Model(&model.Channel{}).
 		Omit("key").
-		Where("status = ?", common.ChannelStatusEnabled).
-		Where("(base_url LIKE ? OR name LIKE ?)", "%packyapi.com%", "pac-%")
+		Where("status = ?", common.ChannelStatusEnabled)
+	// packyapi（公开定价）+ 配置了探测凭据的 new-api 类上游（如 coderelay）
+	if bases := pacProbeUpstreamBaseURLs(); len(bases) > 0 {
+		query = query.Where("(base_url LIKE ? OR name LIKE ? OR base_url IN ?)", "%packyapi.com%", "pac-%", bases)
+	} else {
+		query = query.Where("(base_url LIKE ? OR name LIKE ?)", "%packyapi.com%", "pac-%")
+	}
 	if params.Channel > 0 {
 		query = query.Where("id = ?", params.Channel)
 	}
@@ -441,6 +451,91 @@ func fetchPackyPricing(ctx context.Context) (packyPricingSnapshot, error) {
 		}
 	}
 	return snapshot, nil
+}
+
+// pacProbeUpstreamBaseURLs 返回配置了探测凭据的上游 base_url 列表（去尾斜杠），
+// 用于把这些 new-api 类上游（如 coderelay）的渠道一并纳入价格巡检。
+func pacProbeUpstreamBaseURLs() []string {
+	configs, err := LoadUpstreamProbeConfigs()
+	if err != nil || len(configs) == 0 {
+		return nil
+	}
+	bases := make([]string, 0, len(configs))
+	for _, cfg := range configs {
+		if base := normalizeUpstreamBaseURL(cfg.BaseURL); base != "" {
+			bases = append(bases, base)
+		}
+	}
+	return bases
+}
+
+// loadProbeUpstreamPricingForPAC 对巡检渠道涉及的每个探测上游各拉一次定价，
+// 返回 base_url -> 定价快照；单个上游探测失败仅记日志、跳过（该上游渠道会标记为未知）。
+func loadProbeUpstreamPricingForPAC(ctx context.Context, channels []*model.Channel) map[string]packyPricingSnapshot {
+	configs, err := LoadUpstreamProbeConfigs()
+	if err != nil || len(configs) == 0 {
+		return nil
+	}
+	configByBase := make(map[string]UpstreamProbeConfig, len(configs))
+	for _, cfg := range configs {
+		if base := normalizeUpstreamBaseURL(cfg.BaseURL); base != "" {
+			configByBase[base] = cfg
+		}
+	}
+	result := make(map[string]packyPricingSnapshot)
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		base := normalizeUpstreamBaseURL(channel.GetBaseURL())
+		if base == "" {
+			continue
+		}
+		if _, done := result[base]; done {
+			continue
+		}
+		cfg, ok := configByBase[base]
+		if !ok {
+			continue
+		}
+		snapshot, probeErr := probeUpstreamPricing(ctx, cfg)
+		if probeErr != nil {
+			common.SysError("PAC 巡检探测上游定价失败 " + base + ": " + probeErr.Error())
+			continue
+		}
+		result[base] = upstreamToPackySnapshot(snapshot)
+	}
+	return result
+}
+
+// upstreamToPackySnapshot 把面板探测的定价快照转成巡检用快照（巡检只用输入/输出倍率）。
+func upstreamToPackySnapshot(snapshot upstreamPricingSnapshot) packyPricingSnapshot {
+	out := packyPricingSnapshot{
+		GroupRatios: snapshot.GroupRatios,
+		Models:      make(map[string]packyPricingModel, len(snapshot.Models)),
+	}
+	for name, m := range snapshot.Models {
+		out.Models[name] = packyPricingModel{ModelRatio: m.ModelRatio, CompletionRatio: m.CompletionRatio}
+	}
+	return out
+}
+
+// isPACPackyChannel 判断渠道是否走 packyapi 公开定价（否则走探测上游定价）。
+func isPACPackyChannel(channel *model.Channel) bool {
+	base := strings.ToLower(channel.GetBaseURL())
+	name := strings.ToLower(strings.TrimSpace(channel.Name))
+	return strings.Contains(base, "packyapi.com") || strings.HasPrefix(name, "pac-")
+}
+
+// pickPACChannelPricing 按渠道选对应上游定价：packyapi 用公开定价，其余用探测定价；无则返回空快照（渠道标未知）。
+func pickPACChannelPricing(channel *model.Channel, packy packyPricingSnapshot, probe map[string]packyPricingSnapshot) packyPricingSnapshot {
+	if isPACPackyChannel(channel) {
+		return packy
+	}
+	if snapshot, ok := probe[normalizeUpstreamBaseURL(channel.GetBaseURL())]; ok {
+		return snapshot
+	}
+	return packyPricingSnapshot{}
 }
 
 func resolvePACUpstreamGroup(channel *model.Channel) (string, bool) {
