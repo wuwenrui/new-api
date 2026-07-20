@@ -1,6 +1,10 @@
 package service
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -101,4 +105,24 @@ func TestLoadUpstreamProbeConfigs(t *testing.T) {
 	configs, err = LoadUpstreamProbeConfigs()
 	require.NoError(t, err)
 	assert.Empty(t, configs)
+}
+
+// 上游偶发失败时，探测应重试并在后续尝试成功（对应生产 context deadline exceeded 修复）。
+func TestProbeUpstreamPricingRetriesOnFailure(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError) // 首次失败，触发重试
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"group_ratio":{"g":0.3},"data":[{"model_name":"m","model_ratio":5,"completion_ratio":5,"cache_ratio":0.1,"create_cache_ratio":1.25}]}`))
+	}))
+	defer srv.Close()
+
+	snapshot, err := probeUpstreamPricing(context.Background(), UpstreamProbeConfig{BaseURL: srv.URL})
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, atomic.LoadInt32(&calls)) // 第一次失败，第二次成功
+	assert.Contains(t, snapshot.Models, "m")
+	assert.InDelta(t, 0.3, snapshot.GroupRatios["g"], 1e-9)
 }

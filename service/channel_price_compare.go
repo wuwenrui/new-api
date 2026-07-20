@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	channelPriceCompareProbeTimeout = 15 * time.Second
-	channelPriceCompareMaxBody      = 10 << 20 // 10MB
+	channelPriceCompareProbeTimeout  = 8 * time.Second
+	channelPriceCompareProbeAttempts = 3 // 跨境到部分上游偶发连接卡顿，单次失败后重试
+	channelPriceCompareMaxBody       = 10 << 20 // 10MB
 	// UpstreamProbeConfigsOptionKey 系统配置项键名，存各上游站点的探测凭据（JSON 数组）
 	UpstreamProbeConfigsOptionKey = "UpstreamProbeConfigs"
 )
@@ -256,7 +257,24 @@ func LoadUpstreamProbeConfigs() ([]UpstreamProbeConfig, error) {
 	return configs, nil
 }
 
+// probeUpstreamPricing 探测上游定价；跨境到部分上游偶发连接卡顿（TCP 握手可卡满单次超时），
+// 失败按 channelPriceCompareProbeAttempts 次重试，重试通常立即恢复。
 func probeUpstreamPricing(ctx context.Context, cfg UpstreamProbeConfig) (upstreamPricingSnapshot, error) {
+	var lastErr error
+	for attempt := 0; attempt < channelPriceCompareProbeAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return upstreamPricingSnapshot{}, err
+		}
+		snapshot, err := probeUpstreamPricingOnce(ctx, cfg)
+		if err == nil {
+			return snapshot, nil
+		}
+		lastErr = err
+	}
+	return upstreamPricingSnapshot{}, lastErr
+}
+
+func probeUpstreamPricingOnce(ctx context.Context, cfg UpstreamProbeConfig) (upstreamPricingSnapshot, error) {
 	base := normalizeUpstreamBaseURL(cfg.BaseURL)
 	if base == "" {
 		return upstreamPricingSnapshot{}, fmt.Errorf("上游地址无效")
