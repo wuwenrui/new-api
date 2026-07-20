@@ -52,6 +52,7 @@ import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authentica
 import { Route as AuthenticatedFinanceReportIndexRouteImport } from './routes/_authenticated/finance-report/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
+import { Route as AuthenticatedChannelPriceCompareIndexRouteImport } from './routes/_authenticated/channel-price-compare/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
@@ -301,6 +302,12 @@ const AuthenticatedChannelsIndexRoute =
     path: '/channels/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedChannelPriceCompareIndexRoute =
+  AuthenticatedChannelPriceCompareIndexRouteImport.update({
+    id: '/channel-price-compare/',
+    path: '/channel-price-compare/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedUsageLogsSectionRoute =
   AuthenticatedUsageLogsSectionRouteImport.update({
     id: '/usage-logs/$section',
@@ -451,6 +458,7 @@ export interface FileRoutesByFullPath {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
+  '/channel-price-compare/': typeof AuthenticatedChannelPriceCompareIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/finance-report/': typeof AuthenticatedFinanceReportIndexRoute
@@ -513,6 +521,7 @@ export interface FileRoutesByTo {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
+  '/channel-price-compare': typeof AuthenticatedChannelPriceCompareIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/finance-report': typeof AuthenticatedFinanceReportIndexRoute
@@ -579,6 +588,7 @@ export interface FileRoutesById {
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
+  '/_authenticated/channel-price-compare/': typeof AuthenticatedChannelPriceCompareIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/finance-report/': typeof AuthenticatedFinanceReportIndexRoute
@@ -644,6 +654,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/models/$section'
     | '/usage-logs/$section'
+    | '/channel-price-compare/'
     | '/channels/'
     | '/dashboard/'
     | '/finance-report/'
@@ -706,6 +717,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/models/$section'
     | '/usage-logs/$section'
+    | '/channel-price-compare'
     | '/channels'
     | '/dashboard'
     | '/finance-report'
@@ -771,6 +783,7 @@ export interface FileRouteTypes {
     | '/_authenticated/errors/$error'
     | '/_authenticated/models/$section'
     | '/_authenticated/usage-logs/$section'
+    | '/_authenticated/channel-price-compare/'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/finance-report/'
@@ -1128,6 +1141,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChannelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/channel-price-compare/': {
+      id: '/_authenticated/channel-price-compare/'
+      path: '/channel-price-compare'
+      fullPath: '/channel-price-compare/'
+      preLoaderRoute: typeof AuthenticatedChannelPriceCompareIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/usage-logs/$section': {
       id: '/_authenticated/usage-logs/$section'
       path: '/usage-logs/$section'
@@ -1362,6 +1382,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
+  AuthenticatedChannelPriceCompareIndexRoute: typeof AuthenticatedChannelPriceCompareIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedFinanceReportIndexRoute: typeof AuthenticatedFinanceReportIndexRoute
@@ -1388,6 +1409,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
+  AuthenticatedChannelPriceCompareIndexRoute:
+    AuthenticatedChannelPriceCompareIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedFinanceReportIndexRoute: AuthenticatedFinanceReportIndexRoute,

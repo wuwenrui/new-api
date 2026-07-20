@@ -30,6 +30,7 @@ import {
   ReceiptText,
   MessageSquare,
   Radio,
+  Scale,
   ServerCog,
   Settings,
   Ticket,
@@ -130,6 +131,11 @@ export function useSidebarData(): SidebarData {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+          },
+          {
+            title: t('Channel Price Compare'),
+            url: '/channel-price-compare',
+            icon: Scale,
           },
           {
             title: t('Models'),

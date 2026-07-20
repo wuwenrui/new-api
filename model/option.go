@@ -126,6 +126,8 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
+	// UpstreamProbeConfigs 各上游站点探测凭据，键名须与 service.UpstreamProbeConfigsOptionKey 一致
+	common.OptionMap["UpstreamProbeConfigs"] = "[]"
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
 	common.OptionMap["PayMethods"] = operation_setting.PayMethods2JsonString()
