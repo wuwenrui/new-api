@@ -296,6 +296,7 @@ const SENSITIVE_FORM_FIELDS = [
   'disable_task_polling_sleep',
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
+  'upstream_model_update_auto_remove_enabled',
   'upstream_model_update_ignored_models',
 ] satisfies (keyof ChannelFormValues)[]
 
@@ -341,6 +342,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.claude_beta_query ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
+    values.upstream_model_update_auto_remove_enabled ||
     values.upstream_model_update_ignored_models?.trim()
   )
 }
@@ -756,6 +758,9 @@ export function ChannelMutateDrawer({
   const currentUpstreamModelUpdateAutoSyncEnabled = form.watch(
     'upstream_model_update_auto_sync_enabled'
   )
+  const currentUpstreamModelUpdateAutoRemoveEnabled = form.watch(
+    'upstream_model_update_auto_remove_enabled'
+  )
   const currentUpstreamModelUpdateIgnoredModels = form.watch(
     'upstream_model_update_ignored_models'
   )
@@ -1035,6 +1040,7 @@ export function ChannelMutateDrawer({
   const upstreamModelDetectionConfigured = Boolean(
     upstreamModelUpdateCheckEnabled ||
     currentUpstreamModelUpdateAutoSyncEnabled ||
+    currentUpstreamModelUpdateAutoRemoveEnabled ||
     currentUpstreamModelUpdateIgnoredModels?.trim()
   )
   const advancedConfigured = Boolean(
@@ -4550,6 +4556,33 @@ export function ChannelMutateDrawer({
                                         <FormDescription>
                                           {t(
                                             'Automatically sync model list when upstream changes are detected'
+                                          )}
+                                        </FormDescription>
+                                      </div>
+                                      <FormControl>
+                                        <Switch
+                                          checked={field.value}
+                                          disabled={
+                                            !upstreamModelUpdateCheckEnabled
+                                          }
+                                          onCheckedChange={field.onChange}
+                                        />
+                                      </FormControl>
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name='upstream_model_update_auto_remove_enabled'
+                                  render={({ field }) => (
+                                    <FormItem className='flex items-center justify-between px-4 py-3'>
+                                      <div className='space-y-0.5'>
+                                        <FormLabel>
+                                          {t('Auto Remove Unavailable Models')}
+                                        </FormLabel>
+                                        <FormDescription>
+                                          {t(
+                                            'Automatically remove models no longer available to the configured upstream group'
                                           )}
                                         </FormDescription>
                                       </div>

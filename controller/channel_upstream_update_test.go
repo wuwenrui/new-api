@@ -335,10 +335,11 @@ func TestFailedAdvancedCustomDetectionDoesNotStageFullRemoval(t *testing.T) {
 	channel.SetOtherSettings(settings)
 	require.NoError(t, db.Create(channel).Error)
 
-	modelsChanged, autoAdded, err := checkAndPersistChannelUpstreamModelUpdates(channel, &settings, true, true)
+	modelsChanged, autoAdded, autoRemoved, err := checkAndPersistChannelUpstreamModelUpdates(channel, &settings, true, true)
 	require.ErrorContains(t, err, "no valid model IDs")
 	require.False(t, modelsChanged)
 	require.Zero(t, autoAdded)
+	require.Zero(t, autoRemoved)
 	require.Empty(t, settings.UpstreamModelUpdateLastDetectedModels)
 	require.Empty(t, settings.UpstreamModelUpdateLastRemovedModels)
 
@@ -499,6 +500,220 @@ func TestCollectPendingUpstreamModelChangesFromModels_WithIgnoredRegexPatterns(t
 	require.Equal(t, []string{}, pendingRemoveModels)
 }
 
+func TestPricingModelIDsForGroup(t *testing.T) {
+	payload := upstreamPricingResponse{
+		Success: true,
+		Data: []upstreamPricingItem{
+			{ModelName: "claude-fable-5", EnableGroups: []string{"ClaudeCode-Kiro逆向"}},
+			{ModelName: "claude-sonnet-5", EnableGroups: []string{"ClaudeCode-Kiro逆向", "ClaudeCode-补贴渠道"}},
+		},
+		GroupRatio: map[string]float64{
+			"ClaudeCode-Kiro逆向": 0.2,
+			"ClaudeCode-补贴渠道":   0.5,
+		},
+	}
+
+	models, err := pricingModelIDsForGroup(payload, "ClaudeCode-补贴渠道")
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude-sonnet-5"}, models)
+}
+
+func TestPricingModelIDsForGroupRejectsIncompleteSnapshot(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload upstreamPricingResponse
+		group   string
+	}{
+		{
+			name:    "unsuccessful response",
+			payload: upstreamPricingResponse{},
+			group:   "ClaudeCode-Kiro逆向",
+		},
+		{
+			name: "empty model list",
+			payload: upstreamPricingResponse{
+				Success:    true,
+				GroupRatio: map[string]float64{"ClaudeCode-Kiro逆向": 0.2},
+			},
+			group: "ClaudeCode-Kiro逆向",
+		},
+		{
+			name: "unknown group",
+			payload: upstreamPricingResponse{
+				Success:    true,
+				Data:       []upstreamPricingItem{{ModelName: "claude-fable-5"}},
+				GroupRatio: map[string]float64{"ClaudeCode-Kiro逆向": 0.2},
+			},
+			group: "removed-group",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			models, err := pricingModelIDsForGroup(tt.payload, tt.group)
+
+			require.Error(t, err)
+			require.Nil(t, models)
+		})
+	}
+}
+
+func TestCheckAndPersistChannelUpstreamModelUpdatesAutoRemovesMissingGroupModels(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Empty(t, r.Header.Get("Authorization"))
+		require.Empty(t, r.Header.Get("x-api-key"))
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{
+			"success": true,
+			"group_ratio": {"ClaudeCode-补贴渠道": 0.5},
+			"data": [
+				{"model_name": "claude-fable-5", "enable_groups": ["ClaudeCode-Kiro逆向"]},
+				{"model_name": "claude-sonnet-5", "enable_groups": ["ClaudeCode-补贴渠道"]},
+				{"model_name": "claude-opus-4-6", "enable_groups": ["ClaudeCode-补贴渠道"]}
+			]
+		}`))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL
+	priority := int64(0)
+	channel := &model.Channel{
+		Id:       23,
+		Type:     14,
+		Key:      "redacted",
+		Status:   common.ChannelStatusEnabled,
+		Name:     "coderelay-subsidy",
+		BaseURL:  &baseURL,
+		Models:   "claude-fable-5,claude-sonnet-5",
+		Group:    "default",
+		Priority: &priority,
+	}
+	settings := dto.ChannelOtherSettings{
+		UpstreamModelUpdateCheckEnabled:      true,
+		UpstreamModelUpdateAutoRemoveEnabled: true,
+		PACUpstreamGroup:                     "ClaudeCode-补贴渠道",
+	}
+	channel.SetOtherSettings(settings)
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, channel.AddAbilities(nil))
+
+	modelsChanged, autoAdded, autoRemoved, err := checkAndPersistChannelUpstreamModelUpdates(channel, &settings, true, true)
+
+	require.NoError(t, err)
+	require.True(t, modelsChanged)
+	require.Zero(t, autoAdded)
+	require.Equal(t, 1, autoRemoved)
+	require.Equal(t, "claude-sonnet-5", channel.Models)
+	require.Equal(t, []string{"claude-opus-4-6"}, settings.UpstreamModelUpdateLastDetectedModels)
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, "claude-sonnet-5", stored.Models)
+	var abilities []model.Ability
+	require.NoError(t, db.Where("channel_id = ?", channel.Id).Find(&abilities).Error)
+	require.Len(t, abilities, 1)
+	require.Equal(t, "claude-sonnet-5", abilities[0].Model)
+}
+
+func TestCheckAndPersistChannelUpstreamModelUpdatesKeepsModelsWhenPricingFetchFails(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL
+	channel := &model.Channel{
+		Id:      24,
+		Type:    14,
+		Key:     "redacted",
+		Status:  common.ChannelStatusEnabled,
+		Name:    "coderelay-subsidy",
+		BaseURL: &baseURL,
+		Models:  "claude-fable-5,claude-sonnet-5",
+		Group:   "default",
+	}
+	settings := dto.ChannelOtherSettings{
+		UpstreamModelUpdateCheckEnabled:      true,
+		UpstreamModelUpdateAutoRemoveEnabled: true,
+		PACUpstreamGroup:                     "ClaudeCode-补贴渠道",
+	}
+	channel.SetOtherSettings(settings)
+	require.NoError(t, db.Create(channel).Error)
+
+	modelsChanged, autoAdded, autoRemoved, err := checkAndPersistChannelUpstreamModelUpdates(channel, &settings, true, true)
+
+	require.Error(t, err)
+	require.False(t, modelsChanged)
+	require.Zero(t, autoAdded)
+	require.Zero(t, autoRemoved)
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, "claude-fable-5,claude-sonnet-5", stored.Models)
+}
+
+func TestCheckAndPersistChannelUpstreamModelUpdatesStagesRemovalWhenAutoRemoveDisabled(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{
+			"success": true,
+			"group_ratio": {"ClaudeCode-补贴渠道": 0.5},
+			"data": [
+				{"model_name": "claude-sonnet-5", "enable_groups": ["ClaudeCode-补贴渠道"]}
+			]
+		}`))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL
+	channel := &model.Channel{
+		Id:      25,
+		Type:    14,
+		Status:  common.ChannelStatusEnabled,
+		Name:    "coderelay-subsidy",
+		BaseURL: &baseURL,
+		Models:  "claude-fable-5,claude-sonnet-5",
+		Group:   "default",
+	}
+	settings := dto.ChannelOtherSettings{
+		UpstreamModelUpdateCheckEnabled: true,
+		PACUpstreamGroup:                "ClaudeCode-补贴渠道",
+	}
+	channel.SetOtherSettings(settings)
+	require.NoError(t, db.Create(channel).Error)
+
+	modelsChanged, autoAdded, autoRemoved, err := checkAndPersistChannelUpstreamModelUpdates(channel, &settings, true, true)
+
+	require.NoError(t, err)
+	require.False(t, modelsChanged)
+	require.Zero(t, autoAdded)
+	require.Zero(t, autoRemoved)
+	require.Equal(t, "claude-fable-5,claude-sonnet-5", channel.Models)
+	require.Equal(t, []string{"claude-fable-5"}, settings.UpstreamModelUpdateLastRemovedModels)
+}
+
+func TestCheckAndPersistChannelUpstreamModelUpdatesSkipsRecentCheck(t *testing.T) {
+	settings := dto.ChannelOtherSettings{
+		UpstreamModelUpdateLastCheckTime: common.GetTimestamp(),
+	}
+
+	modelsChanged, autoAdded, autoRemoved, err := checkAndPersistChannelUpstreamModelUpdates(
+		&model.Channel{},
+		&settings,
+		false,
+		true,
+	)
+
+	require.NoError(t, err)
+	require.False(t, modelsChanged)
+	require.Zero(t, autoAdded)
+	require.Zero(t, autoRemoved)
+}
+
 func TestBuildUpstreamModelUpdateTaskNotificationContent_OmitOverflowDetails(t *testing.T) {
 	channelSummaries := make([]upstreamModelUpdateChannelSummary, 0, 12)
 	for i := 0; i < 12; i++ {
@@ -515,6 +730,7 @@ func TestBuildUpstreamModelUpdateTaskNotificationContent_OmitOverflowDetails(t *
 		56,
 		21,
 		9,
+		5,
 		[]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
 		channelSummaries,
 		[]string{
@@ -532,6 +748,7 @@ func TestBuildUpstreamModelUpdateTaskNotificationContent_OmitOverflowDetails(t *
 	require.Contains(t, content, "其余 1 个已省略")
 	require.Contains(t, content, "失败渠道 ID（展示 10/12）")
 	require.Contains(t, content, "其余 2 个已省略")
+	require.Contains(t, content, "自动同步新增 9 个、删除 5 个")
 }
 
 func TestShouldSendUpstreamModelUpdateNotification(t *testing.T) {

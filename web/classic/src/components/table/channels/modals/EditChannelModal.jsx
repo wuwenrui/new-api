@@ -211,6 +211,7 @@ const EditChannelModal = (props) => {
     claude_beta_query: false,
     upstream_model_update_check_enabled: false,
     upstream_model_update_auto_sync_enabled: false,
+    upstream_model_update_auto_remove_enabled: false,
     upstream_model_update_last_check_time: 0,
     upstream_model_update_last_detected_models: [],
     upstream_model_update_ignored_models: '',
@@ -913,6 +914,8 @@ const EditChannelModal = (props) => {
             parsedSettings.upstream_model_update_check_enabled === true;
           data.upstream_model_update_auto_sync_enabled =
             parsedSettings.upstream_model_update_auto_sync_enabled === true;
+          data.upstream_model_update_auto_remove_enabled =
+            parsedSettings.upstream_model_update_auto_remove_enabled === true;
           data.upstream_model_update_last_check_time =
             Number(parsedSettings.upstream_model_update_last_check_time) || 0;
           data.upstream_model_update_last_detected_models = Array.isArray(
@@ -941,6 +944,7 @@ const EditChannelModal = (props) => {
           data.claude_beta_query = false;
           data.upstream_model_update_check_enabled = false;
           data.upstream_model_update_auto_sync_enabled = false;
+          data.upstream_model_update_auto_remove_enabled = false;
           data.upstream_model_update_last_check_time = 0;
           data.upstream_model_update_last_detected_models = [];
           data.upstream_model_update_ignored_models = '';
@@ -959,6 +963,7 @@ const EditChannelModal = (props) => {
         data.claude_beta_query = false;
         data.upstream_model_update_check_enabled = false;
         data.upstream_model_update_auto_sync_enabled = false;
+        data.upstream_model_update_auto_remove_enabled = false;
         data.upstream_model_update_last_check_time = 0;
         data.upstream_model_update_last_detected_models = [];
         data.upstream_model_update_ignored_models = '';
@@ -1805,6 +1810,9 @@ const EditChannelModal = (props) => {
     settings.upstream_model_update_auto_sync_enabled =
       settings.upstream_model_update_check_enabled &&
       localInputs.upstream_model_update_auto_sync_enabled === true;
+    settings.upstream_model_update_auto_remove_enabled =
+      settings.upstream_model_update_check_enabled &&
+      localInputs.upstream_model_update_auto_remove_enabled === true;
     settings.upstream_model_update_ignored_models = Array.from(
       new Set(
         String(localInputs.upstream_model_update_ignored_models || '')
@@ -1847,6 +1855,7 @@ const EditChannelModal = (props) => {
     delete localInputs.claude_beta_query;
     delete localInputs.upstream_model_update_check_enabled;
     delete localInputs.upstream_model_update_auto_sync_enabled;
+    delete localInputs.upstream_model_update_auto_remove_enabled;
     delete localInputs.upstream_model_update_last_check_time;
     delete localInputs.upstream_model_update_last_detected_models;
     delete localInputs.upstream_model_update_ignored_models;
@@ -2240,6 +2249,22 @@ const EditChannelModal = (props) => {
                       handleChannelOtherSettingsChange('upstream_model_update_auto_sync_enabled', value)
                     }
                     extraText={t('开启后检测到新增模型会自动加入当前渠道模型列表')}
+                  />
+                  <Form.Switch
+                    field='upstream_model_update_auto_remove_enabled'
+                    label={t('是否自动移除上游已下架模型')}
+                    checkedText={t('开')}
+                    uncheckedText={t('关')}
+                    disabled={!inputs.upstream_model_update_check_enabled}
+                    onChange={(value) =>
+                      handleChannelOtherSettingsChange(
+                        'upstream_model_update_auto_remove_enabled',
+                        value,
+                      )
+                    }
+                    extraText={t(
+                      '开启后会按配置的上游分组，自动移除已不可用模型',
+                    )}
                   />
                   <Form.Input
                     field='upstream_model_update_ignored_models'
