@@ -381,6 +381,25 @@ export interface AddChannelRequest {
 // NewAPI Upstream Probe (onboard wizard)
 // ============================================================================
 
+export interface ModelsDevTokenCost {
+  input: number
+  output: number
+  cache_read?: number
+  cache_write?: number
+  input_audio?: number
+  output_audio?: number
+}
+
+export interface ModelsDevCostTier extends ModelsDevTokenCost {
+  context_threshold: number
+}
+
+export interface ModelsDevPricing {
+  base: ModelsDevTokenCost
+  tiers: ModelsDevCostTier[]
+  upstream_multiplier: number
+}
+
 export interface NewAPIProbeModel {
   model_name: string
   vendor_id: number
@@ -395,6 +414,7 @@ export interface NewAPIProbeModel {
   audio_completion_ratio: number
   enable_groups: string[] | null
   supported_endpoint_types: string[] | null
+  models_dev_pricing?: ModelsDevPricing
 }
 
 export interface NewAPIProbeRateInfo {

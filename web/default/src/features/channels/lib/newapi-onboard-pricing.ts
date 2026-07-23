@@ -27,6 +27,8 @@ export type RatioOptionMaps = {
   CacheRatio: Record<string, number>
   CreateCacheRatio: Record<string, number>
   ModelPrice: Record<string, number>
+  'billing_setting.billing_mode': Record<string, string>
+  'billing_setting.billing_expr': Record<string, string>
 }
 
 export const RATIO_OPTION_KEYS = [
@@ -35,6 +37,8 @@ export const RATIO_OPTION_KEYS = [
   'CacheRatio',
   'CreateCacheRatio',
   'ModelPrice',
+  'billing_setting.billing_expr',
+  'billing_setting.billing_mode',
 ] as const
 
 /** Per-model manual price override, stored in USD ($/1M input, $/1M output). */
@@ -50,6 +54,14 @@ export function parseJsonRecord(
   }
 }
 
+function parseStringRecord(raw: string | undefined): Record<string, string> {
+  try {
+    return JSON.parse(raw || '{}') as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
 export function extractRatioMaps(
   options: Array<{ key: string; value: string }>
 ): RatioOptionMaps {
@@ -60,6 +72,12 @@ export function extractRatioMaps(
     CacheRatio: parseJsonRecord(byKey.get('CacheRatio')),
     CreateCacheRatio: parseJsonRecord(byKey.get('CreateCacheRatio')),
     ModelPrice: parseJsonRecord(byKey.get('ModelPrice')),
+    'billing_setting.billing_mode': parseStringRecord(
+      byKey.get('billing_setting.billing_mode')
+    ),
+    'billing_setting.billing_expr': parseStringRecord(
+      byKey.get('billing_setting.billing_expr')
+    ),
   }
 }
 
@@ -75,6 +93,9 @@ export function upstreamCostInUSD(
   if (model.quota_type === 1) {
     return model.model_price * upstreamGroupRatio
   }
+  if (model.models_dev_pricing) {
+    return model.models_dev_pricing.base.input * upstreamGroupRatio
+  }
   return model.model_ratio * upstreamGroupRatio * RATIO_TO_USD_PER_MILLION
 }
 
@@ -84,7 +105,103 @@ export function upstreamCostOutUSD(
   upstreamGroupRatio: number
 ): number | null {
   if (model.quota_type === 1) return null
+  if (model.models_dev_pricing) {
+    return model.models_dev_pricing.base.output * upstreamGroupRatio
+  }
   return upstreamCostInUSD(model, upstreamGroupRatio) * model.completion_ratio
+}
+
+function formatExprNumber(value: number): string {
+  return String(Math.round(value * 1e9) / 1e9)
+}
+
+function modelsDevCostExpression(
+  cost: NonNullable<NewAPIProbeModel['models_dev_pricing']>['base'],
+  upstreamMultiplier: number,
+  inputScale: number,
+  outputScale: number,
+  siteGroupRatio: number
+): string {
+  const divisor = siteGroupRatio > 0 ? siteGroupRatio : 1
+  const inputCoefficient =
+    (cost.input * upstreamMultiplier * inputScale) / divisor
+  const outputCoefficient =
+    (cost.output * upstreamMultiplier * outputScale) / divisor
+  const terms = [
+    `p * ${formatExprNumber(inputCoefficient)}`,
+    `c * ${formatExprNumber(outputCoefficient)}`,
+  ]
+  if (cost.cache_read !== undefined) {
+    terms.push(
+      `cr * ${formatExprNumber(
+        (cost.cache_read * upstreamMultiplier * inputScale) / divisor
+      )}`
+    )
+  }
+  if (cost.cache_write !== undefined) {
+    const cacheWriteCoefficient =
+      (cost.cache_write * upstreamMultiplier * inputScale) / divisor
+    terms.push(`cc * ${formatExprNumber(cacheWriteCoefficient)}`)
+    terms.push(`cc1h * ${formatExprNumber(cacheWriteCoefficient)}`)
+  }
+  if (cost.input_audio !== undefined) {
+    terms.push(
+      `ai * ${formatExprNumber(
+        (cost.input_audio * upstreamMultiplier * inputScale) / divisor
+      )}`
+    )
+  }
+  if (cost.output_audio !== undefined) {
+    terms.push(
+      `ao * ${formatExprNumber(
+        (cost.output_audio * upstreamMultiplier * outputScale) / divisor
+      )}`
+    )
+  }
+  return terms.join(' + ')
+}
+
+export function buildModelsDevBillingExpression(
+  model: NewAPIProbeModel,
+  saleInUSD: number,
+  saleOutUSD: number,
+  siteGroupRatio: number
+): string | null {
+  const pricing = model.models_dev_pricing
+  if (!pricing) return null
+
+  const baseInputCost = pricing.base.input * pricing.upstream_multiplier
+  const baseOutputCost = pricing.base.output * pricing.upstream_multiplier
+  const inputScale = baseInputCost > 0 ? saleInUSD / baseInputCost : 1
+  const outputScale = baseOutputCost > 0 ? saleOutUSD / baseOutputCost : 1
+  const tierExpr = (
+    name: string,
+    cost: NonNullable<NewAPIProbeModel['models_dev_pricing']>['base']
+  ) =>
+    `tier("${name}", ${modelsDevCostExpression(
+      cost,
+      pricing.upstream_multiplier,
+      inputScale,
+      outputScale,
+      siteGroupRatio
+    )})`
+
+  let expression = tierExpr(
+    pricing.tiers.length === 0
+      ? 'base'
+      : `context_${pricing.tiers.at(-1)?.context_threshold}`,
+    pricing.tiers.at(-1) ?? pricing.base
+  )
+  for (let index = pricing.tiers.length - 1; index >= 0; index -= 1) {
+    const threshold = pricing.tiers[index].context_threshold
+    const lowerCost = index === 0 ? pricing.base : pricing.tiers[index - 1]
+    const lowerName =
+      index === 0
+        ? 'base'
+        : `context_${pricing.tiers[index - 1].context_threshold}`
+    expression = `len < ${threshold} ? ${tierExpr(lowerName, lowerCost)} : ${expression}`
+  }
+  return expression
 }
 
 /**
@@ -108,6 +225,12 @@ export function applyModelPricing(
     CacheRatio: { ...maps.CacheRatio },
     CreateCacheRatio: { ...maps.CreateCacheRatio },
     ModelPrice: { ...maps.ModelPrice },
+    'billing_setting.billing_mode': {
+      ...maps['billing_setting.billing_mode'],
+    },
+    'billing_setting.billing_expr': {
+      ...maps['billing_setting.billing_expr'],
+    },
   }
   if (model.quota_type === 1) {
     next.ModelPrice[name] = roundRatio(saleInUSD / divisor)
@@ -115,6 +238,27 @@ export function applyModelPricing(
     delete next.CompletionRatio[name]
     delete next.CacheRatio[name]
     delete next.CreateCacheRatio[name]
+    delete next['billing_setting.billing_mode'][name]
+    delete next['billing_setting.billing_expr'][name]
+    return next
+  }
+  const modelsDevExpression =
+    saleOutUSD === null
+      ? null
+      : buildModelsDevBillingExpression(
+          model,
+          saleInUSD,
+          saleOutUSD,
+          siteGroupRatio
+        )
+  if (modelsDevExpression) {
+    next['billing_setting.billing_mode'][name] = 'tiered_expr'
+    next['billing_setting.billing_expr'][name] = modelsDevExpression
+    delete next.ModelRatio[name]
+    delete next.CompletionRatio[name]
+    delete next.CacheRatio[name]
+    delete next.CreateCacheRatio[name]
+    delete next.ModelPrice[name]
     return next
   }
   next.ModelRatio[name] = roundRatio(
@@ -134,5 +278,7 @@ export function applyModelPricing(
     next.CreateCacheRatio[name] = roundRatio(model.create_cache_ratio)
   }
   delete next.ModelPrice[name]
+  delete next['billing_setting.billing_mode'][name]
+  delete next['billing_setting.billing_expr'][name]
   return next
 }

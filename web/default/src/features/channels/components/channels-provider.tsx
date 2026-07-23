@@ -46,6 +46,7 @@ type DialogType =
   | 'edit-tag'
   | 'copy-channel'
   | 'newapi-onboard'
+  | 'sub2api-onboard'
   | null
 
 type UpstreamUpdateState = ReturnType<typeof useChannelUpstreamUpdates>

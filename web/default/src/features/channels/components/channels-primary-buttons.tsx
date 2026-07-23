@@ -185,6 +185,19 @@ export function ChannelsPrimaryButtons() {
           <span className='max-sm:hidden'>{t('Onboard NewAPI')}</span>
         </Button>
 
+        {/* Onboard Sub2API Upstream */}
+        <Button
+          variant='outline'
+          onClick={() => {
+            setCurrentRow(null)
+            setOpen('sub2api-onboard')
+          }}
+          size='sm'
+        >
+          <PlugZap className='h-4 w-4' />
+          <span className='max-sm:hidden'>{t('Onboard Sub2API')}</span>
+        </Button>
+
         {/* More Actions */}
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant='outline' size='sm' />}>
