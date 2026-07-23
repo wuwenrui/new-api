@@ -366,11 +366,7 @@ export function useNewAPIOnboard(
       setMaximized(true)
     }
     setProbeResult(result)
-    setSelectedModels(
-      source === 'sub2api'
-        ? new Set(result.models.map((model) => model.model_name))
-        : new Set()
-    )
+    setSelectedModels(new Set())
     setMarkupInput(source === 'sub2api' ? String(siteGroupRatio) : '1')
     setSaleOverrides({})
     setModelAliases({})
@@ -495,6 +491,14 @@ export function useNewAPIOnboard(
     setSelectedModels((prev) => {
       const next = new Set(prev)
       modelsOfGroup(group, from).forEach((m) => next.add(m.model_name))
+      return next
+    })
+  }
+
+  const deselectAllInGroup = (group: string, from?: NewAPIProbeModel[]) => {
+    setSelectedModels((prev) => {
+      const next = new Set(prev)
+      modelsOfGroup(group, from).forEach((m) => next.delete(m.model_name))
       return next
     })
   }
@@ -714,6 +718,7 @@ export function useNewAPIOnboard(
     selectedModels,
     toggleModel,
     selectAllInGroup,
+    deselectAllInGroup,
     modelsOfGroup,
     markupInput,
     setMarkupInput,

@@ -215,6 +215,9 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
   ) => {
     const models = ctl.modelsOfGroup(group, vendorModels)
     if (models.length === 0) return null
+    const selectedCount = models.filter((model) =>
+      ctl.selectedModels.has(model.model_name)
+    ).length
     return (
       <div key={group} className='overflow-hidden rounded-md border'>
         <div className='bg-muted/60 flex flex-wrap items-center gap-2 px-3 py-1.5'>
@@ -237,9 +240,23 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             variant='outline'
             size='sm'
             className='h-6 px-2 text-xs'
+            disabled={selectedCount === models.length}
             onClick={() => ctl.selectAllInGroup(group, vendorModels)}
           >
-            {t('Select all in group')}
+            {t(ctl.source === 'sub2api' ? 'Select all' : 'Select all in group')}
+          </Button>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-6 px-2 text-xs'
+            disabled={selectedCount === 0}
+            onClick={() => ctl.deselectAllInGroup(group, vendorModels)}
+          >
+            {t(
+              ctl.source === 'sub2api'
+                ? 'Deselect all'
+                : 'Deselect all in group'
+            )}
           </Button>
         </div>
         <Table>
