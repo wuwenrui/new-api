@@ -51,7 +51,7 @@ dev-web-classic:
 
 dev: dev-api dev-web
 
-# The main package embeds the ignored web/dist output and is covered after build-web.
+# The main package embeds the ignored default and classic frontend outputs; CI creates placeholders before vet/build.
 test:
 	@echo "Testing root Go module..."
 	@root_module=$$(GOWORK=off go list -m); \

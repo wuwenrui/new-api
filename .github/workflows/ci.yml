@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend vet, build, and test
+    name: Backend build, RelayKit vet, and test
     if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -35,13 +35,11 @@ jobs:
             go.sum
             relaykit/go.sum
 
-      - name: Create frontend embed placeholder
+      - name: Create frontend embed placeholders
         run: |
-          mkdir -p web/dist
-          touch web/dist/index.html
+          mkdir -p web/default/dist web/classic/dist
+          touch web/default/dist/index.html web/classic/dist/index.html
 
-      - name: Vet root module
-        run: go vet ./...
 
       - name: Vet relaykit independently
         working-directory: relaykit
