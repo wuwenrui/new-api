@@ -1,6 +1,9 @@
 {
   "name": "new-api-web-workspace",
   "private": true,
+  "scripts": {
+    "typecheck": "bun run --cwd default typecheck"
+  },
   "workspaces": [
     "default",
     "classic"
