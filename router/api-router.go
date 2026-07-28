@@ -156,10 +156,12 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/skills/:id/versions/:version/download", controller.DownloadSkill)
 
 		skillUserRoute := apiRouter.Group("/skills")
-		skillUserRoute.Use(middleware.UserAuth())
+		skillUserRoute.Use(middleware.UserOrTokenAuthReadOnly())
 		{
 			skillUserRoute.GET("/accessible", controller.ListAccessibleSkills)
 			skillUserRoute.GET("/accessible/:id/versions/:version/download", controller.DownloadAccessibleSkill)
+			skillUserRoute.GET("/accessible/:id/versions/:version/files", controller.ListAccessibleSkillFiles)
+			skillUserRoute.GET("/accessible/:id/versions/:version/files/*path", controller.GetAccessibleSkillFile)
 		}
 
 		skillAdminRoute := apiRouter.Group("/skills/admin")

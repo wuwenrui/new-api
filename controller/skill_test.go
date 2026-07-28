@@ -83,6 +83,122 @@ func TestSkillEndpointsEnforceVisibilityAndPreservePublicContract(t *testing.T) 
 	require.Equal(t, "application/zip", download.Header().Get("Content-Type"))
 }
 
+func TestSkillPreviewEndpointsEnforceVisibilityVersionAndTextSafety(t *testing.T) {
+	prepareSkillControllerTest(t)
+	gin.SetMode(gin.TestMode)
+
+	reader := model.User{
+		Username: "preview-reader",
+		Password: "unused",
+		Status:   common.UserStatusEnabled,
+		Role:     common.RoleCommonUser,
+	}
+	require.NoError(t, model.DB.Create(&reader).Error)
+	assigned := model.Skill{
+		Name:        "assigned-preview",
+		DisplayName: "授权预览",
+		Visibility:  model.SkillVisibilityPrivate,
+		Version:     3,
+		Content: testSkillZipEntries(t, map[string][]byte{
+			"SKILL.md":      []byte("# 授权技能"),
+			"refs/guide.md": []byte("预览正文"),
+		}),
+		ContentHash: "hash-assigned-preview",
+	}
+	hidden := model.Skill{
+		Name:        "hidden-preview",
+		DisplayName: "未授权预览",
+		Visibility:  model.SkillVisibilityPrivate,
+		Version:     1,
+		Content:     testSkillZip(t, "hidden"),
+		ContentHash: "hash-hidden-preview",
+	}
+	binary := model.Skill{
+		Name:        "binary-preview",
+		DisplayName: "二进制预览",
+		Visibility:  model.SkillVisibilityPrivate,
+		Version:     1,
+		Content:     testSkillZipEntries(t, map[string][]byte{"blob.bin": {0xff, 0xfe}}),
+		ContentHash: "hash-binary-preview",
+	}
+	require.NoError(t, model.DB.Create(&assigned).Error)
+	require.NoError(t, model.DB.Create(&hidden).Error)
+	require.NoError(t, model.DB.Create(&binary).Error)
+	require.NoError(t, model.ReplaceSkillUserAccess(assigned.Id, []int{reader.Id}))
+	require.NoError(t, model.ReplaceSkillUserAccess(binary.Id, []int{reader.Id}))
+
+	router := gin.New()
+	setReader := func(c *gin.Context) {
+		c.Set("id", reader.Id)
+		c.Set("role", common.RoleCommonUser)
+	}
+	router.GET("/api/skills/accessible/:id/versions/:version/files", func(c *gin.Context) {
+		setReader(c)
+		ListAccessibleSkillFiles(c)
+	})
+	router.GET("/api/skills/accessible/:id/versions/:version/files/*path", func(c *gin.Context) {
+		setReader(c)
+		GetAccessibleSkillFile(c)
+	})
+
+	files := performSkillRequest(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/skills/accessible/%d/versions/3/files", assigned.Id),
+		nil,
+	)
+	require.Equal(t, http.StatusOK, files.Code)
+	var filesBody struct {
+		Files []model.SkillContentEntry `json:"files"`
+	}
+	require.NoError(t, common.Unmarshal(files.Body.Bytes(), &filesBody))
+	require.Equal(t, []string{"SKILL.md", "refs/guide.md"}, []string{
+		filesBody.Files[0].Path,
+		filesBody.Files[1].Path,
+	})
+
+	content := performSkillRequest(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/skills/accessible/%d/versions/3/files/refs/guide.md", assigned.Id),
+		nil,
+	)
+	require.Equal(t, http.StatusOK, content.Code)
+	var contentBody model.SkillContentFile
+	require.NoError(t, common.Unmarshal(content.Body.Bytes(), &contentBody))
+	require.Equal(t, "预览正文", contentBody.Content)
+	require.False(t, contentBody.Truncated)
+
+	wrongVersion := performSkillRequest(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/skills/accessible/%d/versions/2/files", assigned.Id),
+		nil,
+	)
+	require.Equal(t, http.StatusNotFound, wrongVersion.Code)
+
+	hiddenPreview := performSkillRequest(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/skills/accessible/%d/versions/1/files", hidden.Id),
+		nil,
+	)
+	require.Equal(t, http.StatusForbidden, hiddenPreview.Code)
+
+	binaryPreview := performSkillRequest(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/skills/accessible/%d/versions/1/files/blob.bin", binary.Id),
+		nil,
+	)
+	require.Equal(t, http.StatusUnsupportedMediaType, binaryPreview.Code)
+}
+
 func TestAdminCreateAndUpdateSkillValidatesZipAndIncrementsVersion(t *testing.T) {
 	prepareSkillControllerTest(t)
 	gin.SetMode(gin.TestMode)
@@ -145,6 +261,20 @@ func testSkillZip(t *testing.T, content string) []byte {
 	require.NoError(t, err)
 	_, err = file.Write([]byte(content))
 	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	return buffer.Bytes()
+}
+
+func testSkillZipEntries(t *testing.T, entries map[string][]byte) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for name, content := range entries {
+		file, err := writer.Create(name)
+		require.NoError(t, err)
+		_, err = file.Write(content)
+		require.NoError(t, err)
+	}
 	require.NoError(t, writer.Close())
 	return buffer.Bytes()
 }

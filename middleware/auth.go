@@ -254,6 +254,20 @@ func TokenOrUserAuth() func(c *gin.Context) {
 	}
 }
 
+// UserOrTokenAuthReadOnly accepts a dashboard session or a model-site API Key.
+// Session requests keep the full UserAuth checks; Bearer requests use the
+// existing read-only token policy.
+func UserOrTokenAuthReadOnly() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		authorization := c.GetHeader("Authorization")
+		if strings.HasPrefix(authorization, "Bearer ") || strings.HasPrefix(authorization, "bearer ") {
+			TokenAuthReadOnly()(c)
+			return
+		}
+		UserAuth()(c)
+	}
+}
+
 // TokenAuthReadOnly 宽松版本的令牌认证中间件，用于只读查询接口。
 // 只验证令牌 key 是否存在，不检查令牌状态、过期时间和额度。
 // 即使令牌已过期、已耗尽或已禁用，也允许访问。

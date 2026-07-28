@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -79,6 +80,68 @@ func DownloadSkill(c *gin.Context) {
 
 func DownloadAccessibleSkill(c *gin.Context) {
 	downloadSkill(c, c.GetInt("id"), c.GetInt("role") >= common.RoleAdminUser)
+}
+
+func ListAccessibleSkillFiles(c *gin.Context) {
+	skill, ok := accessibleSkillVersion(c)
+	if !ok {
+		return
+	}
+	files, err := model.ListSkillContentEntries(skill.Content)
+	if err != nil {
+		skillError(c, http.StatusInternalServerError, "读取 Skill 文件清单失败")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"files": files})
+}
+
+func GetAccessibleSkillFile(c *gin.Context) {
+	skill, ok := accessibleSkillVersion(c)
+	if !ok {
+		return
+	}
+	file, err := model.ReadSkillContentEntry(skill.Content, c.Param("path"), 512*1024)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.ErrSkillContentEntryNotFound):
+			skillError(c, http.StatusNotFound, "Skill 文件不存在")
+		case errors.Is(err, model.ErrSkillContentBinary):
+			skillError(c, http.StatusUnsupportedMediaType, "Skill 文件不是 UTF-8 文本")
+		default:
+			skillError(c, http.StatusInternalServerError, "读取 Skill 文件失败")
+		}
+		return
+	}
+	c.JSON(http.StatusOK, file)
+}
+
+func accessibleSkillVersion(c *gin.Context) (*model.Skill, bool) {
+	skillID, version, ok := skillDownloadParams(c)
+	if !ok {
+		return nil, false
+	}
+	skill, allowed, err := model.GetVisibleSkill(
+		skillID,
+		c.GetInt("id"),
+		c.GetInt("role") >= common.RoleAdminUser,
+	)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			skillError(c, http.StatusNotFound, "Skill 不存在")
+		} else {
+			skillError(c, http.StatusInternalServerError, "读取 Skill 失败")
+		}
+		return nil, false
+	}
+	if !allowed {
+		skillError(c, http.StatusForbidden, "无权查看该 Skill")
+		return nil, false
+	}
+	if skill.Version != version {
+		skillError(c, http.StatusNotFound, "Skill 版本不存在")
+		return nil, false
+	}
+	return skill, true
 }
 
 func downloadSkill(c *gin.Context, userID int, isAdmin bool) {
