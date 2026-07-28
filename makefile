@@ -10,7 +10,7 @@ DEV_POSTGRES_DB = new-api
 DEV_POSTGRES_USER = root
 DEV_SQLITE_PATH ?= one-api.db
 
-.PHONY: all build-web build-web-classic build-all-web start-api dev dev-api dev-api-rebuild dev-web dev-web-classic reset-setup
+.PHONY: all build-web build-web-classic build-all-web start-api dev dev-api dev-api-rebuild dev-web dev-web-classic reset-setup test
 
 all: build-all-web start-api
 
@@ -50,6 +50,15 @@ dev-web-classic:
 	@cd $(WEB_CLASSIC_DIR) && bun run dev -- --host 0.0.0.0 --port $(DEV_WEB_CLASSIC_PORT)
 
 dev: dev-api dev-web
+
+# The main package embeds the ignored web/dist output and is covered after build-web.
+test:
+	@echo "Testing root Go module..."
+	@root_module=$$(GOWORK=off go list -m); \
+		root_packages=$$(GOWORK=off go list -e ./... | grep -vxF "$$root_module"); \
+		GOWORK=off go test $$root_packages
+	@echo "Testing relaykit Go module..."
+	@cd relaykit && GOWORK=off go test ./...
 
 reset-setup:
 	@echo "Resetting local setup wizard state..."

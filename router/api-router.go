@@ -152,6 +152,25 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		apiRouter.GET("/skills/public", controller.ListPublicSkills)
+		apiRouter.GET("/skills/:id/versions/:version/download", controller.DownloadSkill)
+
+		skillUserRoute := apiRouter.Group("/skills")
+		skillUserRoute.Use(middleware.UserAuth())
+		{
+			skillUserRoute.GET("/accessible", controller.ListAccessibleSkills)
+			skillUserRoute.GET("/accessible/:id/versions/:version/download", controller.DownloadAccessibleSkill)
+		}
+
+		skillAdminRoute := apiRouter.Group("/skills/admin")
+		skillAdminRoute.Use(middleware.AdminAuth())
+		{
+			skillAdminRoute.GET("/users", controller.AdminListSkillGrantUsers)
+			skillAdminRoute.POST("", controller.AdminCreateSkill)
+			skillAdminRoute.PUT("/:id", controller.AdminUpdateSkill)
+			skillAdminRoute.DELETE("/:id", controller.AdminDeleteSkill)
+		}
+
 		// Subscription billing (plans, purchase, admin management)
 		entitlementRoute := apiRouter.Group("/entitlements")
 		entitlementRoute.Use(middleware.TokenAuthReadOnly())

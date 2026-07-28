@@ -19,11 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Activity,
   Box,
+  BookOpenCheck,
   CircleDollarSign,
   CreditCard,
   FileText,
   FlaskConical,
   HandCoins,
+  ImageDown,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -40,9 +42,10 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { type SidebarData } from '@/components/layout/types'
-import { useAuthStore } from '@/stores/auth-store'
+import type { SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
+
 import { canAccessFinanceReport } from './sidebar-finance-access'
 
 /**
@@ -92,6 +95,16 @@ export function useSidebarData(): SidebarData {
             title: t('API Keys'),
             url: '/keys',
             icon: Key,
+          },
+          {
+            title: 'Skill 市场',
+            url: '/skills',
+            icon: BookOpenCheck,
+          },
+          {
+            title: '图片水印',
+            url: '/tools/watermark',
+            icon: ImageDown,
           },
           {
             title: t('Usage Logs'),

@@ -18,6 +18,7 @@ import { Route as SetupIndexRouteImport } from './routes/setup/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
+import { Route as ToolsWatermarkRouteImport } from './routes/tools/watermark'
 import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
 import { Route as ConsoleTopupRouteImport } from './routes/console/topup'
 import { Route as ConsoleLogRouteImport } from './routes/console/log'
@@ -43,6 +44,7 @@ import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_
 import { Route as AuthenticatedSystemInfoIndexRouteImport } from './routes/_authenticated/system-info/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
 import { Route as AuthenticatedSubscriptionReviewIndexRouteImport } from './routes/_authenticated/subscription-review/index'
+import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenticated/skills/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
 import { Route as AuthenticatedRechargeReviewIndexRouteImport } from './routes/_authenticated/recharge-review/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
@@ -115,6 +117,11 @@ const PricingIndexRoute = PricingIndexRouteImport.update({
 const AboutIndexRoute = AboutIndexRouteImport.update({
   id: '/about/',
   path: '/about/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsWatermarkRoute = ToolsWatermarkRouteImport.update({
+  id: '/tools/watermark',
+  path: '/tools/watermark',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OauthProviderRoute = OauthProviderRouteImport.update({
@@ -247,6 +254,12 @@ const AuthenticatedSubscriptionReviewIndexRoute =
   AuthenticatedSubscriptionReviewIndexRouteImport.update({
     id: '/subscription-review/',
     path: '/subscription-review/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSkillsIndexRoute =
+  AuthenticatedSkillsIndexRouteImport.update({
+    id: '/skills/',
+    path: '/skills/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedRedemptionCodesIndexRoute =
@@ -448,6 +461,7 @@ export interface FileRoutesByFullPath {
   '/console/log': typeof ConsoleLogRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/oauth/$provider': typeof OauthProviderRoute
+  '/tools/watermark': typeof ToolsWatermarkRoute
   '/about/': typeof AboutIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
@@ -468,6 +482,7 @@ export interface FileRoutesByFullPath {
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/recharge-review/': typeof AuthenticatedRechargeReviewIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/skills/': typeof AuthenticatedSkillsIndexRoute
   '/subscription-review/': typeof AuthenticatedSubscriptionReviewIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-info/': typeof AuthenticatedSystemInfoIndexRoute
@@ -511,6 +526,7 @@ export interface FileRoutesByTo {
   '/console/log': typeof ConsoleLogRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/oauth/$provider': typeof OauthProviderRoute
+  '/tools/watermark': typeof ToolsWatermarkRoute
   '/about': typeof AboutIndexRoute
   '/pricing': typeof PricingIndexRoute
   '/rankings': typeof RankingsIndexRoute
@@ -531,6 +547,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/recharge-review': typeof AuthenticatedRechargeReviewIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/skills': typeof AuthenticatedSkillsIndexRoute
   '/subscription-review': typeof AuthenticatedSubscriptionReviewIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/system-info': typeof AuthenticatedSystemInfoIndexRoute
@@ -578,6 +595,7 @@ export interface FileRoutesById {
   '/console/log': typeof ConsoleLogRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/oauth/$provider': typeof OauthProviderRoute
+  '/tools/watermark': typeof ToolsWatermarkRoute
   '/about/': typeof AboutIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
@@ -598,6 +616,7 @@ export interface FileRoutesById {
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/recharge-review/': typeof AuthenticatedRechargeReviewIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/_authenticated/skills/': typeof AuthenticatedSkillsIndexRoute
   '/_authenticated/subscription-review/': typeof AuthenticatedSubscriptionReviewIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/system-info/': typeof AuthenticatedSystemInfoIndexRoute
@@ -644,6 +663,7 @@ export interface FileRouteTypes {
     | '/console/log'
     | '/console/topup'
     | '/oauth/$provider'
+    | '/tools/watermark'
     | '/about/'
     | '/pricing/'
     | '/rankings/'
@@ -664,6 +684,7 @@ export interface FileRouteTypes {
     | '/profile/'
     | '/recharge-review/'
     | '/redemption-codes/'
+    | '/skills/'
     | '/subscription-review/'
     | '/subscriptions/'
     | '/system-info/'
@@ -707,6 +728,7 @@ export interface FileRouteTypes {
     | '/console/log'
     | '/console/topup'
     | '/oauth/$provider'
+    | '/tools/watermark'
     | '/about'
     | '/pricing'
     | '/rankings'
@@ -727,6 +749,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/recharge-review'
     | '/redemption-codes'
+    | '/skills'
     | '/subscription-review'
     | '/subscriptions'
     | '/system-info'
@@ -773,6 +796,7 @@ export interface FileRouteTypes {
     | '/console/log'
     | '/console/topup'
     | '/oauth/$provider'
+    | '/tools/watermark'
     | '/about/'
     | '/pricing/'
     | '/rankings/'
@@ -793,6 +817,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile/'
     | '/_authenticated/recharge-review/'
     | '/_authenticated/redemption-codes/'
+    | '/_authenticated/skills/'
     | '/_authenticated/subscription-review/'
     | '/_authenticated/subscriptions/'
     | '/_authenticated/system-info/'
@@ -831,6 +856,7 @@ export interface RootRouteChildren {
   ConsoleLogRoute: typeof ConsoleLogRoute
   ConsoleTopupRoute: typeof ConsoleTopupRoute
   OauthProviderRoute: typeof OauthProviderRoute
+  ToolsWatermarkRoute: typeof ToolsWatermarkRoute
   AboutIndexRoute: typeof AboutIndexRoute
   PricingIndexRoute: typeof PricingIndexRoute
   RankingsIndexRoute: typeof RankingsIndexRoute
@@ -901,6 +927,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about/'
       preLoaderRoute: typeof AboutIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/watermark': {
+      id: '/tools/watermark'
+      path: '/tools/watermark'
+      fullPath: '/tools/watermark'
+      preLoaderRoute: typeof ToolsWatermarkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/oauth/$provider': {
@@ -1076,6 +1109,13 @@ declare module '@tanstack/react-router' {
       path: '/subscription-review'
       fullPath: '/subscription-review/'
       preLoaderRoute: typeof AuthenticatedSubscriptionReviewIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/skills/': {
+      id: '/_authenticated/skills/'
+      path: '/skills'
+      fullPath: '/skills/'
+      preLoaderRoute: typeof AuthenticatedSkillsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/redemption-codes/': {
@@ -1392,6 +1432,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedRechargeReviewIndexRoute: typeof AuthenticatedRechargeReviewIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
+  AuthenticatedSkillsIndexRoute: typeof AuthenticatedSkillsIndexRoute
   AuthenticatedSubscriptionReviewIndexRoute: typeof AuthenticatedSubscriptionReviewIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
   AuthenticatedSystemInfoIndexRoute: typeof AuthenticatedSystemInfoIndexRoute
@@ -1421,6 +1462,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRechargeReviewIndexRoute: AuthenticatedRechargeReviewIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
+  AuthenticatedSkillsIndexRoute: AuthenticatedSkillsIndexRoute,
   AuthenticatedSubscriptionReviewIndexRoute:
     AuthenticatedSubscriptionReviewIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
@@ -1447,6 +1489,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConsoleLogRoute: ConsoleLogRoute,
   ConsoleTopupRoute: ConsoleTopupRoute,
   OauthProviderRoute: OauthProviderRoute,
+  ToolsWatermarkRoute: ToolsWatermarkRoute,
   AboutIndexRoute: AboutIndexRoute,
   PricingIndexRoute: PricingIndexRoute,
   RankingsIndexRoute: RankingsIndexRoute,

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -95,7 +96,7 @@ func callModelPriceHelper(t *testing.T, modelName string) types.PriceData {
 		UserGroup:       "default",
 		UsingGroup:      "default",
 	}
-	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &relaytypes.TokenCountMeta{})
 	require.NoError(t, err)
 	return priceData
 }
