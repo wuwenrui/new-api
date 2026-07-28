@@ -162,6 +162,7 @@
     "axios": "^1.18.1",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.21",
+    "happy-dom": "^20.11.1",
     "oxfmt": "^0.57.0",
     "oxlint": "^1.72.0",
     "prettier": "^3.8.3",
@@ -172,6 +173,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sse.js": "^2.8.0",
+    "yace": "^1.1.0",
   },
   "packages": {
     "@ai-sdk/gateway": ["@ai-sdk/gateway@4.0.29", "", { "dependencies": { "@ai-sdk/provider": "4.0.4", "@ai-sdk/provider-utils": "5.0.13", "@vercel/oidc": "3.2.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-x63ILOnzMjbavVb55ckuoQLZB8KTdrJFzk3nSt1QbecokLac4FGEYQDUKQSvRV93lFWol+8tr0ZR+IHWhGtmJw=="],
