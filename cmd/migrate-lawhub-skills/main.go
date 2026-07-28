@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,15 +15,16 @@ import (
 )
 
 type lawhubSkillRecord struct {
-	ID            int    `json:"id"`
-	Name          string `json:"name"`
-	DisplayName   string `json:"display_name"`
-	Description   string `json:"description"`
-	Visibility    string `json:"visibility"`
-	LatestVersion int    `json:"latest_version"`
-	ContentB64    string `json:"content_b64"`
-	ContentHash   string `json:"content_hash"`
-	Author        string `json:"author"`
+	ID               int      `json:"id"`
+	Name             string   `json:"name"`
+	DisplayName      string   `json:"display_name"`
+	Description      string   `json:"description"`
+	Visibility       string   `json:"visibility"`
+	LatestVersion    int      `json:"latest_version"`
+	ContentB64       string   `json:"content_b64"`
+	ContentHash      string   `json:"content_hash"`
+	Author           string   `json:"author"`
+	AllowedUsernames []string `json:"allowed_usernames"`
 }
 
 type ImportItem struct {
@@ -32,10 +34,11 @@ type ImportItem struct {
 }
 
 type ImportReport struct {
-	Total   int          `json:"total"`
-	Public  int          `json:"public"`
-	Private int          `json:"private"`
-	Items   []ImportItem `json:"items"`
+	Total             int          `json:"total"`
+	Public            int          `json:"public"`
+	Private           int          `json:"private"`
+	SkippedUserAccess int          `json:"skipped_user_access"`
+	Items             []ImportItem `json:"items"`
 }
 
 func main() {
@@ -78,13 +81,19 @@ func ImportLawhubSkills(db *gorm.DB, reader io.Reader) (ImportReport, error) {
 	}
 
 	skills := make([]model.Skill, 0, len(records))
+	accessUsernames := make([][]string, 0, len(records))
 	report := ImportReport{Total: len(records), Items: make([]ImportItem, 0, len(records))}
 	for _, record := range records {
 		skill, err := skillFromLawhubRecord(record)
 		if err != nil {
 			return ImportReport{}, fmt.Errorf("Skill %d (%s): %w", record.ID, record.Name, err)
 		}
+		usernames := normalizeAllowedUsernames(record.AllowedUsernames)
+		if skill.Visibility == model.SkillVisibilityPrivate && len(usernames) == 0 {
+			return ImportReport{}, fmt.Errorf("Skill %d (%s): 私有 Skill 没有可访问用户", record.ID, record.Name)
+		}
 		skills = append(skills, skill)
+		accessUsernames = append(accessUsernames, usernames)
 		report.Items = append(report.Items, ImportItem{
 			ID:          skill.Id,
 			Name:        skill.Name,
@@ -102,6 +111,21 @@ func ImportLawhubSkills(db *gorm.DB, reader io.Reader) (ImportReport, error) {
 			if err := tx.Create(&skills[i]).Error; err != nil {
 				return fmt.Errorf("写入 Skill %d (%s) 失败: %w", skills[i].Id, skills[i].Name, err)
 			}
+			for _, username := range accessUsernames[i] {
+				var user model.User
+				err := tx.Select("id").Where("username = ?", username).Take(&user).Error
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					report.SkippedUserAccess++
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf("查询 Skill %d (%s) 的可访问用户 %s 失败: %w", skills[i].Id, skills[i].Name, username, err)
+				}
+				access := model.SkillUserAccess{SkillID: skills[i].Id, UserID: user.Id}
+				if err := tx.Create(&access).Error; err != nil {
+					return fmt.Errorf("写入 Skill %d (%s) 的用户权限失败: %w", skills[i].Id, skills[i].Name, err)
+				}
+			}
 		}
 		return resetPostgresSkillSequence(tx)
 	})
@@ -109,6 +133,24 @@ func ImportLawhubSkills(db *gorm.DB, reader io.Reader) (ImportReport, error) {
 		return ImportReport{}, err
 	}
 	return report, nil
+}
+
+func normalizeAllowedUsernames(usernames []string) []string {
+	normalized := make([]string, 0, len(usernames))
+	seen := make(map[string]struct{}, len(usernames))
+	for _, username := range usernames {
+		username = strings.TrimSpace(username)
+		key := strings.ToLower(username)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, username)
+	}
+	return normalized
 }
 
 func resetPostgresSkillSequence(tx *gorm.DB) error {
