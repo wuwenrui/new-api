@@ -130,6 +130,23 @@ function isOptionalModelMapping(value: string | undefined): boolean {
   }
 }
 
+function isOptionalModelPrices(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    if (parsed === undefined) return true
+    if (!isJsonObjectValue(parsed)) return false
+    return Object.values(parsed).every((item) => {
+      if (!isJsonObjectValue(item)) return false
+      return ['input', 'output', 'cache_read', 'cache_write'].every((field) => {
+        const price = item[field]
+        return typeof price === 'number' && Number.isFinite(price) && price >= 0
+      })
+    })
+  } catch {
+    return false
+  }
+}
+
 function isOptionalStatusCodeMapping(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -208,6 +225,14 @@ export const channelFormSchema = z
       .refine(
         isOptionalModelMapping,
         'Model mapping must be a JSON object with string values'
+      ),
+    upstream_group: z.string().optional(),
+    model_prices: z
+      .string()
+      .optional()
+      .refine(
+        isOptionalModelPrices,
+        'All purchase prices must be present and non-negative'
       ),
     priority: z.number().optional(),
     weight: z.number().optional(),
@@ -408,6 +433,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   models: '',
   group: ['default'],
   model_mapping: '',
+  upstream_group: '',
+  model_prices: '{}',
   priority: 0,
   weight: 0,
   test_model: '',
@@ -489,8 +516,7 @@ export function transformChannelToFormDefaults(
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
         http_protocol: protocol,
-        http2_connection_shards:
-          protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
+        http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
@@ -519,6 +545,8 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoRemoveEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let upstreamGroup = ''
+  let modelPrices = '{}'
 
   if (channel.settings) {
     try {
@@ -546,6 +574,13 @@ export function transformChannelToFormDefaults(
       )
         ? parsed.upstream_model_update_ignored_models.join(',')
         : ''
+      upstreamGroup =
+        typeof parsed.pac_upstream_group === 'string'
+          ? parsed.pac_upstream_group
+          : ''
+      modelPrices = isJsonObjectValue(parsed.model_prices)
+        ? JSON.stringify(parsed.model_prices)
+        : '{}'
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
       }
@@ -564,6 +599,8 @@ export function transformChannelToFormDefaults(
     models: channel.models || '',
     group: parseGroups(channel.group || 'default'),
     model_mapping: channel.model_mapping || '',
+    upstream_group: upstreamGroup,
+    model_prices: modelPrices,
     priority: channel.priority || 0,
     weight: channel.weight || 0,
     test_model: channel.test_model || '',
@@ -764,6 +801,33 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     }
   } else if ('advanced_custom' in settingsObj) {
     delete settingsObj.advanced_custom
+  }
+
+  const upstreamGroup = formData.upstream_group?.trim()
+  if (upstreamGroup) {
+    settingsObj.pac_upstream_group = upstreamGroup
+  } else {
+    delete settingsObj.pac_upstream_group
+  }
+
+  const enabledModels = new Set(
+    String(formData.models || '')
+      .split(',')
+      .map((model) => model.trim())
+      .filter(Boolean)
+  )
+  const modelPrices = parseOptionalJson(formData.model_prices)
+  if (isJsonObjectValue(modelPrices)) {
+    const activePrices = Object.fromEntries(
+      Object.entries(modelPrices).filter(([model]) => enabledModels.has(model))
+    )
+    if (Object.keys(activePrices).length > 0) {
+      settingsObj.model_prices = activePrices
+    } else {
+      delete settingsObj.model_prices
+    }
+  } else {
+    delete settingsObj.model_prices
   }
 
   return JSON.stringify(settingsObj)

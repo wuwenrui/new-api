@@ -17,8 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { getRouteApi, Link } from '@tanstack/react-router'
 import { Settings2 } from 'lucide-react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -31,12 +32,38 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { getChannelOps } from './api'
+import { getChannel, getChannelOps } from './api'
 import { ChannelsDialogs } from './components/channels-dialogs'
 import { ChannelsPrimaryButtons } from './components/channels-primary-buttons'
-import { ChannelsProvider } from './components/channels-provider'
+import { ChannelsProvider, useChannels } from './components/channels-provider'
 import { ChannelsTable } from './components/channels-table'
+import { channelsQueryKeys } from './lib'
 
+const route = getRouteApi('/_authenticated/channels/')
+
+function ChannelEditorFromSearch() {
+  const { edit } = route.useSearch()
+  const navigate = route.useNavigate()
+  const { setCurrentRow, setOpen } = useChannels()
+  const channelQuery = useQuery({
+    queryKey: channelsQueryKeys.detail(edit ?? 0),
+    queryFn: () => getChannel(edit ?? 0),
+    enabled: edit !== undefined,
+  })
+
+  useEffect(() => {
+    const channel = channelQuery.data?.data
+    if (!edit || !channelQuery.data?.success || !channel) return
+    setCurrentRow(channel)
+    setOpen('update-channel')
+    void navigate({
+      search: (previous) => ({ ...previous, edit: undefined }),
+      replace: true,
+    })
+  }, [channelQuery.data, edit, navigate, setCurrentRow, setOpen])
+
+  return null
+}
 export function Channels() {
   const { t } = useTranslation()
   const isRoot = useAuthStore(
@@ -86,6 +113,7 @@ export function Channels() {
 
   return (
     <ChannelsProvider>
+      <ChannelEditorFromSearch />
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>
           <span className='flex min-w-0 items-center gap-2'>

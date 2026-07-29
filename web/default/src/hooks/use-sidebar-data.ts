@@ -146,7 +146,7 @@ export function useSidebarData(): SidebarData {
             icon: Radio,
           },
           {
-            title: t('Channel Price Compare'),
+            title: t('Channel Operations'),
             url: '/channel-price-compare',
             icon: Scale,
           },

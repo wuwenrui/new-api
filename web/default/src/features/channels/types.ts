@@ -90,6 +90,13 @@ export interface ChannelSettings {
   http2_connection_shards?: number
 }
 
+export interface ChannelModelPrice {
+  input: number
+  output: number
+  cache_read: number
+  cache_write: number
+}
+
 export interface ChannelOtherSettings {
   azure_responses_version?: string
   vertex_key_type?: 'json' | 'api_key'
@@ -110,6 +117,8 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
+  pac_upstream_group?: string
+  model_prices?: Record<string, ChannelModelPrice>
 }
 
 export interface AdvancedCustomConfig {

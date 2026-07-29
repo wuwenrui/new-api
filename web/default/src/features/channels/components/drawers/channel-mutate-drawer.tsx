@@ -172,6 +172,7 @@ import {
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
 import type { Channel } from '../../types'
+import { ChannelModelPricingFields } from '../channel-model-pricing-fields'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
@@ -3576,6 +3577,8 @@ export function ChannelMutateDrawer({
                             />
                           </div>
 
+                          <ChannelModelPricingFields />
+
                           <div className='border-border/60 rounded-lg border p-4'>
                             <FormField
                               control={form.control}
@@ -4234,9 +4237,7 @@ export function ChannelMutateDrawer({
                                         <SelectValue />
                                       </SelectTrigger>
                                     </FormControl>
-                                    <SelectContent
-                                      alignItemWithTrigger={false}
-                                    >
+                                    <SelectContent alignItemWithTrigger={false}>
                                       <SelectGroup>
                                         <SelectItem value='auto'>
                                           {t('Auto')}
