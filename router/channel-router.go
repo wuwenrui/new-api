@@ -62,6 +62,7 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodPost, path: "/fetch_models", permission: authz.ChannelSensitiveWrite, handler: controller.FetchModels},
 	{method: http.MethodPost, path: "/probe_newapi", permission: authz.ChannelSensitiveWrite, handler: controller.ProbeNewAPIUpstream},
 	{method: http.MethodGet, path: "/price_compare", permission: authz.ChannelRead, handler: controller.GetChannelPriceCompare},
+	{method: http.MethodGet, path: "/business_report", permission: authz.ChannelRead, handler: controller.GetChannelBusinessReport},
 	{method: http.MethodPost, path: "/:id/codex/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshCodexChannelCredential},
 	{method: http.MethodGet, path: "/:id/codex/usage", permission: authz.ChannelRead, handler: controller.GetCodexChannelUsage},
 	{method: http.MethodGet, path: "/:id/codex/usage/reset-credits", permission: authz.ChannelRead, handler: controller.GetCodexChannelRateLimitResetCredits},

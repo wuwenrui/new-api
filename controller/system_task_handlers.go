@@ -21,6 +21,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(channelTestHandler{})
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(pacPriceMonitorHandler{})
+	service.RegisterSystemTaskHandler(channelBalanceMonitorHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 }
@@ -144,6 +145,51 @@ func (pacPriceMonitorHandler) Run(ctx context.Context, task *model.SystemTask, r
 	subject, content := service.BuildPACPriceMonitorNotification(report)
 	service.NotifyUpstreamModelUpdateWatchers(subject, content)
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, report, nil)
+}
+
+// channelBalanceMonitorHandler 定时巡检渠道上游余额：复用渠道经营报表的
+// low_balance 标记，跨阈值（新跌破）才推送一次告警，余额回升后重置标记。
+type channelBalanceMonitorHandler struct{}
+
+func (channelBalanceMonitorHandler) Type() string { return model.SystemTaskTypeChannelBalanceMonitor }
+
+func (channelBalanceMonitorHandler) Enabled() bool {
+	return common.GetEnvOrDefaultBool("CHANNEL_BALANCE_MONITOR_TASK_ENABLED", true)
+}
+
+func (channelBalanceMonitorHandler) Interval() time.Duration {
+	intervalHours := common.GetEnvOrDefault("CHANNEL_BALANCE_MONITOR_INTERVAL_HOURS", 6)
+	if intervalHours < 1 {
+		intervalHours = 6
+	}
+	return time.Duration(intervalHours) * time.Hour
+}
+
+func (channelBalanceMonitorHandler) NewPayload() any { return nil }
+
+func (channelBalanceMonitorHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	report, err := service.BuildChannelBusinessReport(ctx, service.ChannelBusinessReportParams{})
+	if err != nil {
+		service.NotifyUpstreamModelUpdateWatchers("渠道余额巡检失败", "渠道余额巡检失败："+err.Error())
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	alerts, err := service.ProcessChannelLowBalanceAlerts(report)
+	if err != nil {
+		service.NotifyUpstreamModelUpdateWatchers("渠道余额巡检失败", "渠道余额巡检失败："+err.Error())
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	if len(alerts) > 0 {
+		subject, content := service.BuildChannelLowBalanceNotification(alerts)
+		service.NotifyUpstreamModelUpdateWatchers(subject, content)
+	}
+	summary := map[string]any{
+		"checked_channels": len(report.Rows),
+		"threshold_usd":    report.LowBalanceThreshold,
+		"alerts":           alerts,
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 
 // midjourneyPollHandler runs one Midjourney polling pass per scheduled run.

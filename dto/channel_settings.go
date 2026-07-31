@@ -54,6 +54,7 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	PACUpstreamGroup                      string                `json:"pac_upstream_group,omitempty"`                         // PAC 价格监控与分组模型同步使用的上游分组
+	LowBalanceNotified                    bool                  `json:"low_balance_notified,omitempty"`                       // 渠道余额不足定时告警：已推送过低余额通知（余额回升后清除）
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
 }
 
