@@ -28,6 +28,8 @@ import { OllamaModelsDialog } from './dialogs/ollama-models-dialog'
 import { TagBatchEditDialog } from './dialogs/tag-batch-edit-dialog'
 import { UpstreamUpdateDialog } from './dialogs/upstream-update-dialog'
 import { ChannelMutateDrawer } from './drawers/channel-mutate-drawer'
+import { ChannelBusinessDrawer } from './drawers/channel-business-drawer'
+import { UpstreamSitesDrawer } from './drawers/upstream-sites-drawer'
 
 export function ChannelsDialogs() {
   const { open, setOpen, currentRow, upstream } = useChannels()
@@ -75,6 +77,19 @@ export function ChannelsDialogs() {
       <NewAPIOnboardDialog
         open={open === 'newapi-onboard'}
         onOpenChange={(v) => !v && setOpen(null)}
+      />
+
+      {/* Upstream Sites Management Drawer */}
+      <UpstreamSitesDrawer
+        open={open === 'upstream-sites'}
+        onOpenChange={(v) => !v && setOpen(null)}
+      />
+
+      {/* Channel Business Detail Drawer */}
+      <ChannelBusinessDrawer
+        open={open === 'business-detail'}
+        onOpenChange={(v) => !v && setOpen(null)}
+        channel={open === 'business-detail' ? currentRow : null}
       />
 
       {/* Multi-Key Management Dialog */}

@@ -101,6 +101,7 @@ export interface ChannelOtherSettings {
   allow_speed?: boolean
   claude_beta_query?: boolean
   disable_task_polling_sleep?: boolean
+  pac_upstream_group?: string
   upstream_model_update_check_enabled?: boolean
   upstream_model_update_auto_sync_enabled?: boolean
   upstream_model_update_auto_remove_enabled?: boolean
@@ -428,4 +429,65 @@ export interface NewAPIProbeResponse {
   success: boolean
   message?: string
   data?: NewAPIProbeResult
+}
+
+// ============================================================================
+// Channel Business Report (channel business overview)
+// ============================================================================
+
+/** 渠道内单个模型的区间经营数据（金额单位 USD，价格为 $/1M tokens） */
+export interface ChannelBusinessModelRow {
+  model_name: string
+  requests: number
+  revenue: number
+  estimated_upstream_cost: number
+  gross_profit: number
+  gross_margin: number
+  local_input_price: number
+  local_output_price: number
+  local_price_known: boolean
+  upstream_input_price: number
+  upstream_output_price: number
+  cost_known: boolean
+  cost_unknown_reason?: string
+  price_changed: boolean
+}
+
+/** 单个渠道的区间经营数据（金额单位 USD） */
+export interface ChannelBusinessRow {
+  channel_id: number
+  channel_name: string
+  status: number
+  balance: number
+  used_quota_usd: number
+  base_url: string
+  local_group: string
+  upstream_group: string
+  requests: number
+  revenue: number
+  estimated_upstream_cost: number
+  gross_profit: number
+  gross_margin: number
+  cost_known: boolean
+  cost_partial: boolean
+  cost_unknown_reason?: string
+  price_changed: boolean
+  low_balance: boolean
+  top_models: ChannelBusinessModelRow[]
+}
+
+export interface ChannelBusinessReport {
+  generated_at: number
+  days: number
+  start_timestamp: number
+  end_timestamp: number
+  low_balance_threshold: number
+  probe_errors: Record<string, string>
+  rows: ChannelBusinessRow[]
+}
+
+export interface ChannelBusinessReportResponse {
+  success: boolean
+  message?: string
+  data?: ChannelBusinessReport
 }

@@ -42,6 +42,7 @@ import {
   Settings,
   SlidersHorizontal,
   Wand2,
+  Link2,
 } from 'lucide-react'
 import {
   type ReactNode,
@@ -110,6 +111,10 @@ import {
   SecureVerificationDialog,
   useSecureVerification,
 } from '@/features/auth/secure-verification'
+import {
+  getSystemOptions,
+  updateSystemOption,
+} from '@/features/system-settings/api'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { useHiddenClickUnlock } from '@/hooks/use-hidden-click-unlock'
 import {
@@ -165,6 +170,10 @@ import {
   findMissingModelsInMapping,
   validateModelMappingJson,
   hasAdvancedSettingsErrors,
+  UPSTREAM_PROBE_CONFIGS_OPTION_KEY,
+  findUpstreamProbeConfig,
+  normalizeUpstreamBaseUrl,
+  upsertUpstreamProbeConfig,
 } from '../../lib'
 import {
   collectInvalidStatusCodeEntries,
@@ -258,6 +267,7 @@ const ADVANCED_SETTINGS_SECTION_IDS = {
   extraSettings: 'channel-section-advanced-extra-settings',
   fieldPassthrough: 'channel-section-advanced-field-passthrough',
   upstreamModelDetection: 'channel-section-advanced-upstream-model-detection',
+  upstreamIntegration: 'channel-section-advanced-upstream-integration',
 } as const
 const ADVANCED_SETTINGS_CHILD_SECTION_IDS: string[] = Object.values(
   ADVANCED_SETTINGS_SECTION_IDS
@@ -298,6 +308,9 @@ const SENSITIVE_FORM_FIELDS = [
   'upstream_model_update_auto_sync_enabled',
   'upstream_model_update_auto_remove_enabled',
   'upstream_model_update_ignored_models',
+  'pac_upstream_group',
+  'upstream_probe_token',
+  'upstream_probe_user_id',
 ] satisfies (keyof ChannelFormValues)[]
 
 function readAdvancedSettingsPreference(): boolean {
@@ -678,6 +691,14 @@ export function ChannelMutateDrawer({
     queryFn: () => getPrefillGroups('model'),
   })
 
+  // Fetch system options: submit 时按渠道 base_url 把上游探测凭据 upsert 进
+  // UpstreamProbeConfigs（比价/巡检用），需要现有值做去重合并
+  const { data: systemOptionsResp } = useQuery({
+    queryKey: ['system-options'],
+    queryFn: getSystemOptions,
+    enabled: open,
+  })
+
   const { copyToClipboard } = useCopyToClipboard()
 
   const {
@@ -728,6 +749,7 @@ export function ChannelMutateDrawer({
   const upstreamModelUpdateCheckEnabled = form.watch(
     'upstream_model_update_check_enabled'
   )
+  const currentPacUpstreamGroup = form.watch('pac_upstream_group')
   const currentSettings = form.watch('settings')
   const currentAdvancedCustom = form.watch('advanced_custom')
   const currentPriority = form.watch('priority')
@@ -1043,13 +1065,17 @@ export function ChannelMutateDrawer({
     currentUpstreamModelUpdateAutoRemoveEnabled ||
     currentUpstreamModelUpdateIgnoredModels?.trim()
   )
+  const upstreamIntegrationConfigured = Boolean(
+    currentPacUpstreamGroup?.trim()
+  )
   const advancedConfigured = Boolean(
     routingStrategyConfigured ||
     internalNotesConfigured ||
     overrideRulesConfigured ||
     extraSettingsConfigured ||
     fieldPassthroughConfigured ||
-    upstreamModelDetectionConfigured
+    upstreamModelDetectionConfigured ||
+    upstreamIntegrationConfigured
   )
   const advancedNavChildren: ChannelEditorNavChildItem[] = [
     {
@@ -1087,6 +1113,11 @@ export function ChannelMutateDrawer({
       configured: upstreamModelDetectionConfigured,
     })
   }
+  advancedNavChildren.push({
+    id: ADVANCED_SETTINGS_SECTION_IDS.upstreamIntegration,
+    title: t('Upstream Integration'),
+    configured: upstreamIntegrationConfigured,
+  })
   const editorNavItems: ChannelEditorNavItem[] = [
     {
       id: CHANNEL_EDITOR_SECTION_IDS.identity,
@@ -1711,6 +1742,44 @@ export function ChannelMutateDrawer({
       }
 
       await channelMutation.mutateAsync(data)
+
+      // 渠道保存成功后登记上游探测凭据：比价 / 巡检按渠道 base_url 从
+      // UpstreamProbeConfigs 匹配凭据实时探测上游定价。
+      // 令牌留空 = 不动已有配置；用户 ID 留空 = 保留已有值；失败仅警告。
+      const probeToken = data.upstream_probe_token?.trim()
+      const probeBaseUrl = normalizeUpstreamBaseUrl(data.base_url || '')
+      if (probeToken && probeBaseUrl) {
+        try {
+          const rawProbeConfigs =
+            (systemOptionsResp?.data ?? []).find(
+              (o: { key: string; value: string }) =>
+                o.key === UPSTREAM_PROBE_CONFIGS_OPTION_KEY
+            )?.value ?? ''
+          const existing = findUpstreamProbeConfig(
+            rawProbeConfigs,
+            probeBaseUrl
+          )
+          const probeResp = await updateSystemOption({
+            key: UPSTREAM_PROBE_CONFIGS_OPTION_KEY,
+            value: upsertUpstreamProbeConfig(rawProbeConfigs, {
+              base_url: probeBaseUrl,
+              access_token: probeToken,
+              user_id:
+                data.upstream_probe_user_id?.trim() || existing?.user_id || '',
+            }),
+          })
+          if (!probeResp.success) {
+            throw new Error(probeResp.message)
+          }
+          queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        } catch {
+          toast.warning(
+            t(
+              'Channel saved, but failed to register the upstream probe credential'
+            )
+          )
+        }
+      }
     },
     [
       isEditing,
@@ -1719,6 +1788,8 @@ export function ChannelMutateDrawer({
       confirmMissingModelMappings,
       confirmStatusCodeRisk,
       channelMutation,
+      systemOptionsResp,
+      queryClient,
       t,
     ]
   )
@@ -4668,6 +4739,102 @@ export function ChannelMutateDrawer({
                             </fieldset>
                           </div>
                         )}
+
+                        <div
+                          id={ADVANCED_SETTINGS_SECTION_IDS.upstreamIntegration}
+                          className={sideDrawerSectionClassName(
+                            configuredAdvancedSectionClassName(
+                              'scroll-mt-4',
+                              upstreamIntegrationConfigured
+                            )
+                          )}
+                        >
+                          <CardHeading
+                            title={t('Upstream Integration')}
+                            icon={<Link2 className='h-4 w-4' />}
+                            iconTone='info'
+                          />
+                          <fieldset
+                            disabled={sensitiveLocked}
+                            className='space-y-4 disabled:opacity-60'
+                          >
+                            <FormField
+                              control={form.control}
+                              name='pac_upstream_group'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('Upstream group')}</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      placeholder={t(
+                                        'e.g., default, vip, premium'
+                                      )}
+                                      {...field}
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'The group this channel is billed under at the upstream site. Price compare and price monitoring read it to cost this channel correctly.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name='upstream_probe_token'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>
+                                    {t('Upstream probe access token')}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type='password'
+                                      autoComplete='off'
+                                      placeholder={t(
+                                        'Leave empty to keep the existing credential'
+                                      )}
+                                      {...field}
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'System access token of the upstream new-api site. On save it is registered into the UpstreamProbeConfigs system option keyed by this channel\'s base URL, so price compare can probe upstream pricing in real time.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name='upstream_probe_user_id'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>
+                                    {t('Upstream user ID')}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      placeholder={t(
+                                        'Optional; kept unchanged if left empty'
+                                      )}
+                                      {...field}
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'Sent as the New-Api-User header when probing the upstream site.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </fieldset>
+                        </div>
                       </ChannelAdvancedSection>
                     </div>
                   </div>

@@ -30,6 +30,7 @@ import {
   RefreshCw,
   ArrowUpFromLine,
   PlugZap,
+  Globe,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -184,6 +185,18 @@ export function ChannelsPrimaryButtons() {
           <PlugZap className='h-4 w-4' />
           <span className='max-sm:hidden'>{t('Onboard NewAPI')}</span>
         </Button>
+
+        {/* Upstream Sites Management */}
+        {canEditSensitive && (
+          <Button
+            variant='outline'
+            onClick={() => setOpen('upstream-sites')}
+            size='sm'
+          >
+            <Globe className='h-4 w-4' />
+            <span className='max-sm:hidden'>{t('Upstream sites')}</span>
+          </Button>
+        )}
 
         {/* More Actions */}
         <DropdownMenu>

@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -126,11 +127,13 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             </Badge>
           )}
         </TableCell>
-        <TableCell className='text-muted-foreground text-right text-xs'>
-          {m.quota_type === 1
-            ? `$${m.model_price}`
-            : `${m.model_ratio} / ${m.completion_ratio || '-'}`}
-        </TableCell>
+        {ctl.showAdvanced && (
+          <TableCell className='text-muted-foreground text-right text-xs'>
+            {m.quota_type === 1
+              ? `$${m.model_price}`
+              : `${m.model_ratio} / ${m.completion_ratio || '-'}`}
+          </TableCell>
+        )}
         <TableCell className='text-right font-medium'>
           <span className='inline-flex items-center gap-1'>
             {outOfGroup && (
@@ -225,9 +228,11 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             <TableRow>
               <TableHead className='w-10' />
               <TableHead>{t('Model')}</TableHead>
-              <TableHead className='text-right'>
-                {t('Upstream ratios')}
-              </TableHead>
+              {ctl.showAdvanced && (
+                <TableHead className='text-right'>
+                  {t('Upstream ratios')}
+                </TableHead>
+              )}
               <TableHead className='text-right'>
                 {t('Cost input /1M')}
               </TableHead>
@@ -324,20 +329,22 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             </TooltipContent>
           </Tooltip>
         </div>
-        <div className='flex items-center gap-2'>
-          <Label htmlFor='newapi-markup' className='shrink-0'>
-            {t('Global markup')}
-          </Label>
-          <Input
-            id='newapi-markup'
-            className='h-8 w-20'
-            value={ctl.markupInput}
-            onChange={(e) => {
-              ctl.setMarkupInput(e.target.value)
-              ctl.setSaleOverrides({})
-            }}
-          />
-        </div>
+        {ctl.showAdvanced && (
+          <div className='flex items-center gap-2'>
+            <Label htmlFor='newapi-markup' className='shrink-0'>
+              {t('Global markup')}
+            </Label>
+            <Input
+              id='newapi-markup'
+              className='h-8 w-20'
+              value={ctl.markupInput}
+              onChange={(e) => {
+                ctl.setMarkupInput(e.target.value)
+                ctl.setSaleOverrides({})
+              }}
+            />
+          </div>
+        )}
         <div className='relative min-w-44 flex-1'>
           <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
           <Input
@@ -346,6 +353,17 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             onChange={(e) => ctl.setSearchKeyword(e.target.value)}
             className='h-8 pl-9'
           />
+        </div>
+        <div className='flex items-center gap-2'>
+          <Switch
+            id='newapi-advanced'
+            size='sm'
+            checked={ctl.showAdvanced}
+            onCheckedChange={(checked) => ctl.setShowAdvanced(checked)}
+          />
+          <Label htmlFor='newapi-advanced' className='shrink-0 text-xs'>
+            {t('Advanced options')}
+          </Label>
         </div>
         <Button
           variant='outline'
@@ -382,48 +400,55 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             ))}
           </span>
         </span>
-        <span className='text-muted-foreground'>
-          {t('Upstream recharge price: $1 quota = ¥{{price}}', {
-            price: ctl.upstreamRechargePrice,
-          })}
-          {ctl.upstreamDisplayRate !== ctl.upstreamRechargePrice &&
-            ` (${t('display rate {{rate}} is cosmetic only', {
-              rate: ctl.upstreamDisplayRate,
-            })})`}
-        </span>
-        <span className='text-muted-foreground'>
-          {t('Our recharge price: $1 quota = ¥{{price}}', {
-            price: ctl.ourRechargePrice,
-          })}
-        </span>
-        <span className='text-muted-foreground'>
-          {t('Our group ratio: x{{ratio}} (already included in sale price)', {
-            ratio: ctl.siteGroupRatio,
-          })}
-        </span>
+        {ctl.showAdvanced && (
+          <>
+            <span className='text-muted-foreground'>
+              {t('Upstream recharge price: $1 quota = ¥{{price}}', {
+                price: ctl.upstreamRechargePrice,
+              })}
+              {ctl.upstreamDisplayRate !== ctl.upstreamRechargePrice &&
+                ` (${t('display rate {{rate}} is cosmetic only', {
+                  rate: ctl.upstreamDisplayRate,
+                })})`}
+            </span>
+            <span className='text-muted-foreground'>
+              {t('Our recharge price: $1 quota = ¥{{price}}', {
+                price: ctl.ourRechargePrice,
+              })}
+            </span>
+            <span className='text-muted-foreground'>
+              {t('Our group ratio: x{{ratio}} (already included in sale price)', {
+                ratio: ctl.siteGroupRatio,
+              })}
+            </span>
+          </>
+        )}
       </div>
 
-      <div className='flex flex-wrap gap-1.5'>
-        {ctl.upstreamGroups.map((g) => {
-          const visible = !ctl.hiddenGroups.has(g)
-          return (
-            <button
-              key={g}
-              type='button'
-              onClick={() => ctl.toggleHiddenGroup(g)}
-              className={cn(
-                'rounded-full border px-3 py-1 text-xs transition-colors',
-                visible
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'text-muted-foreground bg-transparent'
-              )}
-            >
-              {visible ? '✓ ' : ''}
-              {g} <span className='opacity-70'>x{ctl.groupRatio[g] ?? 1}</span>
-            </button>
-          )
-        })}
-      </div>
+      {ctl.showAdvanced && (
+        <div className='flex flex-wrap gap-1.5'>
+          {ctl.upstreamGroups.map((g) => {
+            const visible = !ctl.hiddenGroups.has(g)
+            return (
+              <button
+                key={g}
+                type='button'
+                onClick={() => ctl.toggleHiddenGroup(g)}
+                className={cn(
+                  'rounded-full border px-3 py-1 text-xs transition-colors',
+                  visible
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'text-muted-foreground bg-transparent'
+                )}
+              >
+                {visible ? '✓ ' : ''}
+                {g}{' '}
+                <span className='opacity-70'>x{ctl.groupRatio[g] ?? 1}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div
         className={cn(

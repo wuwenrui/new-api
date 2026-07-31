@@ -43,7 +43,6 @@
   "将所选订单标记为已完成，仅改状态、不会给用户充值。": "Mark the selected orders as completed. This only changes the status and does NOT credit the users.",
   "Please pick a billing group": "Please pick a billing group",
   "per-call": "per-call",
-  "Billing group": "Billing group",
   "Select all in group": "Select all in group",
   "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.": "The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.",
   "Global markup": "Global markup",

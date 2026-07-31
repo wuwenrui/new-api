@@ -25,6 +25,7 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelBusinessReportResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
   CopyChannelParams,
@@ -636,6 +637,23 @@ export async function probeNewAPIUpstream(
     request,
     channelActionConfig()
   )
+  return res.data
+}
+
+// ============================================================================
+// Channel Business Report (channel business overview)
+// ============================================================================
+
+/**
+ * Get per-channel business report: revenue, estimated upstream cost,
+ * gross profit/margin, top models, price-change and low-balance flags.
+ */
+export async function getChannelBusinessReport(
+  days = 30
+): Promise<ChannelBusinessReportResponse> {
+  const res = await api.get('/api/channel/business_report', {
+    params: { days },
+  })
   return res.data
 }
 

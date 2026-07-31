@@ -33,6 +33,7 @@ import {
   Trash2,
   RefreshCw,
   Loader2,
+  TrendingUp,
 } from 'lucide-react'
 import { useContext, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -288,6 +289,21 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <DollarSign size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
+
+          {/* Business Details */}
+          {canEditSensitive && (
+            <DropdownMenuItem
+              onClick={() => {
+                setCurrentRow(channel)
+                setOpen('business-detail')
+              }}
+            >
+              {t('Business details')}
+              <DropdownMenuShortcut>
+                <TrendingUp size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
 
           {/* Fetch Models */}
           <DropdownMenuItem onClick={handleFetchModels}>

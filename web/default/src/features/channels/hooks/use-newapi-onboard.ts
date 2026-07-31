@@ -29,6 +29,10 @@ import { useSystemConfig } from '@/hooks/use-system-config'
 import { createChannel, getGroups, probeNewAPIUpstream } from '../api'
 import { channelsQueryKeys } from '../lib'
 import {
+  UPSTREAM_PROBE_CONFIGS_OPTION_KEY,
+  upsertUpstreamProbeConfig,
+} from '../lib/upstream-probe-configs'
+import {
   RATIO_OPTION_KEYS,
   type SaleOverride,
   applyModelPricing,
@@ -53,6 +57,8 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
 
   const [step, setStep] = useState<WizardStep>('connect')
   const [maximized, setMaximized] = useState(false)
+  // 默认精简视图：只保留分组选择、搜索、币种和表格；加价/比价等开关到高级选项
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [baseUrl, setBaseUrl] = useState('')
   const [accessToken, setAccessToken] = useState('')
   const [userId, setUserId] = useState('')
@@ -261,6 +267,7 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
 
   const resetState = () => {
     setStep('connect')
+    setShowAdvanced(false)
     setBaseUrl('')
     setAccessToken('')
     setUserId('')
@@ -511,6 +518,8 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
             Object.keys(mapping).length > 0
               ? JSON.stringify(mapping, null, 2)
               : '',
+          // 让比价 / 巡检知道该渠道上游按哪个分组计费（resolvePACUpstreamGroup 优先读它）
+          settings: JSON.stringify({ pac_upstream_group: billingGroup }),
           status: 1,
           priority: 0,
           weight: 0,
@@ -539,6 +548,36 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
           })
         }
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      }
+
+      // 填了上游访问令牌就把它注册进 UpstreamProbeConfigs，比价 / 巡检
+      // 才能按 base_url 匹配凭据实时探测上游定价。失败不阻断建渠道，仅警告。
+      if (accessToken.trim()) {
+        try {
+          const rawProbeConfigs =
+            (optionsResp?.data ?? []).find(
+              (o: { key: string; value: string }) =>
+                o.key === UPSTREAM_PROBE_CONFIGS_OPTION_KEY
+            )?.value ?? ''
+          const probeResp = await updateSystemOption({
+            key: UPSTREAM_PROBE_CONFIGS_OPTION_KEY,
+            value: upsertUpstreamProbeConfig(rawProbeConfigs, {
+              base_url: probeResult.base_url,
+              access_token: accessToken.trim(),
+              user_id: userId.trim(),
+            }),
+          })
+          if (!probeResp.success) {
+            throw new Error(probeResp.message)
+          }
+          queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        } catch {
+          toast.warning(
+            t(
+              'Channel created, but failed to register the upstream probe credential'
+            )
+          )
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: channelsQueryKeys.all })
@@ -572,6 +611,8 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     setStep,
     maximized,
     setMaximized,
+    showAdvanced,
+    setShowAdvanced,
     handleClose,
     // connect
     baseUrl,

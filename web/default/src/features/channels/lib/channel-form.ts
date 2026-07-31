@@ -211,6 +211,10 @@ export const channelFormSchema = z
     upstream_model_update_auto_sync_enabled: z.boolean().optional(),
     upstream_model_update_auto_remove_enabled: z.boolean().optional(),
     upstream_model_update_ignored_models: z.string().optional(),
+    // Upstream integration for PAC price monitor / price compare
+    pac_upstream_group: z.string().optional(), // stored in settings JSON
+    upstream_probe_token: z.string().optional(), // not sent to channel API; upserted into UpstreamProbeConfigs
+    upstream_probe_user_id: z.string().optional(), // same as above
   })
   .superRefine((data, ctx) => {
     if ([3, 8, 36, 45].includes(data.type) && !data.base_url?.trim()) {
@@ -362,6 +366,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   upstream_model_update_auto_remove_enabled: false,
   upstream_model_update_ignored_models: '',
   advanced_custom: '',
+  pac_upstream_group: '',
+  upstream_probe_token: '',
+  upstream_probe_user_id: '',
 }
 
 // ============================================================================
@@ -419,11 +426,13 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoRemoveEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let pacUpstreamGroup = ''
 
   if (channel.settings) {
     try {
       const parsed = JSON.parse(channel.settings)
       vertexKeyType = parsed.vertex_key_type || 'json'
+      pacUpstreamGroup = parsed.pac_upstream_group || ''
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
@@ -502,6 +511,10 @@ export function transformChannelToFormDefaults(
       upstreamModelUpdateAutoRemoveEnabled,
     upstream_model_update_ignored_models: upstreamModelUpdateIgnoredModels,
     advanced_custom: advancedCustom,
+    pac_upstream_group: pacUpstreamGroup,
+    // 探测凭据从不回显：留空表示不动 UpstreamProbeConfigs 里的已有配置
+    upstream_probe_token: '',
+    upstream_probe_user_id: '',
   }
 }
 
@@ -611,6 +624,14 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
 
   settingsObj.disable_task_polling_sleep =
     formData.disable_task_polling_sleep === true
+
+  // PAC 比价/巡检的上游分组标注；清空时移除键，避免残留过期分组
+  const pacUpstreamGroup = formData.pac_upstream_group?.trim()
+  if (pacUpstreamGroup) {
+    settingsObj.pac_upstream_group = pacUpstreamGroup
+  } else if ('pac_upstream_group' in settingsObj) {
+    delete settingsObj.pac_upstream_group
+  }
 
   // Upstream model update settings (for model-fetchable channel types)
   if (MODEL_FETCHABLE_TYPES.has(formData.type)) {

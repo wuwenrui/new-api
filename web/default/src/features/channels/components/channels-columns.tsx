@@ -38,6 +38,7 @@ import { ProviderBadge } from '@/components/provider-badge'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { TruncatedText } from '@/components/truncated-text'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -47,6 +48,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import {
   formatCurrencyFromUSD,
   formatQuotaWithCurrency,
   getCurrencyLabel,
@@ -54,9 +60,11 @@ import {
 import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampToDate } from '@/lib/format'
 import { truncateText } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getCodexUsage } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
+import { useChannelBusinessReport } from '../hooks/use-channel-business-report'
 import {
   formatRelativeTime,
   formatResponseTime,
@@ -505,6 +513,118 @@ function BalanceCell({ channel }: { channel: Channel }) {
         }}
         isRefreshing={isUpdating}
       />
+    </TooltipProvider>
+  )
+}
+
+/**
+ * Business margin cell: shows the channel's gross margin over the report
+ * period (default 30 days) and opens the business detail drawer on click.
+ */
+function BusinessCell({ channel }: { channel: Channel }) {
+  const { t } = useTranslation()
+  const { setOpen, setCurrentRow } = useChannels()
+  const currentUser = useAuthStore((s) => s.auth.user)
+  const canEditSensitive = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+  )
+  const { report, rowByChannelId, isLoading } = useChannelBusinessReport()
+  const isTagRow = isTagAggregateRow(channel)
+
+  if (isTagRow) {
+    return null
+  }
+  if (isLoading) {
+    return <span className='text-muted-foreground text-xs'>-</span>
+  }
+
+  const row = rowByChannelId.get(channel.id)
+  const days = report?.days ?? 30
+  const handleOpenDetail = canEditSensitive
+    ? () => {
+        setCurrentRow(channel)
+        setOpen('business-detail')
+      }
+    : undefined
+  const clickableClass = handleOpenDetail ? 'cursor-pointer' : 'cursor-help'
+
+  if (!row || row.requests === 0) {
+    return (
+      <span className='text-muted-foreground text-xs'>
+        {t('No usage in period')}
+      </span>
+    )
+  }
+
+  if (!row.cost_known) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Badge
+                variant='outline'
+                className={clickableClass}
+                onClick={handleOpenDetail}
+              >
+                {t('Unknown')}
+              </Badge>
+            }
+          />
+          <TooltipContent>
+            <p>
+              {row.cost_unknown_reason ||
+                t('Cost unknown: register probe credentials in Upstream sites')}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  const margin = row.gross_margin
+  const marginLabel = `${margin >= 0 ? '+' : ''}${margin.toFixed(1)}%`
+  const marginColor =
+    margin >= 0
+      ? 'text-green-600 dark:text-green-500'
+      : 'text-red-600 dark:text-red-500'
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Badge
+              variant='outline'
+              className={`${marginColor} ${clickableClass}`}
+              onClick={handleOpenDetail}
+            >
+              {marginLabel}
+            </Badge>
+          }
+        />
+        <TooltipContent>
+          <p>
+            {t('Revenue')}: {formatCurrencyFromUSD(row.revenue)} ·{' '}
+            {t('Estimated Upstream Cost')}:{' '}
+            {formatCurrencyFromUSD(row.estimated_upstream_cost)} ·{' '}
+            {t('Profit')}: {formatCurrencyFromUSD(row.gross_profit)}
+          </p>
+          <p>{t('Estimated from real token usage × upstream ratios')}</p>
+          {row.cost_partial && (
+            <p>
+              {t(
+                'Some models lack upstream pricing; cost and profit are partial estimates'
+              )}
+            </p>
+          )}
+          <p className='text-muted-foreground'>
+            {t('Last {{days}} days', { days })}
+          </p>
+        </TooltipContent>
+      </Tooltip>
     </TooltipProvider>
   )
 }
@@ -1063,6 +1183,16 @@ export function useChannelsColumns(
         header: t('Used / Remaining'),
         cell: ({ row }) => <BalanceCell channel={row.original} />,
         size: 180,
+      },
+
+      // Business margin column
+      {
+        accessorKey: 'business',
+        header: t('Margin'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => <BusinessCell channel={row.original} />,
+        size: 110,
+        enableSorting: false,
       },
 
       // Response Time column
