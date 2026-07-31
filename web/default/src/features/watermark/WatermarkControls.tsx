@@ -27,13 +27,14 @@ export default function WatermarkControls({
   onLogoFileChange,
   disabled,
 }: Props) {
+  const gapPercent = Math.round((settings.gapXPercent + settings.gapYPercent) / 2);
   return (
     <aside className="watermark-controls" aria-label="水印设置">
       <div className="watermark-section-heading">
         <span>02</span>
         <div>
           <p>水印设置</p>
-          <small>所有图片使用同一套参数</small>
+          <small>默认值已是防去除效果最好的组合</small>
         </div>
       </div>
 
@@ -68,6 +69,7 @@ export default function WatermarkControls({
               value={settings.text}
               disabled={disabled}
               maxLength={80}
+              placeholder="例如：仅供 XX 案使用"
               onChange={(event) => onSettingsChange({ ...settings, text: event.target.value })}
             />
           </label>
@@ -99,6 +101,15 @@ export default function WatermarkControls({
       <div className="watermark-segmented" role="group" aria-label="水印布局">
         <button
           type="button"
+          aria-pressed={settings.layout === "tile"}
+          className={settings.layout === "tile" ? "is-active" : ""}
+          disabled={disabled}
+          onClick={() => onSettingsChange({ ...settings, layout: "tile" })}
+        >
+          全图平铺 · 推荐
+        </button>
+        <button
+          type="button"
           aria-pressed={settings.layout === "single"}
           className={settings.layout === "single" ? "is-active" : ""}
           disabled={disabled}
@@ -106,18 +117,14 @@ export default function WatermarkControls({
         >
           单点
         </button>
-        <button
-          type="button"
-          aria-pressed={settings.layout === "tile"}
-          className={settings.layout === "tile" ? "is-active" : ""}
-          disabled={disabled}
-          onClick={() => onSettingsChange({ ...settings, layout: "tile" })}
-        >
-          平铺
-        </button>
       </div>
+      <p className="watermark-hint">
+        {settings.layout === "tile"
+          ? "斜向铺满整张图，去水印工具无法完整擦除，防盗用效果最好"
+          : "只在画面一处出现，容易被裁剪或消除笔去除"}
+      </p>
 
-      {settings.layout === "single" ? (
+      {settings.layout === "single" && (
         <fieldset className="watermark-position-fieldset" disabled={disabled}>
           <legend>水印位置</legend>
           <div className="watermark-position-grid">
@@ -135,27 +142,6 @@ export default function WatermarkControls({
             ))}
           </div>
         </fieldset>
-      ) : (
-        <div className="watermark-slider-pair">
-          <RangeField
-            label="横向间距"
-            value={settings.gapXPercent}
-            min={0}
-            max={40}
-            suffix="%"
-            disabled={disabled}
-            onChange={(value) => onSettingsChange({ ...settings, gapXPercent: value })}
-          />
-          <RangeField
-            label="纵向间距"
-            value={settings.gapYPercent}
-            min={0}
-            max={40}
-            suffix="%"
-            disabled={disabled}
-            onChange={(value) => onSettingsChange({ ...settings, gapYPercent: value })}
-          />
-        </div>
       )}
 
       <div className="watermark-slider-stack">
@@ -169,7 +155,7 @@ export default function WatermarkControls({
           onChange={(value) => onSettingsChange({ ...settings, sizePercent: value })}
         />
         <RangeField
-          label="透明度"
+          label="深浅"
           value={Math.round(settings.opacity * 100)}
           min={5}
           max={100}
@@ -178,15 +164,27 @@ export default function WatermarkControls({
           onChange={(value) => onSettingsChange({ ...settings, opacity: value / 100 })}
         />
         <RangeField
-          label="旋转角度"
+          label="倾斜角度"
           value={settings.rotation}
-          min={-180}
-          max={180}
+          min={-60}
+          max={60}
           suffix="°"
           disabled={disabled}
           onChange={(value) => onSettingsChange({ ...settings, rotation: value })}
         />
-        {settings.layout === "single" && (
+        {settings.layout === "tile" ? (
+          <RangeField
+            label="间距"
+            value={gapPercent}
+            min={0}
+            max={40}
+            suffix="%"
+            disabled={disabled}
+            onChange={(value) =>
+              onSettingsChange({ ...settings, gapXPercent: value, gapYPercent: value })
+            }
+          />
+        ) : (
           <RangeField
             label="边缘距离"
             value={settings.marginPercent}
@@ -197,6 +195,23 @@ export default function WatermarkControls({
             onChange={(value) => onSettingsChange({ ...settings, marginPercent: value })}
           />
         )}
+      </div>
+
+      <div className={`watermark-shield${settings.invisible ? " is-on" : ""}`}>
+        <label className="watermark-shield-toggle">
+          <input
+            type="checkbox"
+            checked={settings.invisible}
+            disabled={disabled}
+            onChange={(event) => onSettingsChange({ ...settings, invisible: event.target.checked })}
+          />
+          <span aria-hidden />
+          <b>隐形数字指纹</b>
+        </label>
+        <p>
+          导出时把{settings.mode === "text" ? "水印文字" : "保护标识"}
+          写进图片像素深处，肉眼看不见。表面水印被人抹掉后，用下方「验证指纹」仍能证明这张图出自你手。
+        </p>
       </div>
     </aside>
   );

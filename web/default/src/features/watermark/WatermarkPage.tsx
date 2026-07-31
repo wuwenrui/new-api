@@ -10,6 +10,7 @@ import {
 import { buildWatermarkArchive, type ArchiveFailure } from "./archive";
 import WatermarkControls from "./WatermarkControls";
 import WatermarkPreview, { type WatermarkQueueItem } from "./WatermarkPreview";
+import WatermarkVerifier from "./WatermarkVerifier";
 import { DEFAULT_WATERMARK_SETTINGS, isSupportedImage, type WatermarkSettings } from "./types";
 import "./watermark.css";
 
@@ -115,7 +116,11 @@ export default function WatermarkPage() {
         setProgress,
       );
       setFailures(result.failures);
-      setResultText(`成功 ${result.successCount} 张，失败 ${result.failures.length} 张`);
+      setResultText(
+        settings.invisible
+          ? `成功 ${result.successCount} 张，失败 ${result.failures.length} 张 · 隐形指纹已写入`
+          : `成功 ${result.successCount} 张，失败 ${result.failures.length} 张`,
+      );
       if (result.zip) {
         const url = URL.createObjectURL(result.zip);
         const anchor = document.createElement("a");
@@ -133,6 +138,13 @@ export default function WatermarkPage() {
     }
   };
 
+  let statusText = settings.invisible
+    ? "将写入可见水印 + 隐形指纹，双保险"
+    : "只加可见水印，建议开启隐形指纹";
+  if (progress.total > 0) {
+    statusText = `处理进度 ${progress.completed}/${progress.total}`;
+  }
+
   return (
     <main className="watermark-page">
       <header className="watermark-hero">
@@ -140,15 +152,30 @@ export default function WatermarkPage() {
           <span>MODEL</span>SITE
         </a>
         <div>
-          <p className="watermark-kicker">PRIVATE · LOCAL · BATCH</p>
+          <p className="watermark-kicker">真水印 · 防去除 · 可验证</p>
           <h1>图片水印工坊</h1>
-          <p>原图不上传。一次设置，批量完成。</p>
+          <p>三步完成：加图片、写文字、点下载。原图不出本机。</p>
         </div>
         <div className="watermark-privacy-badge">
           <i aria-hidden />
           仅在本机处理
         </div>
       </header>
+
+      <section className="watermark-trust" aria-label="真水印说明">
+        <div className="watermark-trust-item">
+          <b>全图平铺</b>
+          <p>水印斜向铺满画面，消除笔和裁剪都去不干净</p>
+        </div>
+        <div className="watermark-trust-item">
+          <b>隐形数字指纹</b>
+          <p>导出时写进像素深处，肉眼看不见；表面水印被抹掉后仍能验出</p>
+        </div>
+        <div className="watermark-trust-item">
+          <b>本机完成</b>
+          <p>所有处理在浏览器里进行，原图与成品都不上传</p>
+        </div>
+      </section>
 
       <div className="watermark-workbench">
         <aside className="watermark-queue" aria-label="图片列表">
@@ -221,14 +248,12 @@ export default function WatermarkPage() {
         />
       </div>
 
+      <WatermarkVerifier />
+
       <footer className="watermark-export-bar">
         <div className="watermark-status" aria-live="polite">
           <b>{processing ? "正在生成" : "可以开始"}</b>
-          <span>
-            {progress.total > 0
-              ? `处理进度 ${progress.completed}/${progress.total}`
-              : "所有图片将使用当前预览参数"}
-          </span>
+          <span>{statusText}</span>
         </div>
         <div className="watermark-messages">
           {inputErrors.map((message) => (
@@ -249,7 +274,7 @@ export default function WatermarkPage() {
           disabled={processing || items.length === 0}
           onClick={() => void generateArchive()}
         >
-          {processing ? "正在处理…" : "生成并下载 ZIP"}
+          {processing ? "正在处理…" : "生成真水印并下载 ZIP"}
         </button>
       </footer>
     </main>

@@ -26,20 +26,23 @@ export type WatermarkSettings = {
   marginPercent: number;
   gapXPercent: number;
   gapYPercent: number;
+  /** 是否在导出时写入隐形数字指纹（真水印） */
+  invisible: boolean;
 };
 
 export const DEFAULT_WATERMARK_SETTINGS: WatermarkSettings = {
   mode: "text",
-  layout: "single",
+  layout: "tile",
   position: "center",
   text: "仅供资料使用",
   color: "#ffffff",
-  sizePercent: 8,
-  opacity: 0.32,
-  rotation: -20,
+  sizePercent: 9,
+  opacity: 0.28,
+  rotation: -25,
   marginPercent: 4,
-  gapXPercent: 12,
-  gapYPercent: 10,
+  gapXPercent: 18,
+  gapYPercent: 14,
+  invisible: true,
 };
 
 export function isSupportedImage(file: File): boolean {

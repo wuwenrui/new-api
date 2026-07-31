@@ -78,6 +78,7 @@ export default function WatermarkPreview({ item, settings, logoFile }: Props) {
       <div className="watermark-preview-meta">
         <span>实时预览</span>
         <b>{item.file.name}</b>
+        {settings.invisible && <em>导出时还会写入隐形指纹</em>}
       </div>
       <div className="watermark-canvas-stage">
         <canvas ref={canvasRef} aria-label={`${item.file.name} 水印预览`} />

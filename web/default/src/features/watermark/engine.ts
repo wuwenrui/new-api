@@ -1,4 +1,5 @@
 import { singlePlacement, tilePlacements, type Point } from "./geometry";
+import { embedInvisibleMark, fingerprintTextFor } from "./stego";
 import type { WatermarkSettings } from "./types";
 
 type MarkSize = { width: number; height: number };
@@ -120,6 +121,14 @@ export async function renderWatermarkedBlob(
     if (!context) throw new Error(`无法创建 ${file.name} 的图片画布`);
     context.drawImage(bitmap, 0, 0);
     drawWatermark(context, bitmap.width, bitmap.height, settings, logo);
+    if (settings.invisible) {
+      const fingerprint = fingerprintTextFor(settings.text, "已加保护");
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      if (!embedInvisibleMark(imageData, fingerprint)) {
+        throw new Error(`${file.name} 尺寸太小，无法写入隐形指纹（建议边长大于 240 像素）`);
+      }
+      context.putImageData(imageData, 0, 0);
+    }
     return await canvasToBlob(canvas, file.name, file.type);
   } finally {
     bitmap.close();
