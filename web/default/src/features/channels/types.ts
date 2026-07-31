@@ -86,6 +86,15 @@ export interface ChannelSettings {
   pass_through_body_enabled?: boolean
   system_prompt?: string
   system_prompt_override?: boolean
+  http_protocol?: 'auto' | 'http1' | string
+  http2_connection_shards?: number
+}
+
+export interface ChannelModelPrice {
+  input: number
+  output: number
+  cache_read: number
+  cache_write: number
 }
 
 export interface ChannelOtherSettings {
@@ -109,6 +118,7 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
+  model_prices?: Record<string, ChannelModelPrice>
 }
 
 export interface AdvancedCustomConfig {
@@ -382,6 +392,25 @@ export interface AddChannelRequest {
 // NewAPI Upstream Probe (onboard wizard)
 // ============================================================================
 
+export interface ModelsDevTokenCost {
+  input: number
+  output: number
+  cache_read?: number
+  cache_write?: number
+  input_audio?: number
+  output_audio?: number
+}
+
+export interface ModelsDevCostTier extends ModelsDevTokenCost {
+  context_threshold: number
+}
+
+export interface ModelsDevPricing {
+  base: ModelsDevTokenCost
+  tiers: ModelsDevCostTier[]
+  upstream_multiplier: number
+}
+
 export interface NewAPIProbeModel {
   model_name: string
   vendor_id: number
@@ -396,6 +425,7 @@ export interface NewAPIProbeModel {
   audio_completion_ratio: number
   enable_groups: string[] | null
   supported_endpoint_types: string[] | null
+  models_dev_pricing?: ModelsDevPricing
 }
 
 export interface NewAPIProbeRateInfo {

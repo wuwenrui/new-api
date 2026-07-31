@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/types"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -954,12 +956,52 @@ func (channel *Channel) ValidateSettings() error {
 	if _, err := common.ParseProxyURLStrict(channelParams.Proxy); err != nil {
 		return fmt.Errorf("invalid channel proxy: %w", err)
 	}
+	if err := channelParams.ValidateHTTPTransport(); err != nil {
+		return err
+	}
 	channelOtherSettings := &dto.ChannelOtherSettings{}
 	if channel.OtherSettings != "" {
 		err := common.UnmarshalJsonStr(channel.OtherSettings, channelOtherSettings)
 		if err != nil {
 			return err
 		}
+	}
+	channelOtherSettings.PACUpstreamGroup = strings.TrimSpace(channelOtherSettings.PACUpstreamGroup)
+	if len(channelOtherSettings.ModelPrices) > 0 {
+		allowedModels := make(map[string]struct{}, len(channel.GetModels()))
+		for _, modelName := range channel.GetModels() {
+			modelName = strings.TrimSpace(modelName)
+			if modelName != "" {
+				allowedModels[modelName] = struct{}{}
+			}
+		}
+		normalizedPrices := make(map[string]dto.ChannelModelPrice, len(channelOtherSettings.ModelPrices))
+		for modelName, price := range channelOtherSettings.ModelPrices {
+			modelName = strings.TrimSpace(modelName)
+			if modelName == "" {
+				return fmt.Errorf("model price name cannot be empty")
+			}
+			if _, ok := allowedModels[modelName]; !ok {
+				continue
+			}
+			if _, fixedPrice := ratio_setting.GetModelPrice(modelName, false); fixedPrice {
+				continue
+			}
+			if price.Input == nil || math.IsNaN(*price.Input) || math.IsInf(*price.Input, 0) || *price.Input < 0 {
+				return fmt.Errorf("invalid input price for model %s: must be present and non-negative", modelName)
+			}
+			if price.Output == nil || math.IsNaN(*price.Output) || math.IsInf(*price.Output, 0) || *price.Output < 0 {
+				return fmt.Errorf("invalid output price for model %s: must be present and non-negative", modelName)
+			}
+			if price.CacheRead == nil || math.IsNaN(*price.CacheRead) || math.IsInf(*price.CacheRead, 0) || *price.CacheRead < 0 {
+				return fmt.Errorf("invalid cache_read price for model %s: must be present and non-negative", modelName)
+			}
+			if price.CacheWrite == nil || math.IsNaN(*price.CacheWrite) || math.IsInf(*price.CacheWrite, 0) || *price.CacheWrite < 0 {
+				return fmt.Errorf("invalid cache_write price for model %s: must be present and non-negative", modelName)
+			}
+			normalizedPrices[modelName] = price
+		}
+		channelOtherSettings.ModelPrices = normalizedPrices
 	}
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		if channelOtherSettings.AdvancedCustom == nil {
@@ -976,6 +1018,7 @@ func (channel *Channel) ValidateSettings() error {
 			return fmt.Errorf("advanced custom channels require a %s route when upstream model update checks are enabled", dto.AdvancedCustomModelListPath)
 		}
 	}
+	channel.SetOtherSettings(*channelOtherSettings)
 	return nil
 }
 

@@ -13,10 +13,10 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
-	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -251,6 +251,20 @@ func TokenOrUserAuth() func(c *gin.Context) {
 		}
 		// Fall back to token auth (API clients)
 		TokenAuth()(c)
+	}
+}
+
+// UserOrTokenAuthReadOnly accepts a dashboard session or a model-site API Key.
+// Session requests keep the full UserAuth checks; Bearer requests use the
+// existing read-only token policy.
+func UserOrTokenAuthReadOnly() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		authorization := c.GetHeader("Authorization")
+		if strings.HasPrefix(authorization, "Bearer ") || strings.HasPrefix(authorization, "bearer ") {
+			TokenAuthReadOnly()(c)
+			return
+		}
+		UserAuth()(c)
 	}
 }
 

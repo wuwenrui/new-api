@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Maximize2, Minimize2, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -45,9 +45,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { upstreamCostInUSD, upstreamCostOutUSD } from '../../lib/newapi-onboard-pricing'
-import type { NewAPIProbeModel } from '../../types'
+import { cn } from '@/lib/utils'
+
 import type { NewAPIOnboardController } from '../../hooks/use-newapi-onboard'
+import {
+  upstreamCostInUSD,
+  upstreamCostOutUSD,
+} from '../../lib/newapi-onboard-pricing'
+import type { NewAPIProbeModel } from '../../types'
 
 type Props = { ctl: NewAPIOnboardController }
 
@@ -102,6 +107,12 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
       sIn,
       upstreamCostInUSD(m, ctl.baseGroupRatioFor(m))
     )
+    let upstreamPricing = `${m.model_ratio} / ${m.completion_ratio || '-'}`
+    if (m.models_dev_pricing) {
+      upstreamPricing = `$${m.models_dev_pricing.base.input} / $${m.models_dev_pricing.base.output}`
+    } else if (m.quota_type === 1) {
+      upstreamPricing = `$${m.model_price}`
+    }
     return (
       <TableRow
         key={`${group}:${m.model_name}`}
@@ -126,12 +137,17 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
               {t('per-call')}
             </Badge>
           )}
+          {(m.models_dev_pricing?.tiers.length ?? 0) > 0 && (
+            <Badge variant='outline' className='ml-2'>
+              {t('{{count}} context price tiers', {
+                count: m.models_dev_pricing?.tiers.length ?? 0,
+              })}
+            </Badge>
+          )}
         </TableCell>
         {ctl.showAdvanced && (
           <TableCell className='text-muted-foreground text-right text-xs'>
-            {m.quota_type === 1
-              ? `$${m.model_price}`
-              : `${m.model_ratio} / ${m.completion_ratio || '-'}`}
+            {upstreamPricing}
           </TableCell>
         )}
         <TableCell className='text-right font-medium'>
@@ -202,12 +218,21 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
   ) => {
     const models = ctl.modelsOfGroup(group, vendorModels)
     if (models.length === 0) return null
+    const selectedCount = models.filter((model) =>
+      ctl.selectedModels.has(model.model_name)
+    ).length
     return (
       <div key={group} className='overflow-hidden rounded-md border'>
         <div className='bg-muted/60 flex flex-wrap items-center gap-2 px-3 py-1.5'>
           <span className='text-sm font-semibold'>{group}</span>
           <Badge variant='secondary'>x{ctl.groupRatio[group] ?? 1}</Badge>
-          {group === ctl.billingGroup && <Badge>{t('Billing group')}</Badge>}
+          {group === ctl.billingGroup && (
+            <Badge>
+              {t(
+                ctl.source === 'sub2api' ? 'Selected provider' : 'Billing group'
+              )}
+            </Badge>
+          )}
           <span className='text-muted-foreground max-w-72 truncate text-xs'>
             {ctl.usableGroup[group] || ''}
           </span>
@@ -218,9 +243,23 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
             variant='outline'
             size='sm'
             className='h-6 px-2 text-xs'
+            disabled={selectedCount === models.length}
             onClick={() => ctl.selectAllInGroup(group, vendorModels)}
           >
-            {t('Select all in group')}
+            {t(ctl.source === 'sub2api' ? 'Select all' : 'Select all in group')}
+          </Button>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-6 px-2 text-xs'
+            disabled={selectedCount === 0}
+            onClick={() => ctl.deselectAllInGroup(group, vendorModels)}
+          >
+            {t(
+              ctl.source === 'sub2api'
+                ? 'Deselect all'
+                : 'Deselect all in group'
+            )}
           </Button>
         </div>
         <Table>
@@ -230,7 +269,11 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
               <TableHead>{t('Model')}</TableHead>
               {ctl.showAdvanced && (
                 <TableHead className='text-right'>
-                  {t('Upstream ratios')}
+                  {t(
+                    ctl.source === 'sub2api'
+                      ? 'Official input / output'
+                      : 'Upstream ratios'
+                  )}
                 </TableHead>
               )}
               <TableHead className='text-right'>
@@ -290,49 +333,64 @@ export function NewAPIOnboardSelectStep({ ctl }: Props) {
   return (
     <div className='space-y-3'>
       <div className='flex flex-wrap items-center gap-3'>
-        <div className='flex items-center gap-2'>
-          <Label className='shrink-0'>{t('Billing group')}</Label>
-          <Select
-            value={ctl.billingGroup}
-            onValueChange={(v) => {
-              if (v) ctl.selectBillingGroup(v)
-            }}
-          >
-            <SelectTrigger className='w-60'>
-              <SelectValue>{ctl.billingGroup}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {ctl.upstreamGroups.map((g) => (
-                <SelectItem key={g} value={g}>
-                  <span className='flex items-center gap-2'>
-                    <span>{g}</span>
-                    <Badge variant='secondary'>
-                      x{ctl.groupRatio[g] ?? 1}
-                    </Badge>
+        {ctl.source === 'sub2api' ? (
+          <div className='flex items-center gap-2'>
+            <Label className='shrink-0'>{t('Selected provider')}</Label>
+            <Badge variant='outline'>{ctl.billingGroup}</Badge>
+            <Badge variant='secondary'>
+              {t('Upstream multiplier')} x
+              {ctl.groupRatio[ctl.billingGroup] ?? 1}
+            </Badge>
+          </div>
+        ) : (
+          <div className='flex items-center gap-2'>
+            <Label className='shrink-0'>{t('Billing group')}</Label>
+            <Select
+              value={ctl.billingGroup}
+              onValueChange={(value) => {
+                if (value) ctl.selectBillingGroup(value)
+              }}
+            >
+              <SelectTrigger className='w-60'>
+                <SelectValue>{ctl.billingGroup}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {ctl.upstreamGroups.map((group) => (
+                  <SelectItem key={group} value={group}>
+                    <span className='flex items-center gap-2'>
+                      <span>{group}</span>
+                      <Badge variant='secondary'>
+                        x{ctl.groupRatio[group] ?? 1}
+                      </Badge>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className='text-muted-foreground cursor-help text-xs underline decoration-dotted'>
+                    ?
                   </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span className='text-muted-foreground cursor-help text-xs underline decoration-dotted'>
-                  ?
-                </span>
-              }
-            />
-            <TooltipContent className='max-w-72'>
-              {t(
-                'The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.'
-              )}
-            </TooltipContent>
-          </Tooltip>
-        </div>
+                }
+              />
+              <TooltipContent className='max-w-72'>
+                {t(
+                  'The relay token must belong to this group. Models picked outside it are still billed by this group upstream, so their real cost may differ.'
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
         {ctl.showAdvanced && (
           <div className='flex items-center gap-2'>
             <Label htmlFor='newapi-markup' className='shrink-0'>
-              {t('Global markup')}
+              {t(
+                ctl.source === 'sub2api'
+                  ? 'Our pricing multiplier'
+                  : 'Global markup'
+              )}
             </Label>
             <Input
               id='newapi-markup'

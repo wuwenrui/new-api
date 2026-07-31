@@ -48,6 +48,7 @@ type DialogType =
   | 'newapi-onboard'
   | 'upstream-sites'
   | 'business-detail'
+  | 'sub2api-onboard'
   | null
 
 type UpstreamUpdateState = ReturnType<typeof useChannelUpstreamUpdates>

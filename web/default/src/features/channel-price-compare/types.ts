@@ -21,16 +21,39 @@ For commercial licensing, please contact support@quantumnous.com
 // Prices are expressed in USD per 1M tokens; margins are percentages.
 // ----------------------------------------------------------------------------
 
+export interface BusinessMetrics {
+  requests: number
+  revenue: number
+  upstream_cost: number
+  profit: number
+  margin: number
+  cost_available: boolean
+}
+
+export interface QualityMetrics {
+  successes: number
+  errors: number
+  success_rate: number
+  average_use_time: number
+  last_error_at: number
+  last_error_code: string
+}
+
 export type PriceCompareStatus = 'ok' | 'unknown'
 
 export interface PriceCompareChannel {
   channel_id: number
   channel_name: string
-  upstream_base: string
   upstream_group: string
+  upstream_model: string
   priority: number
+  weight: number
+  routing_role: 'primary' | 'primary_pool' | 'backup'
   status: PriceCompareStatus
   status_reason: string
+  price_source: 'manual' | 'detected' | 'missing'
+  price_changed: boolean
+  detected_available: boolean
   local_input: number
   local_output: number
   local_cache_read: number
@@ -39,8 +62,16 @@ export interface PriceCompareChannel {
   upstream_output: number
   upstream_cache_read: number
   upstream_cache_write: number
+  detected_input: number
+  detected_output: number
+  detected_cache_read: number
+  detected_cache_write: number
   margin_input: number
   margin_output: number
+  today: BusinessMetrics
+  total: BusinessMetrics
+  quality_24h: QualityMetrics
+  recommendations: string[]
 }
 
 export interface PriceCompareModel {
@@ -48,9 +79,26 @@ export interface PriceCompareModel {
   channels: PriceCompareChannel[]
 }
 
+export interface ChannelSummary {
+  channel_id: number
+  channel_name: string
+  model_count: number
+  risk_count: number
+  today: BusinessMetrics
+  total: BusinessMetrics
+}
+
+export interface OperationsSummary {
+  today: BusinessMetrics
+  total: BusinessMetrics
+  risk_channels: number
+}
+
 export interface ChannelPriceCompareData {
   generated_at: number
   local_group: string
+  summary: OperationsSummary
+  channels: ChannelSummary[]
   models: PriceCompareModel[]
   probe_errors: Record<string, string>
 }

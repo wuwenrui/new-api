@@ -2,11 +2,14 @@ package router
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,6 +28,23 @@ func TestChannelDeleteRoutesUseSensitiveWritePermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodPut, "/", authz.ChannelWrite, controller.UpdateChannel)
 	assertChannelRoutePermission(t, http.MethodPut, "/tag", authz.ChannelWrite, controller.EditTagChannels)
 	assertChannelRoutePermission(t, http.MethodPost, "/batch/tag", authz.ChannelWrite, controller.BatchSetChannelTag)
+}
+
+func TestChannelPriceCompareRouteUsesReadPermission(t *testing.T) {
+	assertChannelRoutePermission(t, http.MethodGet, "/price_compare", authz.ChannelRead, controller.GetChannelPriceCompare)
+}
+
+func TestChannelPriceCompareRouteRejectsUnauthenticatedRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(sessions.Sessions("session", cookie.NewStore([]byte("channel-route-test"))))
+	registerChannelRoutes(engine.Group("/api"))
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/channel/price_compare", nil)
+	engine.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusUnauthorized, response.Code)
 }
 
 func TestChannelStatusRoutesRegisterWithoutConflict(t *testing.T) {

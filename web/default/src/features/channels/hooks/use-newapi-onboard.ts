@@ -1,3 +1,5 @@
+import type { ProviderMap } from '@opencode-ai/models'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -16,16 +18,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
 import {
   getSystemOptions,
   updateSystemOption,
 } from '@/features/system-settings/api'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
+
 import { createChannel, getGroups, probeNewAPIUpstream } from '../api'
 import { channelsQueryKeys } from '../lib'
 import {
@@ -35,21 +38,32 @@ import {
 import {
   RATIO_OPTION_KEYS,
   type SaleOverride,
+  buildModelsDevBillingExpression,
   applyModelPricing,
   extractRatioMaps,
   parseJsonRecord,
   roundRatio,
   upstreamCostInUSD,
+  upstreamCostOutUSD,
 } from '../lib/newapi-onboard-pricing'
+import {
+  buildSub2APIProbeResult,
+  listSub2APIProviders,
+} from '../lib/sub2api-onboard'
 import type { NewAPIProbeModel, NewAPIProbeResult } from '../types'
 
 export const CHANNEL_TYPE_OPENAI = 1
 export const CHANNEL_TYPE_ANTHROPIC = 14
 
+export type OnboardSource = 'newapi' | 'sub2api'
 export type WizardStep = 'connect' | 'select' | 'finalize'
 export type Currency = 'USD' | 'CNY'
 
-export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => void) {
+export function useNewAPIOnboard(
+  open: boolean,
+  onOpenChange: (v: boolean) => void,
+  source: OnboardSource = 'newapi'
+) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const systemConfig = useSystemConfig()
@@ -59,12 +73,40 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
   const [maximized, setMaximized] = useState(false)
   // 默认精简视图：只保留分组选择、搜索、币种和表格；加价/比价等开关到高级选项
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [baseUrl, setBaseUrl] = useState('')
+  const [baseUrl, setBaseUrl] = useState(
+    source === 'sub2api' ? 'https://www.lxddai.com' : ''
+  )
   const [accessToken, setAccessToken] = useState('')
   const [userId, setUserId] = useState('')
   const [isProbing, setIsProbing] = useState(false)
-  const [probeResult, setProbeResult] = useState<NewAPIProbeResult | null>(
-    null
+  const [probeResult, setProbeResult] = useState<NewAPIProbeResult | null>(null)
+  const [modelsDevProviders, setModelsDevProviders] =
+    useState<ProviderMap | null>(null)
+  const [modelsDevError, setModelsDevError] = useState('')
+  const [modelsDevLoading, setModelsDevLoading] = useState(false)
+  const [providerId, setProviderId] = useState('')
+  const [upstreamMultiplierInput, setUpstreamMultiplierInput] = useState('1')
+
+  useEffect(() => {
+    if (!open || source !== 'sub2api' || modelsDevProviders) return
+    setModelsDevLoading(true)
+    setModelsDevError('')
+    void import('@opencode-ai/models')
+      .then(({ Models }) => Models.make().providers())
+      .then((providers) => setModelsDevProviders(providers))
+      .catch((error: unknown) =>
+        setModelsDevError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load model catalog'
+        )
+      )
+      .finally(() => setModelsDevLoading(false))
+  }, [open, source, modelsDevProviders])
+
+  const providerOptions = useMemo(
+    () => (modelsDevProviders ? listSub2APIProviders(modelsDevProviders) : []),
+    [modelsDevProviders]
   )
 
   const [billingGroup, setBillingGroup] = useState('')
@@ -146,10 +188,14 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     [probeResult, selectedModels]
   )
 
-  const { data: optionsResp } = useQuery({
+  const {
+    data: optionsResp,
+    isPending: optionsLoading,
+    isError: optionsError,
+  } = useQuery({
     queryKey: ['system-options'],
     queryFn: getSystemOptions,
-    enabled: open && step !== 'connect',
+    enabled: open && (source === 'sub2api' || step !== 'connect'),
   })
   const currentRatioMaps = useMemo(
     () => extractRatioMaps(optionsResp?.data ?? []),
@@ -203,7 +249,13 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
 
   const saleOutUSD = (m: NewAPIProbeModel): number | null => {
     if (m.quota_type === 1) return null
-    return saleOverrides[m.model_name]?.out ?? saleInUSD(m) * m.completion_ratio
+    if (!m.models_dev_pricing) {
+      return (
+        saleOverrides[m.model_name]?.out ?? saleInUSD(m) * m.completion_ratio
+      )
+    }
+    const upstreamOutput = upstreamCostOutUSD(m, baseGroupRatioFor(m)) ?? 0
+    return saleOverrides[m.model_name]?.out ?? upstreamOutput * markup
   }
 
   const localNameFor = (upstreamName: string): string =>
@@ -225,6 +277,28 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     return selectedModelObjects
       .filter((m) => {
         const local = localNameFor(m.model_name)
+        if (m.models_dev_pricing) {
+          const existingMode =
+            currentRatioMaps['billing_setting.billing_mode'][local]
+          const existingExpression =
+            currentRatioMaps['billing_setting.billing_expr'][local]
+          const hasExistingPricing =
+            existingMode !== undefined ||
+            existingExpression !== undefined ||
+            currentRatioMaps.ModelRatio[local] !== undefined ||
+            currentRatioMaps.ModelPrice[local] !== undefined
+          if (!hasExistingPricing) return false
+          return (
+            existingMode !== 'tiered_expr' ||
+            existingExpression !==
+              buildModelsDevBillingExpression(
+                m,
+                saleInUSD(m),
+                saleOutUSD(m) ?? 0,
+                siteGroupRatio
+              )
+          )
+        }
         if (m.quota_type === 1) {
           const existing = currentRatioMaps.ModelPrice[local]
           return (
@@ -268,10 +342,13 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
   const resetState = () => {
     setStep('connect')
     setShowAdvanced(false)
-    setBaseUrl('')
+    setMaximized(false)
+    setBaseUrl(source === 'sub2api' ? 'https://www.lxddai.com' : '')
     setAccessToken('')
     setUserId('')
     setProbeResult(null)
+    setProviderId('')
+    setUpstreamMultiplierInput('1')
     setBillingGroup('')
     setHiddenGroups(new Set())
     setSearchKeyword('')
@@ -291,6 +368,46 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     onOpenChange(false)
   }
 
+  const acceptProbeResult = (result: NewAPIProbeResult) => {
+    if (source === 'sub2api') {
+      setMaximized(true)
+    }
+    setProbeResult(result)
+    setSelectedModels(new Set())
+    setMarkupInput(source === 'sub2api' ? String(siteGroupRatio) : '1')
+    setSaleOverrides({})
+    setModelAliases({})
+    setHiddenGroups(new Set())
+    const groups = Object.keys(result.group_ratio ?? {}).sort((a, b) =>
+      a.localeCompare(b)
+    )
+    // 默认计费分组取覆盖模型最多的分组，避免落在不含任何所选模型的分组上
+    const modelCounts = new Map<string, number>()
+    result.models.forEach((model) =>
+      (model.enable_groups ?? []).forEach((group) =>
+        modelCounts.set(group, (modelCounts.get(group) ?? 0) + 1)
+      )
+    )
+    const defaultGroup = [...groups].sort(
+      (a, b) => (modelCounts.get(b) ?? 0) - (modelCounts.get(a) ?? 0)
+    )[0]
+    setBillingGroup(defaultGroup ?? '')
+    // 默认只展开计费分组：所见成本即真实进货价，默认售价与之对齐；
+    // 其他分组收起，需要比价时用户自行点开（组外价带「估」标）。
+    const allGroups = new Set(groups)
+    modelCounts.forEach((_, group) => allGroups.add(group))
+    setHiddenGroups(
+      new Set([...allGroups].filter((group) => group !== defaultGroup))
+    )
+    setStep('select')
+    toast.success(
+      t('Found {{models}} models and {{groups}} groups', {
+        models: result.models.length,
+        groups: groups.length,
+      })
+    )
+  }
+
   const handleProbe = async () => {
     if (!baseUrl.trim()) {
       toast.error(t('Please enter the upstream site address'))
@@ -307,40 +424,7 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
         toast.error(resp.message || t('Failed to probe upstream site'))
         return
       }
-      setProbeResult(resp.data)
-      setSelectedModels(new Set())
-      setSaleOverrides({})
-      setModelAliases({})
-      setHiddenGroups(new Set())
-      const groups = Object.keys(resp.data.group_ratio ?? {}).sort((a, b) =>
-        a.localeCompare(b)
-      )
-      // 默认计费分组取覆盖模型最多的分组，避免落在不含任何所选模型的分组上
-      const modelCounts = new Map<string, number>()
-      resp.data.models.forEach((m) =>
-        (m.enable_groups ?? []).forEach((g) =>
-          modelCounts.set(g, (modelCounts.get(g) ?? 0) + 1)
-        )
-      )
-      const defaultGroup = [...groups].sort(
-        (a, b) => (modelCounts.get(b) ?? 0) - (modelCounts.get(a) ?? 0)
-      )[0]
-      setBillingGroup(defaultGroup ?? '')
-      // 默认只展开计费分组：所见成本即真实进货价，默认售价与之对齐；
-      // 其他分组收起，需要比价时用户自行点开（组外价带「估」标）。
-      // 全集须含仅出现在模型 enable_groups（模型可用分组）里的分组。
-      const allGroups = new Set(groups)
-      modelCounts.forEach((_, g) => allGroups.add(g))
-      setHiddenGroups(
-        new Set([...allGroups].filter((g) => g !== defaultGroup))
-      )
-      setStep('select')
-      toast.success(
-        t('Found {{models}} models and {{groups}} groups', {
-          models: resp.data.models.length,
-          groups: groups.length,
-        })
-      )
+      acceptProbeResult(resp.data)
     } catch (error: unknown) {
       toast.error(
         error instanceof Error
@@ -349,6 +433,27 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
       )
     } finally {
       setIsProbing(false)
+    }
+  }
+
+  const handleSub2APIConnect = () => {
+    try {
+      if (!modelsDevProviders) {
+        throw new Error(modelsDevError || t('Model catalog is still loading'))
+      }
+      const result = buildSub2APIProbeResult({
+        providers: modelsDevProviders,
+        providerId,
+        baseUrl,
+        upstreamMultiplier: Number(upstreamMultiplierInput),
+      })
+      acceptProbeResult(result)
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error
+          ? t(error.message)
+          : t('Failed to prepare Sub2API models')
+      )
     }
   }
 
@@ -393,6 +498,14 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     setSelectedModels((prev) => {
       const next = new Set(prev)
       modelsOfGroup(group, from).forEach((m) => next.add(m.model_name))
+      return next
+    })
+  }
+
+  const deselectAllInGroup = (group: string, from?: NewAPIProbeModel[]) => {
+    setSelectedModels((prev) => {
+      const next = new Set(prev)
+      modelsOfGroup(group, from).forEach((m) => next.delete(m.model_name))
       return next
     })
   }
@@ -485,15 +598,17 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     const localNames = selectedModelObjects.map((m) =>
       localNameFor(m.model_name)
     )
-    const duplicates = localNames.filter(
-      (n, i) => localNames.indexOf(n) !== i
-    )
+    const duplicates = localNames.filter((n, i) => localNames.indexOf(n) !== i)
     if (duplicates.length > 0) {
       toast.error(
         t('Duplicate local model names: {{models}}', {
           models: [...new Set(duplicates)].join(', '),
         })
       )
+      return
+    }
+    if (syncPricing && (optionsLoading || optionsError || !optionsResp)) {
+      toast.error(t('Model pricing settings are not ready; please try again'))
       return
     }
     setIsSubmitting(true)
@@ -607,6 +722,7 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
 
   return {
     // step / dialog
+    source,
     step,
     setStep,
     maximized,
@@ -624,6 +740,14 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     isProbing,
     handleProbe,
     probeResult,
+    providerOptions,
+    providerId,
+    setProviderId,
+    upstreamMultiplierInput,
+    setUpstreamMultiplierInput,
+    modelsDevLoading,
+    modelsDevError,
+    handleSub2APIConnect,
     // select
     billingGroup,
     setBillingGroup,
@@ -635,6 +759,7 @@ export function useNewAPIOnboard(open: boolean, onOpenChange: (v: boolean) => vo
     selectedModels,
     toggleModel,
     selectAllInGroup,
+    deselectAllInGroup,
     modelsOfGroup,
     markupInput,
     setMarkupInput,

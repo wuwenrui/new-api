@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,6 +37,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
+
 import {
   CHANNEL_TYPE_ANTHROPIC,
   CHANNEL_TYPE_OPENAI,
@@ -98,10 +100,14 @@ export function NewAPIOnboardFinalizeStep({ ctl }: Props) {
           onChange={(e) => ctl.setChannelKey(e.target.value)}
         />
         <p className='text-muted-foreground text-xs'>
-          {t(
-            'Create an API token on the upstream site (bound to group {{group}}) and paste it here. The system access token cannot be used for relaying.',
-            { group: ctl.billingGroup || t('any') }
-          )}
+          {ctl.source === 'sub2api'
+            ? t(
+                'Paste the API key from this Sub2API site. It is used only for relay requests.'
+              )
+            : t(
+                'Create an API token on the upstream site (bound to group {{group}}) and paste it here. The system access token cannot be used for relaying.',
+                { group: ctl.billingGroup || t('any') }
+              )}
         </p>
       </div>
 
@@ -188,10 +194,14 @@ export function NewAPIOnboardFinalizeStep({ ctl }: Props) {
               {t('Write model pricing to local ratio settings')}
             </Label>
             <p className='text-muted-foreground text-xs'>
-              {t(
-                'Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})',
-                { ratio: ctl.siteGroupRatio }
-              )}
+              {ctl.source === 'sub2api'
+                ? t(
+                    'Sale prices are written as per-model billing expressions; context tiers and cache prices follow the latest models.dev catalog.'
+                  )
+                : t(
+                    'Sale prices are end-user prices; written ratio = price / anchor / our group ratio (x{{ratio}})',
+                    { ratio: ctl.siteGroupRatio }
+                  )}
             </p>
           </div>
           <Switch

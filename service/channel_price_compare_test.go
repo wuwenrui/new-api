@@ -2,17 +2,24 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func setupPriceCompareRatios(t *testing.T) {
@@ -21,6 +28,10 @@ func setupPriceCompareRatios(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateCompletionRatioByJSONString(`{"test-model":5}`))
 	require.NoError(t, ratio_setting.UpdateCacheRatioByJSONString(`{"test-model":0.1}`))
 	require.NoError(t, ratio_setting.UpdateCreateCacheRatioByJSONString(`{"test-model":1.25}`))
+}
+
+func channelPriceValue(value float64) *float64 {
+	return &value
 }
 
 func newPriceCompareChannel() *model.Channel {
@@ -41,7 +52,7 @@ func snapshotWithTestModel() upstreamPricingSnapshot {
 // 本地 输入25/输出125/缓存读2.5/缓存写31.25；上游 输入3/输出15/缓存读0.3/缓存写3.75；盈利率均 88%。
 func TestBuildChannelPriceCompareRowOK(t *testing.T) {
 	setupPriceCompareRatios(t)
-	row := buildChannelPriceCompareRow(newPriceCompareChannel(), "https://up.example", "grp", "test-model", snapshotWithTestModel(), 2.5)
+	row := buildChannelPriceCompareRow(newPriceCompareChannel(), "grp", "test-model", snapshotWithTestModel(), 2.5)
 
 	assert.Equal(t, "ok", row.Status)
 	assert.Equal(t, int64(100), row.Priority)
@@ -61,27 +72,70 @@ func TestBuildChannelPriceCompareRowOK(t *testing.T) {
 	assert.InDelta(t, 88.0, row.MarginOutput, 1e-9)
 }
 
+func TestBuildChannelPriceCompareRowShowsMatchingDetectedManualPrice(t *testing.T) {
+	setupPriceCompareRatios(t)
+	channel := newPriceCompareChannel()
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		PACUpstreamGroup: "grp",
+		ModelPrices: map[string]dto.ChannelModelPrice{
+			"test-model": {
+				Input:      channelPriceValue(3),
+				Output:     channelPriceValue(15),
+				CacheRead:  channelPriceValue(0.3),
+				CacheWrite: channelPriceValue(3.75),
+			},
+		},
+	})
+
+	row := buildChannelPriceCompareRow(channel, "grp", "test-model", snapshotWithTestModel(), 2.5)
+
+	assert.Equal(t, "manual", row.PriceSource)
+	assert.True(t, row.DetectedAvailable)
+	assert.False(t, row.PriceChanged)
+	assert.InDelta(t, 3.0, row.DetectedInput, 1e-9)
+	assert.InDelta(t, 15.0, row.DetectedOutput, 1e-9)
+}
+
+func TestBuildChannelPriceCompareRowAcceptsFreeUpstreamGroup(t *testing.T) {
+	setupPriceCompareRatios(t)
+	snapshot := snapshotWithTestModel()
+	snapshot.GroupRatios["grp"] = 0
+
+	row := buildChannelPriceCompareRow(
+		newPriceCompareChannel(),
+		"grp",
+		"test-model",
+		snapshot,
+		2.5,
+	)
+
+	assert.Equal(t, "ok", row.Status)
+	assert.True(t, row.DetectedAvailable)
+	assert.Zero(t, row.UpstreamInput)
+	assert.InDelta(t, 100.0, row.MarginInput, 1e-9)
+}
+
 func TestBuildChannelPriceCompareRowUnknownBranches(t *testing.T) {
 	setupPriceCompareRatios(t)
 	snapshot := snapshotWithTestModel()
 
 	// 未标注上游分组
-	row := buildChannelPriceCompareRow(newPriceCompareChannel(), "https://up.example", "", "test-model", snapshot, 2.5)
+	row := buildChannelPriceCompareRow(newPriceCompareChannel(), "", "test-model", snapshot, 2.5)
 	assert.Equal(t, "unknown", row.Status)
-	assert.Contains(t, row.StatusReason, "上游分组")
+	assert.Equal(t, "No upstream group or purchase price", row.StatusReason)
 	// 本地价仍应算出（用户售价与上游无关）
 	assert.InDelta(t, 25.0, row.LocalInput, 1e-9)
 	assert.Zero(t, row.UpstreamInput)
 
 	// 上游无该分组倍率
-	row = buildChannelPriceCompareRow(newPriceCompareChannel(), "https://up.example", "missing-grp", "test-model", snapshot, 2.5)
+	row = buildChannelPriceCompareRow(newPriceCompareChannel(), "missing-grp", "test-model", snapshot, 2.5)
 	assert.Equal(t, "unknown", row.Status)
-	assert.Contains(t, row.StatusReason, "分组倍率")
+	assert.Equal(t, "Upstream pricing group not found", row.StatusReason)
 
 	// 上游无该模型
-	row = buildChannelPriceCompareRow(newPriceCompareChannel(), "https://up.example", "grp", "absent-model", snapshot, 2.5)
+	row = buildChannelPriceCompareRow(newPriceCompareChannel(), "grp", "absent-model", snapshot, 2.5)
 	assert.Equal(t, "unknown", row.Status)
-	assert.Contains(t, row.StatusReason, "模型价格")
+	assert.Equal(t, "Upstream model price not found", row.StatusReason)
 }
 
 func TestLoadUpstreamProbeConfigs(t *testing.T) {
@@ -116,7 +170,7 @@ func TestProbeUpstreamPricingRetriesOnFailure(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"group_ratio":{"g":0.3},"data":[{"model_name":"m","model_ratio":5,"completion_ratio":5,"cache_ratio":0.1,"create_cache_ratio":1.25}]}`))
+		_, _ = w.Write([]byte(`{"success":true,"group_ratio":{"g":0.3},"data":[{"model_name":"m","quota_type":0,"model_ratio":5,"completion_ratio":5,"cache_ratio":0.1,"create_cache_ratio":1.25},{"model_name":"fixed","quota_type":1,"model_price":0.1}]}`))
 	}))
 	defer srv.Close()
 
@@ -124,5 +178,293 @@ func TestProbeUpstreamPricingRetriesOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, atomic.LoadInt32(&calls)) // 第一次失败，第二次成功
 	assert.Contains(t, snapshot.Models, "m")
+	assert.NotContains(t, snapshot.Models, "fixed")
 	assert.InDelta(t, 0.3, snapshot.GroupRatios["g"], 1e-9)
+}
+
+func TestProbeUpstreamPricingSkipsIncompleteTokenPrices(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"group_ratio":{"g":0.3},"data":[{"model_name":"incomplete","quota_type":0,"model_ratio":5,"completion_ratio":5,"cache_ratio":0.1},{"model_name":"free","quota_type":0,"model_ratio":0,"completion_ratio":0,"cache_ratio":0,"create_cache_ratio":0}]}`))
+	}))
+	defer srv.Close()
+
+	snapshot, err := probeUpstreamPricingOnce(context.Background(), UpstreamProbeConfig{BaseURL: srv.URL})
+
+	require.NoError(t, err)
+	assert.NotContains(t, snapshot.Models, "incomplete")
+	assert.Contains(t, snapshot.Models, "free")
+}
+
+func TestProbeChannelUpstreamsUsesCredentialSafeLabels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	base := strings.Replace(srv.URL, "http://", "http://user:secret@", 1)
+	channel := &model.Channel{
+		Id: 7, Name: "safe-channel", BaseURL: common.GetPointer(base),
+	}
+
+	_, probeErrors := probeChannelUpstreams(
+		context.Background(),
+		[]*model.Channel{channel},
+		map[string]UpstreamProbeConfig{
+			normalizeUpstreamBaseURL(base): {BaseURL: base},
+		},
+	)
+
+	assert.Equal(t, "Upstream probe authentication failed", probeErrors["safe-channel (#7)"])
+	for label := range probeErrors {
+		assert.NotContains(t, label, "user")
+		assert.NotContains(t, label, "secret")
+	}
+}
+
+func TestBuildChannelPriceCompareReportShowsRoutingAndBusinessMetrics(t *testing.T) {
+	originalDB := model.DB
+	originalLogDB := model.LOG_DB
+	originalQuotaPerUnit := common.QuotaPerUnit
+	originalModelPrices := ratio_setting.ModelPrice2JSONString()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "channel-operations.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Log{}))
+	model.DB = db
+	model.LOG_DB = db
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() {
+		model.DB = originalDB
+		model.LOG_DB = originalLogDB
+		common.QuotaPerUnit = originalQuotaPerUnit
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalModelPrices))
+	})
+
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"test-model":5}`))
+	require.NoError(t, ratio_setting.UpdateCompletionRatioByJSONString(`{"test-model":2}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"fixed-model":0.1}`))
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap[UpstreamProbeConfigsOptionKey] = "[]"
+	common.OptionMapRWMutex.Unlock()
+
+	primaryPriority := int64(100)
+	backupPriority := int64(50)
+	disabledPriority := int64(200)
+	primary := model.Channel{
+		Id: 1, Name: "primary", Status: common.ChannelStatusEnabled, Models: "test-model",
+		Group: "default", Priority: &primaryPriority, Weight: common.GetPointer(uint(20)),
+	}
+	primary.SetOtherSettings(dto.ChannelOtherSettings{
+		PACUpstreamGroup: "premium",
+		ModelPrices: map[string]dto.ChannelModelPrice{
+			"test-model": {
+				Input:      channelPriceValue(2),
+				Output:     channelPriceValue(8),
+				CacheRead:  channelPriceValue(0.2),
+				CacheWrite: channelPriceValue(2.5),
+			},
+		},
+	})
+	backup := model.Channel{
+		Id: 2, Name: "backup", Status: common.ChannelStatusEnabled, Models: "test-model",
+		Group: "default", Priority: &backupPriority, Weight: common.GetPointer(uint(10)),
+	}
+	backup.SetOtherSettings(dto.ChannelOtherSettings{
+		PACUpstreamGroup: "economy",
+		ModelPrices: map[string]dto.ChannelModelPrice{
+			"test-model": {
+				Input:      channelPriceValue(1),
+				Output:     channelPriceValue(4),
+				CacheRead:  channelPriceValue(0),
+				CacheWrite: channelPriceValue(0),
+			},
+		},
+	})
+	disabled := model.Channel{
+		Id: 3, Name: "disabled", Status: common.ChannelStatusManuallyDisabled, Models: "test-model",
+		Group: "default", Priority: &disabledPriority, Weight: common.GetPointer(uint(100)),
+	}
+	require.NoError(t, db.Create(&primary).Error)
+	require.NoError(t, db.Create(&backup).Error)
+	require.NoError(t, db.Create(&disabled).Error)
+	require.NoError(t, db.Create([]model.Ability{
+		{Group: "default", Model: "test-model", ChannelId: 1, Enabled: true, Priority: &primaryPriority, Weight: 20},
+		{Group: "default", Model: "test-model", ChannelId: 2, Enabled: true, Priority: &backupPriority, Weight: 10},
+		{Group: "default", Model: "test-model", ChannelId: 3, Enabled: true, Priority: &disabledPriority, Weight: 100},
+		{Group: "default", Model: "fixed-model", ChannelId: 1, Enabled: true, Priority: &primaryPriority, Weight: 20},
+	}).Error)
+
+	now := time.Now().Unix()
+	require.NoError(t, db.Create(&model.Log{
+		CreatedAt: now, Type: model.LogTypeConsume, ChannelId: 1, ModelName: "test-model",
+		Quota: 500000, PromptTokens: 1000000, CompletionTokens: 100000, UseTime: 2,
+		Other: `{"cache_tokens":200000,"cache_write_tokens":100000}`,
+	}).Error)
+	require.NoError(t, db.Create(&model.Log{
+		CreatedAt: now - 48*60*60, Type: model.LogTypeConsume, ChannelId: 1, ModelName: "test-model",
+		Quota: 1000000, PromptTokens: 500000, CompletionTokens: 0, UseTime: 1, Other: "{malformed",
+	}).Error)
+	for i := range 20 {
+		errorContent := "upstream unavailable"
+		createdAt := now - int64(i)
+		if i == 0 {
+			errorContent = "Authorization: Bearer sk-secret-value"
+		} else if i == 1 {
+			errorContent = "upstream timeout"
+			createdAt = now
+		}
+		require.NoError(t, db.Create(&model.Log{
+			CreatedAt: createdAt, Type: model.LogTypeError, ChannelId: 2,
+			ModelName: "test-model", Content: errorContent,
+		}).Error)
+	}
+
+	report, err := BuildChannelPriceCompareReport(context.Background(), "default")
+	require.NoError(t, err)
+	require.Len(t, report.Models, 1)
+	require.Len(t, report.Models[0].Channels, 2)
+
+	primaryRow := report.Models[0].Channels[0]
+	assert.Equal(t, "primary", primaryRow.RoutingRole)
+	assert.Equal(t, "manual", primaryRow.PriceSource)
+	assert.InDelta(t, 1.0, primaryRow.Today.Revenue, 1e-9)
+	assert.InDelta(t, 2.49, primaryRow.Today.UpstreamCost, 1e-9)
+	assert.InDelta(t, -1.49, primaryRow.Today.Profit, 1e-9)
+	assert.EqualValues(t, 1, primaryRow.Today.Requests)
+	assert.EqualValues(t, 2, primaryRow.Total.Requests)
+
+	backupRow := report.Models[0].Channels[1]
+	assert.Equal(t, "backup", backupRow.RoutingRole)
+	assert.EqualValues(t, 20, backupRow.Quality24h.Errors)
+	assert.Equal(t, "Upstream request timed out", backupRow.Quality24h.LastErrorCode)
+	assert.Contains(t, backupRow.Recommendations, "low_success_rate")
+	assert.InDelta(t, 1.0, report.Summary.Today.Revenue, 1e-9)
+	assert.Equal(t, 2, report.Summary.RiskChannels)
+}
+
+func TestBuildChannelBusinessMetricsLeavesMissingCostUnknown(t *testing.T) {
+	metrics := buildChannelBusinessMetrics(
+		channelUsageAggregate{Requests: 1, Quota: 500000, InputTokens: 1000},
+		ChannelPriceCompareChannel{PriceSource: "missing"},
+	)
+
+	assert.False(t, metrics.CostAvailable)
+	assert.InDelta(t, 1.0, metrics.Revenue, 1e-9)
+	assert.Zero(t, metrics.Profit)
+}
+
+func TestSummarizeChannelPriceCompareClearsPartialCosts(t *testing.T) {
+	rows := []ChannelPriceCompareModelRow{
+		{
+			ModelName: "priced",
+			Channels: []ChannelPriceCompareChannel{{
+				ChannelID: 1, ChannelName: "channel",
+				Today: ChannelBusinessMetrics{
+					Requests: 1, Revenue: 2, UpstreamCost: 1, Profit: 1, Margin: 50, CostAvailable: true,
+				},
+				Total: ChannelBusinessMetrics{CostAvailable: true},
+			}},
+		},
+		{
+			ModelName: "missing",
+			Channels: []ChannelPriceCompareChannel{{
+				ChannelID: 1, ChannelName: "channel",
+				Today: ChannelBusinessMetrics{
+					Requests: 1, Revenue: 1, CostAvailable: false,
+				},
+				Total: ChannelBusinessMetrics{CostAvailable: true},
+			}},
+		},
+	}
+
+	summary, channels := summarizeChannelPriceCompare(rows)
+
+	assert.False(t, summary.Today.CostAvailable)
+	assert.InDelta(t, 3.0, summary.Today.Revenue, 1e-9)
+	assert.Zero(t, summary.Today.UpstreamCost)
+	assert.Zero(t, summary.Today.Profit)
+	require.Len(t, channels, 1)
+	assert.False(t, channels[0].Today.CostAvailable)
+	assert.Zero(t, channels[0].Today.Profit)
+}
+
+func TestChannelRecommendationsIncludesCacheLoss(t *testing.T) {
+	row := ChannelPriceCompareChannel{
+		PriceSource:        "manual",
+		LocalInput:         10,
+		LocalOutput:        10,
+		LocalCacheRead:     0.1,
+		LocalCacheWrite:    0,
+		UpstreamInput:      1,
+		UpstreamOutput:     1,
+		UpstreamCacheRead:  0.2,
+		UpstreamCacheWrite: 0.1,
+	}
+
+	assert.Contains(t, channelRecommendations(row), "negative_margin")
+}
+
+func TestLoadChannelQualityFiltersExactPairs(t *testing.T) {
+	originalLogDB := model.LOG_DB
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "channel-quality.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	model.LOG_DB = db
+	t.Cleanup(func() {
+		model.LOG_DB = originalLogDB
+	})
+	now := time.Now().Unix()
+	require.NoError(t, db.Create([]model.Log{
+		{CreatedAt: now, Type: model.LogTypeError, ChannelId: 1, ModelName: "model-b", Content: "cross-pair"},
+		{CreatedAt: now, Type: model.LogTypeError, ChannelId: 2, ModelName: "model-b", Content: "timeout"},
+	}).Error)
+
+	quality, err := loadChannelQuality(
+		[]channelModelPair{
+			{ChannelID: 1, ModelName: "model-a"},
+			{ChannelID: 2, ModelName: "model-b"},
+		},
+		now-60,
+	)
+
+	require.NoError(t, err)
+	assert.NotContains(t, quality, channelPriceCompareUsageKey(1, "model-b"))
+	assert.Equal(t, "Upstream request timed out", quality[channelPriceCompareUsageKey(2, "model-b")].LastErrorCode)
+}
+
+func TestChannelMetricsQueriesBatchLargePairSets(t *testing.T) {
+	originalLogDB := model.LOG_DB
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "channel-batches.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	model.LOG_DB = db
+	t.Cleanup(func() {
+		model.LOG_DB = originalLogDB
+	})
+
+	now := time.Now().Unix()
+	require.NoError(t, db.Create(&model.Log{
+		CreatedAt: now,
+		Type:      model.LogTypeConsume,
+		ChannelId: 1200,
+		ModelName: "model-1200",
+		Quota:     500000,
+	}).Error)
+	pairs := make([]channelModelPair, 0, 1200)
+	for id := 1; id <= 1200; id++ {
+		pairs = append(pairs, channelModelPair{
+			ChannelID: id,
+			ModelName: fmt.Sprintf("model-%d", id),
+		})
+	}
+
+	usage, err := loadChannelUsage(pairs, now-60)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, usage[channelPriceCompareUsageKey(1200, "model-1200")].Requests)
+
+	quality, err := loadChannelQuality(pairs, now-60)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, quality[channelPriceCompareUsageKey(1200, "model-1200")].Successes)
 }

@@ -23,7 +23,10 @@ import { CopyChannelDialog } from './dialogs/copy-channel-dialog'
 import { EditTagDialog } from './dialogs/edit-tag-dialog'
 import { FetchModelsDialog } from './dialogs/fetch-models-dialog'
 import { MultiKeyManageDialog } from './dialogs/multi-key-manage-dialog'
-import { NewAPIOnboardDialog } from './dialogs/newapi-onboard-dialog'
+import {
+  NewAPIOnboardDialog,
+  Sub2APIOnboardDialog,
+} from './dialogs/newapi-onboard-dialog'
 import { OllamaModelsDialog } from './dialogs/ollama-models-dialog'
 import { TagBatchEditDialog } from './dialogs/tag-batch-edit-dialog'
 import { UpstreamUpdateDialog } from './dialogs/upstream-update-dialog'
@@ -90,6 +93,12 @@ export function ChannelsDialogs() {
         open={open === 'business-detail'}
         onOpenChange={(v) => !v && setOpen(null)}
         channel={open === 'business-detail' ? currentRow : null}
+      />
+
+      {/* Sub2API Upstream Onboard Wizard */}
+      <Sub2APIOnboardDialog
+        open={open === 'sub2api-onboard'}
+        onOpenChange={(v) => !v && setOpen(null)}
       />
 
       {/* Multi-Key Management Dialog */}

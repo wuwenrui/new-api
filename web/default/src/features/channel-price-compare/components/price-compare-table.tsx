@@ -16,15 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
+import { ChevronDown, ChevronRight, FileSearch, Settings2 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -39,183 +38,377 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
+import { formatPercent, formatUsd } from '../lib/formatters'
 import type { PriceCompareChannel, PriceCompareModel } from '../types'
 
-const PLACEHOLDER = '—'
-
-function formatUsd(value: number): string {
-  if (!Number.isFinite(value)) return PLACEHOLDER
-  return `$${value.toFixed(2)}`
+const RECOMMENDATION_KEYS: Record<string, string> = {
+  missing_price: 'Add purchase price',
+  price_changed: 'Check upstream price change',
+  negative_margin: 'Adjust price or stop after review',
+  low_margin: 'Review selling price or supplier',
+  low_success_rate: 'Lower priority or stop after review',
 }
 
-function formatMargin(value: number): string {
-  if (!Number.isFinite(value)) return PLACEHOLDER
-  return `${value.toFixed(1)}%`
+function routingBadge(channel: PriceCompareChannel) {
+  if (channel.routing_role === 'primary') {
+    return <Badge>{channel.priority}</Badge>
+  }
+  if (channel.routing_role === 'primary_pool') {
+    return <Badge variant='secondary'>{channel.priority}</Badge>
+  }
+  return <Badge variant='outline'>{channel.priority}</Badge>
 }
 
-function marginToneClass(value: number): string {
-  if (!Number.isFinite(value)) return 'text-muted-foreground'
-  if (value < 0) return 'text-red-500'
-  if (value < 20) return 'text-amber-600 dark:text-amber-500'
-  return 'text-green-600 dark:text-green-500'
+function routingLabelKey(
+  role: PriceCompareChannel['routing_role']
+): 'Primary' | 'Primary pool' | 'Backup' {
+  if (role === 'primary') {
+    return 'Primary'
+  }
+  if (role === 'primary_pool') {
+    return 'Primary pool'
+  }
+  return 'Backup'
 }
 
-// Cell content for columns that are only meaningful when the upstream probe
-// succeeded (status === 'ok'). For unknown channels show a placeholder that
-// reveals status_reason on hover instead of rendering NaN.
-function UnknownReason({ reason }: { reason: string }) {
-  if (!reason) {
-    return <span className='text-muted-foreground'>{PLACEHOLDER}</span>
+function profitTextClass(costAvailable: boolean, profit: number): string {
+  if (!costAvailable) return 'text-muted-foreground text-xs'
+  if (profit < 0) return 'text-destructive text-xs'
+  return 'text-xs text-emerald-600 dark:text-emerald-400'
+}
+
+function PriceCell(props: { channel: PriceCompareChannel }) {
+  const { t } = useTranslation()
+  if (props.channel.status !== 'ok') {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type='button'
+              className='text-muted-foreground cursor-help underline decoration-dotted underline-offset-2'
+            >
+              {t('Price not maintained')}
+            </button>
+          }
+        />
+        <TooltipContent>{t(props.channel.status_reason)}</TooltipContent>
+      </Tooltip>
+    )
   }
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span className='text-muted-foreground cursor-help underline decoration-dotted underline-offset-2'>
-            {PLACEHOLDER}
-          </span>
-        }
-      />
-      <TooltipContent>
-        <p className='max-w-xs'>{reason}</p>
-      </TooltipContent>
-    </Tooltip>
+    <div className='space-y-1 text-right tabular-nums'>
+      <div>
+        {formatUsd(props.channel.upstream_input)} /{' '}
+        {formatUsd(props.channel.upstream_output)}
+      </div>
+      <div className='text-muted-foreground text-xs'>
+        {t('Cache Read')} / {t('Cache Write')}:{' '}
+        {formatUsd(props.channel.upstream_cache_read)} /{' '}
+        {formatUsd(props.channel.upstream_cache_write)}
+      </div>
+      <div className='text-muted-foreground text-xs'>
+        {props.channel.price_source === 'manual'
+          ? t('Manual price')
+          : t('Detected price')}
+      </div>
+      {props.channel.price_source === 'manual' &&
+      props.channel.detected_available ? (
+        <div
+          className={
+            props.channel.price_changed
+              ? 'text-xs text-amber-600 dark:text-amber-400'
+              : 'text-muted-foreground text-xs'
+          }
+        >
+          <div>
+            {t('Detected')}: {formatUsd(props.channel.detected_input)} /{' '}
+            {formatUsd(props.channel.detected_output)}
+          </div>
+          <div>
+            {t('Cache Read')} / {t('Cache Write')}:{' '}
+            {formatUsd(props.channel.detected_cache_read)} /{' '}
+            {formatUsd(props.channel.detected_cache_write)}
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
-function ChannelRow({ channel }: { channel: PriceCompareChannel }) {
+function ChannelRow(props: {
+  channel: PriceCompareChannel
+  modelName: string
+}) {
   const { t } = useTranslation()
-  const isOk = channel.status === 'ok'
-
-  const upstreamCell = (value: number) =>
-    isOk ? (
-      formatUsd(value)
-    ) : (
-      <UnknownReason reason={channel.status_reason} />
-    )
-
-  const marginCell = (value: number) =>
-    isOk ? (
-      <span className={marginToneClass(value)}>{formatMargin(value)}</span>
-    ) : (
-      <UnknownReason reason={channel.status_reason} />
-    )
+  const attempts =
+    props.channel.quality_24h.successes + props.channel.quality_24h.errors
 
   return (
-    <TableRow>
-      <TableCell className='tabular-nums'>{channel.priority}</TableCell>
-      <TableCell className='font-medium'>{channel.channel_name}</TableCell>
-      <TableCell>{channel.upstream_group || PLACEHOLDER}</TableCell>
+    <TableRow
+      className={
+        props.channel.recommendations.length > 0
+          ? 'bg-amber-50/50 dark:bg-amber-950/10'
+          : undefined
+      }
+    >
       <TableCell>
-        {isOk ? (
-          <Badge variant='secondary'>{t('OK')}</Badge>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge variant='outline' className='cursor-help'>
-                  {t('Unknown')}
-                </Badge>
+        <div className='flex items-center gap-2'>
+          {routingBadge(props.channel)}
+          <span className='text-xs'>
+            {t(routingLabelKey(props.channel.routing_role))}
+          </span>
+        </div>
+        <div className='text-muted-foreground mt-1 text-xs'>
+          {t('Weight')} {props.channel.weight}
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className='font-medium'>{props.channel.channel_name}</div>
+        <div className='text-muted-foreground text-xs'>
+          {props.channel.upstream_group || t('No upstream group')}
+        </div>
+        {props.channel.upstream_model !== props.modelName ? (
+          <div className='text-muted-foreground font-mono text-xs'>
+            {props.channel.upstream_model}
+          </div>
+        ) : null}
+      </TableCell>
+      <TableCell>
+        <PriceCell channel={props.channel} />
+      </TableCell>
+      <TableCell className='text-right tabular-nums'>
+        <div>
+          {formatUsd(props.channel.local_input)} /{' '}
+          {formatUsd(props.channel.local_output)}
+        </div>
+        <div className='text-muted-foreground text-xs'>
+          {formatPercent(
+            props.channel.price_source === 'missing'
+              ? undefined
+              : Math.min(
+                  props.channel.margin_input,
+                  props.channel.margin_output
+                )
+          )}
+        </div>
+      </TableCell>
+      <TableCell className='text-right tabular-nums'>
+        <div>{formatUsd(props.channel.today.revenue)}</div>
+        <div className='text-muted-foreground text-xs'>
+          {props.channel.today.requests} {t('requests')}
+        </div>
+      </TableCell>
+      <TableCell className='text-right tabular-nums'>
+        <div>
+          {formatUsd(
+            props.channel.today.cost_available
+              ? props.channel.today.upstream_cost
+              : undefined
+          )}
+        </div>
+        <div
+          className={profitTextClass(
+            props.channel.today.cost_available,
+            props.channel.today.profit
+          )}
+        >
+          {t('Profit')}{' '}
+          {formatUsd(
+            props.channel.today.cost_available
+              ? props.channel.today.profit
+              : undefined
+          )}
+        </div>
+      </TableCell>
+      <TableCell className='text-right tabular-nums'>
+        <div>{formatUsd(props.channel.total.revenue)}</div>
+        <div className='text-muted-foreground text-xs'>
+          {t('Estimated cost')}{' '}
+          {formatUsd(
+            props.channel.total.cost_available
+              ? props.channel.total.upstream_cost
+              : undefined
+          )}{' '}
+          · {props.channel.total.requests} {t('requests')}
+        </div>
+        <div
+          className={profitTextClass(
+            props.channel.total.cost_available,
+            props.channel.total.profit
+          )}
+        >
+          {t('Profit')}{' '}
+          {formatUsd(
+            props.channel.total.cost_available
+              ? props.channel.total.profit
+              : undefined
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        {attempts > 0 ? (
+          <>
+            <div
+              className={
+                props.channel.quality_24h.success_rate < 95
+                  ? 'text-destructive font-medium'
+                  : 'font-medium'
               }
-            />
-            <TooltipContent>
-              <p className='max-w-xs'>
-                {channel.status_reason || t('Unknown')}
-              </p>
-            </TooltipContent>
-          </Tooltip>
+            >
+              {formatPercent(props.channel.quality_24h.success_rate)}
+            </div>
+            <div className='text-muted-foreground text-xs'>
+              {props.channel.quality_24h.successes} /{' '}
+              {props.channel.quality_24h.errors} ·{' '}
+              {props.channel.quality_24h.average_use_time.toFixed(1)}s
+            </div>
+            {props.channel.quality_24h.last_error_code ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type='button'
+                      className='text-destructive cursor-help text-xs underline decoration-dotted underline-offset-2'
+                    >
+                      {t('Latest error')}
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  <p className='max-w-sm'>
+                    {t(props.channel.quality_24h.last_error_code)}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+          </>
+        ) : (
+          <span className='text-muted-foreground'>—</span>
         )}
       </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {upstreamCell(channel.upstream_input)}
+      <TableCell>
+        <div className='flex max-w-56 flex-wrap gap-1'>
+          {props.channel.recommendations.length === 0 ? (
+            <Badge variant='secondary'>{t('Normal')}</Badge>
+          ) : (
+            props.channel.recommendations.map((code) => (
+              <Badge key={code} variant='outline'>
+                {t(RECOMMENDATION_KEYS[code] || code)}
+              </Badge>
+            ))
+          )}
+        </div>
       </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {upstreamCell(channel.upstream_output)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {upstreamCell(channel.upstream_cache_read)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {upstreamCell(channel.upstream_cache_write)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {formatUsd(channel.local_input)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {formatUsd(channel.local_output)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {formatUsd(channel.local_cache_read)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {formatUsd(channel.local_cache_write)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {marginCell(channel.margin_input)}
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {marginCell(channel.margin_output)}
+      <TableCell>
+        <div className='flex gap-1'>
+          <Button
+            size='icon-sm'
+            variant='outline'
+            aria-label={t('Edit channel')}
+            render={
+              <Link
+                to='/channels'
+                search={{ edit: props.channel.channel_id }}
+              />
+            }
+          >
+            <Settings2 aria-hidden='true' />
+          </Button>
+          <Button
+            size='icon-sm'
+            variant='outline'
+            aria-label={t('View logs')}
+            render={
+              <Link
+                to='/usage-logs/$section'
+                params={{ section: 'common' }}
+                search={{
+                  model: props.modelName,
+                  channel: String(props.channel.channel_id),
+                }}
+              />
+            }
+          >
+            <FileSearch aria-hidden='true' />
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   )
 }
 
-export function PriceCompareTable({ model }: { model: PriceCompareModel }) {
+export function PriceCompareTable(props: { model: PriceCompareModel }) {
   const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(true)
 
   return (
     <Card>
-      <CardHeader className='border-b'>
-        <CardTitle className='font-mono text-base break-all'>
-          {model.model_name}
+      <CardHeader className='border-b p-0'>
+        <CardTitle>
+          <Button
+            type='button'
+            variant='ghost'
+            className='h-auto w-full justify-between rounded-none px-6 py-4 font-mono text-base'
+            aria-expanded={expanded}
+            aria-label={`${t(expanded ? 'Collapse' : 'Expand')} ${props.model.model_name}`}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            <span className='flex min-w-0 items-center gap-2 break-all'>
+              {expanded ? (
+                <ChevronDown className='size-4 shrink-0' aria-hidden='true' />
+              ) : (
+                <ChevronRight className='size-4 shrink-0' aria-hidden='true' />
+              )}
+              {props.model.model_name}
+            </span>
+            <Badge variant='outline'>
+              {props.model.channels.length} {t('channels')}
+            </Badge>
+          </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent className='p-0'>
-        <div className='overflow-x-auto'>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead rowSpan={2}>{t('Priority')}</TableHead>
-              <TableHead rowSpan={2}>{t('Channel Name')}</TableHead>
-              <TableHead rowSpan={2}>{t('Upstream Group')}</TableHead>
-              <TableHead rowSpan={2}>{t('Status')}</TableHead>
-              <TableHead colSpan={4} className='border-l text-center'>
-                {t('Upstream Price')}
-              </TableHead>
-              <TableHead colSpan={4} className='border-l text-center'>
-                {t('Our Price')}
-              </TableHead>
-              <TableHead colSpan={2} className='border-l text-center'>
-                {t('Margin')}
-              </TableHead>
-            </TableRow>
-            <TableRow>
-              <TableHead className='border-l text-right'>
-                {t('Input')}
-              </TableHead>
-              <TableHead className='text-right'>{t('Output')}</TableHead>
-              <TableHead className='text-right'>{t('Cache Read')}</TableHead>
-              <TableHead className='text-right'>{t('Cache Write')}</TableHead>
-              <TableHead className='border-l text-right'>
-                {t('Input')}
-              </TableHead>
-              <TableHead className='text-right'>{t('Output')}</TableHead>
-              <TableHead className='text-right'>{t('Cache Read')}</TableHead>
-              <TableHead className='text-right'>{t('Cache Write')}</TableHead>
-              <TableHead className='border-l text-right'>
-                {t('Input')}
-              </TableHead>
-              <TableHead className='text-right'>{t('Output')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {model.channels.map((channel) => (
-              <ChannelRow key={channel.channel_id} channel={channel} />
-            ))}
-          </TableBody>
-        </Table>
-        </div>
-      </CardContent>
+      {expanded ? (
+        <CardContent className='p-0'>
+          <div className='overflow-x-auto'>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('Routing')}</TableHead>
+                  <TableHead>{t('Channel / group')}</TableHead>
+                  <TableHead className='text-right'>
+                    {t('Purchase price input / output')}
+                  </TableHead>
+                  <TableHead className='text-right'>
+                    {t('Selling price / margin')}
+                  </TableHead>
+                  <TableHead className='text-right'>
+                    {t('Today sales')}
+                  </TableHead>
+                  <TableHead className='text-right'>
+                    {t('Estimated today cost / profit')}
+                  </TableHead>
+                  <TableHead className='text-right'>
+                    {t('Total sales / estimated cost / profit')}
+                  </TableHead>
+                  <TableHead>{t('24h success')}</TableHead>
+                  <TableHead>{t('Management advice')}</TableHead>
+                  <TableHead>{t('Actions')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {props.model.channels.map((channel) => (
+                  <ChannelRow
+                    key={channel.channel_id}
+                    channel={channel}
+                    modelName={props.model.model_name}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      ) : null}
     </Card>
   )
 }

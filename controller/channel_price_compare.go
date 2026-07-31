@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,8 @@ import (
 func GetChannelPriceCompare(c *gin.Context) {
 	report, err := service.BuildChannelPriceCompareReport(c.Request.Context(), c.Query("group"))
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		common.SysError("failed to build channel operations report: " + err.Error())
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Failed to load channel operations"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

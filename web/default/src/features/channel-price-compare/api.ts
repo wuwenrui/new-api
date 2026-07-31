@@ -31,5 +31,8 @@ export async function getChannelPriceCompare(
   const res = await api.get('/api/channel/price_compare', {
     params: { group: group || 'default' },
   })
+  if (!res.data.success || !res.data.data) {
+    throw new Error(res.data.message || 'Failed to load channel operations')
+  }
   return res.data.data
 }
