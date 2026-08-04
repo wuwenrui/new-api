@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useIsAdmin } from '@/hooks/use-admin'
+
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -35,6 +35,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useMediaQuery } from '@/hooks'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { cn } from '@/lib/utils'
 
 import {
@@ -131,7 +132,7 @@ export function ApiKeyGroupCombobox({
             )}
           </span>
           <span className='hidden sm:block'>
-            {isAdmin && (
+            {(isAdmin || isAutoSelected) && (
               <GroupRatioBadge
                 ratio={selectedOption?.ratio}
                 isAuto={isAutoSelected}
@@ -200,7 +201,7 @@ export function ApiKeyGroupCombobox({
                         </span>
                       )}
                     </span>
-                    {isAdmin && (
+                    {(isAdmin || isAutoOption) && (
                       <GroupRatioBadge
                         ratio={option.ratio}
                         isAuto={isAutoOption}

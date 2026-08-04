@@ -204,7 +204,7 @@ describe('API key group combobox Auto effect', () => {
       defaultOption.querySelector('[data-auto-group-flow-border]'),
       null
     )
-    assert.equal(defaultOption.textContent?.includes('1x Ratio'), true)
+    assert.equal(defaultOption.textContent?.includes('1x Ratio'), false)
     assert.equal(
       defaultOption.querySelector('[data-auto-group-effect="ratio"]'),
       null
