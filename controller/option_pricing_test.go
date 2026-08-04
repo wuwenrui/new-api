@@ -34,13 +34,17 @@ func setupPricingOptionTestDB(t *testing.T) {
 	originalCacheRatio := ratio_setting.CacheRatio2JSONString()
 	originalCreateCacheRatio := ratio_setting.CreateCacheRatio2JSONString()
 	originalModelPrice := ratio_setting.ModelPrice2JSONString()
+	originalBillingModes, err := common.Marshal(billing_setting.GetBillingModeCopy())
+	require.NoError(t, err)
+	originalBillingExprs, err := common.Marshal(billing_setting.GetBillingExprCopy())
+	require.NoError(t, err)
 
 	db, err := gorm.Open(
 		sqlite.Open(filepath.Join(t.TempDir(), "pricing-options.db")),
 		&gorm.Config{},
 	)
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.User{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.User{}, &model.Log{}, &model.Channel{}))
 	model.DB = db
 	model.LOG_DB = db
 	common.RedisEnabled = false
@@ -58,6 +62,10 @@ func setupPricingOptionTestDB(t *testing.T) {
 		common.OptionMap = originalOptionMap
 		common.OptionMapRWMutex.Unlock()
 		require.NoError(t, ratio_setting.UpdateCompletionRatioByJSONString(originalCompletionRatio))
+		require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+			"billing_setting.billing_mode": string(originalBillingModes),
+			"billing_setting.billing_expr": string(originalBillingExprs),
+		}))
 	})
 }
 
@@ -264,6 +272,153 @@ func TestUpdatePricingOptionsRejectsTieredExpressionModel(t *testing.T) {
 	require.NoError(t, model.DB.Model(&model.Option{}).Count(&count).Error)
 	assert.Zero(t, count)
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode("tiered-model"))
+}
+
+func TestUpdatePricingOptionsAtomicallyWritesOfficialTieredPrice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupPricingOptionTestDB(t)
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:            31,
+		Name:          "1x-sub-openai",
+		Models:        "gpt-5.6-sol",
+		Status:        common.ChannelStatusEnabled,
+		OtherSettings: `{"pac_upstream_group":"default"}`,
+	}).Error)
+	require.NoError(t, model.DB.Create([]model.Option{
+		{Key: "ModelRatio", Value: `{"gpt-5.6-sol":2,"other":1}`},
+		{Key: "CompletionRatio", Value: `{"gpt-5.6-sol":6,"other":2}`},
+		{Key: "CacheRatio", Value: `{"gpt-5.6-sol":0.1,"other":0.2}`},
+		{Key: "CreateCacheRatio", Value: `{"gpt-5.6-sol":1.25,"other":1}`},
+		{Key: "ModelPrice", Value: `{"gpt-5.6-sol":9,"other":1}`},
+		{Key: "billing_setting.billing_mode", Value: `{"other":"tiered_expr"}`},
+		{Key: "billing_setting.billing_expr", Value: `{"other":"tier(\"base\", p)"}`},
+	}).Error)
+
+	response := callUpdatePricingOptions(t, `{
+		"model_name": "gpt-5.6-sol",
+		"billing_mode": "tiered_expr",
+		"billing_expr": "len < 272000 ? tier(\"base\", p * 7.142857143 + c * 42.857142857) : tier(\"context_272000\", p * 14.285714286 + c * 64.285714286)",
+		"channel_id": 31,
+		"upstream_provider": "openai",
+		"purchase_price": {
+			"input": 5,
+			"output": 30,
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"source": "models_dev",
+			"provider": "openai",
+			"tiers": [{
+				"name": "context_272000",
+				"context_threshold": 272000,
+				"input": 10,
+				"output": 45,
+				"cache_read": 1,
+				"cache_write": 12.5
+			}]
+		}
+	}`)
+
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var options []model.Option
+	require.NoError(t, model.DB.Find(&options).Error)
+	values := make(map[string]string, len(options))
+	for _, option := range options {
+		values[option.Key] = option.Value
+	}
+	for _, key := range []string{"ModelRatio", "CompletionRatio", "CacheRatio", "CreateCacheRatio", "ModelPrice"} {
+		var value map[string]float64
+		require.NoError(t, common.UnmarshalJsonStr(values[key], &value))
+		assert.NotContains(t, value, "gpt-5.6-sol")
+		assert.Contains(t, value, "other")
+	}
+	var modes map[string]string
+	require.NoError(t, common.UnmarshalJsonStr(values["billing_setting.billing_mode"], &modes))
+	assert.Equal(t, billing_setting.BillingModeTieredExpr, modes["gpt-5.6-sol"])
+	var expressions map[string]string
+	require.NoError(t, common.UnmarshalJsonStr(values["billing_setting.billing_expr"], &expressions))
+	assert.Contains(t, expressions["gpt-5.6-sol"], "context_272000")
+
+	var channel model.Channel
+	require.NoError(t, model.DB.First(&channel, 31).Error)
+	settings := channel.GetOtherSettings()
+	assert.Equal(t, "default", settings.PACUpstreamGroup)
+	price := settings.ModelPrices["gpt-5.6-sol"]
+	assert.Equal(t, "models_dev", price.Source)
+	assert.Equal(t, 5.0, *price.Input)
+	require.Len(t, price.Tiers, 1)
+	assert.Equal(t, 45.0, price.Tiers[0].Output)
+}
+
+func TestUpdatePricingOptionsRejectsInvalidOfficialTieredExpression(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupPricingOptionTestDB(t)
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:            31,
+		Name:          "1x-sub-openai",
+		Models:        "gpt-5.6-sol",
+		Status:        common.ChannelStatusEnabled,
+		OtherSettings: `{}`,
+	}).Error)
+
+	response := callUpdatePricingOptions(t, `{
+		"model_name": "gpt-5.6-sol",
+		"billing_mode": "tiered_expr",
+		"billing_expr": "invalid +-+ expression",
+		"channel_id": 31,
+		"upstream_provider": "openai",
+		"purchase_price": {
+			"input": 5,
+			"output": 30,
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"source": "models_dev",
+			"provider": "openai"
+		}
+	}`)
+
+	assert.Equal(t, http.StatusBadRequest, response.Code)
+	var count int64
+	require.NoError(t, model.DB.Model(&model.Option{}).Count(&count).Error)
+	assert.Zero(t, count)
+	var channel model.Channel
+	require.NoError(t, model.DB.First(&channel, 31).Error)
+	assert.Empty(t, channel.GetOtherSettings().ModelPrices)
+}
+func TestUpdatePricingOptionsRejectsNonCanonicalOfficialProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupPricingOptionTestDB(t)
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:            31,
+		Name:          "reseller",
+		Models:        "gpt-5.6-sol",
+		Status:        common.ChannelStatusEnabled,
+		OtherSettings: `{}`,
+	}).Error)
+
+	response := callUpdatePricingOptions(t, `{
+		"model_name": "gpt-5.6-sol",
+		"billing_mode": "tiered_expr",
+		"billing_expr": "tier(\"base\", p)",
+		"channel_id": 31,
+		"upstream_provider": "reseller",
+		"purchase_price": {
+			"input": 5,
+			"output": 30,
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"source": "models_dev",
+			"provider": "reseller"
+		}
+	}`)
+
+	assert.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Contains(t, response.Body.String(), "提供商无效")
+	var count int64
+	require.NoError(t, model.DB.Model(&model.Option{}).Count(&count).Error)
+	assert.Zero(t, count)
+	var channel model.Channel
+	require.NoError(t, model.DB.First(&channel, 31).Error)
+	assert.Empty(t, channel.GetOtherSettings().ModelPrices)
 }
 
 func TestUpdateOptionRejectsInvalidCreateCacheRatioBeforePersisting(t *testing.T) {

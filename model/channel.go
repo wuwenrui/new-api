@@ -945,6 +945,65 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 	return tags, nil
 }
 
+func validChannelModelPriceNumber(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0
+}
+
+func normalizeChannelModelPrice(modelName string, price dto.ChannelModelPrice) (dto.ChannelModelPrice, error) {
+	basePrices := []struct {
+		name  string
+		value *float64
+	}{
+		{name: "input", value: price.Input},
+		{name: "output", value: price.Output},
+		{name: "cache_read", value: price.CacheRead},
+		{name: "cache_write", value: price.CacheWrite},
+	}
+	for _, basePrice := range basePrices {
+		if basePrice.value == nil || !validChannelModelPriceNumber(*basePrice.value) {
+			return dto.ChannelModelPrice{}, fmt.Errorf(
+				"invalid %s price for model %s: must be present and non-negative",
+				basePrice.name,
+				modelName,
+			)
+		}
+	}
+
+	price.Source = strings.TrimSpace(price.Source)
+	price.Provider = strings.TrimSpace(price.Provider)
+	if price.Source != "" && price.Source != "models_dev" {
+		return dto.ChannelModelPrice{}, fmt.Errorf("invalid price source for model %s", modelName)
+	}
+	if price.Source == "models_dev" && price.Provider == "" {
+		return dto.ChannelModelPrice{}, fmt.Errorf("official price provider is required for model %s", modelName)
+	}
+
+	previousThreshold := 0
+	tierNames := make(map[string]struct{}, len(price.Tiers))
+	for index := range price.Tiers {
+		tier := &price.Tiers[index]
+		tier.Name = strings.TrimSpace(tier.Name)
+		if tier.Name == "" {
+			return dto.ChannelModelPrice{}, fmt.Errorf("price tier name is required for model %s", modelName)
+		}
+		if _, exists := tierNames[tier.Name]; exists {
+			return dto.ChannelModelPrice{}, fmt.Errorf("duplicate price tier %s for model %s", tier.Name, modelName)
+		}
+		if tier.ContextThreshold <= previousThreshold {
+			return dto.ChannelModelPrice{}, fmt.Errorf("price tier thresholds must increase for model %s", modelName)
+		}
+		if !validChannelModelPriceNumber(tier.Input) ||
+			!validChannelModelPriceNumber(tier.Output) ||
+			!validChannelModelPriceNumber(tier.CacheRead) ||
+			!validChannelModelPriceNumber(tier.CacheWrite) {
+			return dto.ChannelModelPrice{}, fmt.Errorf("invalid price tier %s for model %s", tier.Name, modelName)
+		}
+		tierNames[tier.Name] = struct{}{}
+		previousThreshold = tier.ContextThreshold
+	}
+	return price, nil
+}
+
 func (channel *Channel) ValidateSettings() error {
 	channelParams := &dto.ChannelSettings{}
 	if channel.Setting != nil && *channel.Setting != "" {
@@ -987,19 +1046,11 @@ func (channel *Channel) ValidateSettings() error {
 			if _, fixedPrice := ratio_setting.GetModelPrice(modelName, false); fixedPrice {
 				continue
 			}
-			if price.Input == nil || math.IsNaN(*price.Input) || math.IsInf(*price.Input, 0) || *price.Input < 0 {
-				return fmt.Errorf("invalid input price for model %s: must be present and non-negative", modelName)
+			normalizedPrice, err := normalizeChannelModelPrice(modelName, price)
+			if err != nil {
+				return err
 			}
-			if price.Output == nil || math.IsNaN(*price.Output) || math.IsInf(*price.Output, 0) || *price.Output < 0 {
-				return fmt.Errorf("invalid output price for model %s: must be present and non-negative", modelName)
-			}
-			if price.CacheRead == nil || math.IsNaN(*price.CacheRead) || math.IsInf(*price.CacheRead, 0) || *price.CacheRead < 0 {
-				return fmt.Errorf("invalid cache_read price for model %s: must be present and non-negative", modelName)
-			}
-			if price.CacheWrite == nil || math.IsNaN(*price.CacheWrite) || math.IsInf(*price.CacheWrite, 0) || *price.CacheWrite < 0 {
-				return fmt.Errorf("invalid cache_write price for model %s: must be present and non-negative", modelName)
-			}
-			normalizedPrices[modelName] = price
+			normalizedPrices[modelName] = normalizedPrice
 		}
 		channelOtherSettings.ModelPrices = normalizedPrices
 	}

@@ -56,6 +56,8 @@ export interface PriceCompareChannel {
   detected_available: boolean
   uses_fixed_price: boolean
   fixed_price: number
+  billing_mode: 'ratio' | 'tiered_expr'
+  billing_expr?: string
   local_input: number
   local_output: number
   local_cache_read: number

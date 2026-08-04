@@ -122,7 +122,8 @@ function modelsDevCostExpression(
   outputScale: number,
   siteGroupRatio: number
 ): string {
-  const divisor = siteGroupRatio > 0 ? siteGroupRatio : 1
+  const divisor =
+    (siteGroupRatio > 0 ? siteGroupRatio : 1) * RATIO_TO_USD_PER_MILLION
   const inputCoefficient =
     (cost.input * upstreamMultiplier * inputScale) / divisor
   const outputCoefficient =

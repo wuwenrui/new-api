@@ -201,14 +201,16 @@ function ChannelRow(props: {
               {formatUsd(props.channel.local_output)}
             </div>
             <div className='text-muted-foreground text-xs'>
-              {formatPercent(
-                props.channel.price_source === 'missing'
-                  ? undefined
-                  : Math.min(
-                      props.channel.margin_input,
-                      props.channel.margin_output
-                    )
-              )}
+              {props.channel.billing_mode === 'tiered_expr'
+                ? t('Tiered by context')
+                : formatPercent(
+                    props.channel.price_source === 'missing'
+                      ? undefined
+                      : Math.min(
+                          props.channel.margin_input,
+                          props.channel.margin_output
+                        )
+                  )}
             </div>
           </>
         )}
@@ -327,7 +329,6 @@ function ChannelRow(props: {
               size='icon-sm'
               variant='outline'
               aria-label={t('Sync selling price')}
-              disabled={props.channel.status !== 'ok'}
               onClick={() => props.onSyncPrice(props.channel)}
             >
               <ArrowLeftRight aria-hidden='true' />

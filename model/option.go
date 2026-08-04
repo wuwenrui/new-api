@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -408,14 +409,70 @@ func IsOptionUpdateConflict(err error) bool {
 
 const maxOptionUpdateAttempts = 5
 
+type ChannelModelPriceUpdate struct {
+	ChannelID int
+	ModelName string
+	Price     dto.ChannelModelPrice
+}
+
+func updateChannelModelPrice(tx *gorm.DB, update *ChannelModelPriceUpdate) error {
+	if update == nil {
+		return nil
+	}
+	var channel Channel
+	if err := lockForUpdate(tx).Where("id = ?", update.ChannelID).First(&channel).Error; err != nil {
+		return err
+	}
+	modelName := strings.TrimSpace(update.ModelName)
+	modelFound := false
+	for _, candidate := range channel.GetModels() {
+		if strings.TrimSpace(candidate) == modelName {
+			modelFound = true
+			break
+		}
+	}
+	if !modelFound {
+		return fmt.Errorf("model %s is not enabled on channel %d", modelName, update.ChannelID)
+	}
+	price, err := normalizeChannelModelPrice(modelName, update.Price)
+	if err != nil {
+		return err
+	}
+	settings := channel.GetOtherSettings()
+	if settings.ModelPrices == nil {
+		settings.ModelPrices = make(map[string]dto.ChannelModelPrice)
+	}
+	settings.ModelPrices[modelName] = price
+	channel.SetOtherSettings(settings)
+	return tx.Model(&Channel{}).
+		Where("id = ?", channel.Id).
+		Update("settings", channel.OtherSettings).Error
+}
+
 // UpdateOptionsAtomically rebuilds JSON option values from the latest database
 // rows and retries compare-and-swap conflicts from another server instance.
 func UpdateOptionsAtomically(keys []string, build func(map[string]string) (map[string]string, error)) (map[string]string, error) {
+	return updateOptionsAndChannelPriceAtomically(keys, build, nil)
+}
+
+func UpdateOptionsAndChannelPriceAtomically(
+	keys []string,
+	build func(map[string]string) (map[string]string, error),
+	channelPrice *ChannelModelPriceUpdate,
+) (map[string]string, error) {
+	return updateOptionsAndChannelPriceAtomically(keys, build, channelPrice)
+}
+
+func updateOptionsAndChannelPriceAtomically(
+	keys []string,
+	build func(map[string]string) (map[string]string, error),
+	channelPrice *ChannelModelPriceUpdate,
+) (map[string]string, error) {
 	var committed map[string]string
 	err := ratio_setting.WritePricingSnapshot(func() error {
 		var lastConflict error
 		for range maxOptionUpdateAttempts {
-			updates, err := updateOptionsAtomicallyOnce(keys, build)
+			updates, err := updateOptionsAtomicallyOnce(keys, build, channelPrice)
 			if errors.Is(err, errOptionUpdateConflict) {
 				lastConflict = err
 				continue
@@ -439,7 +496,11 @@ func UpdateOptionsAtomically(keys []string, build func(map[string]string) (map[s
 	return committed, err
 }
 
-func updateOptionsAtomicallyOnce(keys []string, build func(map[string]string) (map[string]string, error)) (map[string]string, error) {
+func updateOptionsAtomicallyOnce(
+	keys []string,
+	build func(map[string]string) (map[string]string, error),
+	channelPrice *ChannelModelPriceUpdate,
+) (map[string]string, error) {
 	var updates map[string]string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var options []Option
@@ -503,6 +564,9 @@ func updateOptionsAtomicallyOnce(keys []string, build func(map[string]string) (m
 			if result.RowsAffected != 1 {
 				return errOptionUpdateConflict
 			}
+		}
+		if err := updateChannelModelPrice(tx, channelPrice); err != nil {
+			return err
 		}
 		return nil
 	})

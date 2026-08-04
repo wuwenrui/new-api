@@ -19,9 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
+import type { NewAPIProbeModel } from '../../channels/types'
 import type { PriceCompareChannel } from '../types'
 import {
+  buildOfficialSyncRequest,
   buildSyncRequest,
+  computeOfficialSyncPlan,
   computeSyncRatios,
   parseCompletionRatioMeta,
   parseTargetMargin,
@@ -38,6 +41,40 @@ const basis = (overrides: Partial<UpstreamCostBasis>): UpstreamCostBasis => ({
   source: 'detected',
   ...overrides,
 })
+
+const officialModel = {
+  model_name: 'gpt-5.6-sol',
+  vendor_id: 1,
+  quota_type: 0,
+  model_ratio: 2.5,
+  model_price: 0,
+  completion_ratio: 6,
+  cache_ratio: 0.1,
+  create_cache_ratio: 1.25,
+  image_ratio: 0,
+  audio_ratio: 0,
+  audio_completion_ratio: 0,
+  enable_groups: ['openai'],
+  supported_endpoint_types: ['openai'],
+  models_dev_pricing: {
+    base: {
+      input: 5,
+      output: 30,
+      cache_read: 0.5,
+      cache_write: 6.25,
+    },
+    tiers: [
+      {
+        context_threshold: 272_000,
+        input: 10,
+        output: 45,
+        cache_read: 1,
+        cache_write: 12.5,
+      },
+    ],
+    upstream_multiplier: 1,
+  },
+} satisfies NewAPIProbeModel
 
 const channel = (
   overrides: Partial<PriceCompareChannel>
@@ -56,6 +93,7 @@ const channel = (
   detected_available: true,
   uses_fixed_price: false,
   fixed_price: 0,
+  billing_mode: 'ratio',
   local_input: 0,
   local_output: 0,
   local_cache_read: 0,
@@ -211,6 +249,59 @@ describe('computeSyncRatios', () => {
     assert.equal(plan.sellOutput, 24)
     assert.equal(plan.cacheRatio, 0.066667)
     assert.equal(plan.createCacheRatio, 0.666667)
+  })
+})
+
+describe('computeOfficialSyncPlan', () => {
+  test('prices every context tier at a 30 percent gross margin', () => {
+    const plan = computeOfficialSyncPlan(officialModel, 30, 1)
+    assert.ok(plan)
+    assert.equal(plan.sellInput, 5 / 0.7)
+    assert.equal(plan.sellOutput, 30 / 0.7)
+    assert.equal(plan.sellCacheRead, 0.5 / 0.7)
+    assert.equal(plan.sellCacheWrite, 6.25 / 0.7)
+    assert.equal(plan.tiers[0].name, 'context_272000')
+    assert.equal(plan.tiers[0].sellInput, 10 / 0.7)
+    assert.equal(plan.tiers[0].sellOutput, 45 / 0.7)
+    assert.match(plan.billingExpression, /len < 272000/)
+    assert.ok(plan.billingExpression.includes('p * 3.571428571'))
+    assert.ok(plan.billingExpression.includes('tier("context_272000"'))
+  })
+
+  test('builds an atomic official-price update request', () => {
+    const plan = computeOfficialSyncPlan(officialModel, 30, 1)
+    assert.ok(plan)
+
+    const request = buildOfficialSyncRequest('gpt-5.6-sol', 31, 'openai', plan)
+
+    assert.equal(request.billing_mode, 'tiered_expr')
+    assert.equal(request.channel_id, 31)
+    assert.equal(request.upstream_provider, 'openai')
+    assert.equal(request.purchase_price.source, 'models_dev')
+    assert.equal(request.purchase_price.input, 5)
+    assert.deepEqual(request.purchase_price.tiers, [
+      {
+        name: 'context_272000',
+        context_threshold: 272_000,
+        input: 10,
+        output: 45,
+        cache_read: 1,
+        cache_write: 12.5,
+      },
+    ])
+  })
+
+  test('rejects invalid margin, group ratio, and missing official pricing', () => {
+    assert.equal(computeOfficialSyncPlan(officialModel, 95, 1), null)
+    assert.equal(computeOfficialSyncPlan(officialModel, 30, 0), null)
+    assert.equal(
+      computeOfficialSyncPlan(
+        { ...officialModel, models_dev_pricing: undefined },
+        30,
+        1
+      ),
+      null
+    )
   })
 })
 

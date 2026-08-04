@@ -16,77 +16,100 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
+import { Models } from "@opencode-ai/models";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
-import { Dialog } from '@/components/dialog'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
+import { Dialog } from "@/components/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { resolveModelsDevProbeModel } from "@/features/channels/lib/sub2api-onboard";
 import {
   getSystemOptionsForModel,
   updatePricingOptions,
-} from '@/features/system-settings/api'
+} from "@/features/system-settings/api";
 
-import { formatUsd } from '../lib/formatters'
+import { formatUsd } from "../lib/formatters";
 import {
+  buildOfficialSyncRequest,
   buildSyncRequest,
+  computeOfficialSyncPlan,
   computeSyncRatios,
   MAX_TARGET_MARGIN_PERCENT,
   parseCompletionRatioMeta,
   parseTargetMargin,
   parseNumberRecord,
   resolveSyncBasis,
-} from '../lib/price-sync'
-import type { PriceCompareChannel } from '../types'
+} from "../lib/price-sync";
+import type { PriceCompareChannel } from "../types";
 
-const DEFAULT_MARGIN_INPUT = '30'
+const DEFAULT_MARGIN_INPUT = "30";
 
 export function PriceSyncDialog(props: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  modelName: string
-  channel: PriceCompareChannel | null
-  group: string
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  modelName: string;
+  channel: PriceCompareChannel | null;
+  group: string;
 }) {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const [marginInput, setMarginInput] = useState(DEFAULT_MARGIN_INPUT)
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [marginInput, setMarginInput] = useState(DEFAULT_MARGIN_INPUT);
+  const basis = props.channel ? resolveSyncBasis(props.channel) : null;
+  const usesOfficialPricing =
+    props.channel?.billing_mode === "tiered_expr" || basis === null;
+
+  const officialModelQuery = useQuery({
+    queryKey: [
+      "models-dev-official-price",
+      props.channel?.upstream_model,
+      props.channel?.upstream_group,
+    ],
+    queryFn: async () =>
+      resolveModelsDevProbeModel(
+        await Models.make().providers(),
+        props.channel?.upstream_model ?? props.modelName,
+        props.channel?.upstream_group ?? "",
+      ),
+    enabled: props.open && Boolean(props.channel) && usesOfficialPricing,
+    staleTime: 60 * 60 * 1000,
+  });
 
   const optionsQuery = useQuery({
-    queryKey: ['system-options', props.modelName],
+    queryKey: ["system-options", props.modelName],
     queryFn: () => getSystemOptionsForModel(props.modelName),
     enabled: props.open,
-  })
+  });
 
   const optionState = useMemo(() => {
-    const options = optionsQuery.data?.data ?? []
+    const options = optionsQuery.data?.data ?? [];
     const read = (key: string) =>
-      options.find((option) => option.key === key)?.value
-    const pricingModelKey = read('PricingModelKey') || props.modelName
+      options.find((option) => option.key === key)?.value;
+    const pricingModelKey = read("PricingModelKey") || props.modelName;
     return {
-      groupRatio: parseNumberRecord(read('GroupRatio'))[props.group] ?? 1,
-      quotaPerUnit: Number(read('QuotaPerUnit')),
-      completionMeta: parseCompletionRatioMeta(read('CompletionRatioMeta')),
-      modelPrices: parseNumberRecord(read('ModelPrice')),
+      groupRatio: parseNumberRecord(read("GroupRatio"))[props.group] ?? 1,
+      quotaPerUnit: Number(read("QuotaPerUnit")),
+      completionMeta: parseCompletionRatioMeta(read("CompletionRatioMeta")),
+      modelPrices: parseNumberRecord(read("ModelPrice")),
       pricingModelKey,
-    }
-  }, [optionsQuery.data, props.group, props.modelName])
+    };
+  }, [optionsQuery.data, props.group, props.modelName]);
 
-  const basis = props.channel ? resolveSyncBasis(props.channel) : null
   const completionMeta =
     optionState.completionMeta[props.modelName] ??
-    optionState.completionMeta[optionState.pricingModelKey]
+    optionState.completionMeta[optionState.pricingModelKey];
   const groupRatioValid =
-    Number.isFinite(optionState.groupRatio) && optionState.groupRatio > 0
+    Number.isFinite(optionState.groupRatio) && optionState.groupRatio > 0;
   const quotaPerUnitValid =
-    Number.isFinite(optionState.quotaPerUnit) && optionState.quotaPerUnit > 0
-  const targetMargin = parseTargetMargin(marginInput)
-  const plan =
+    Number.isFinite(optionState.quotaPerUnit) && optionState.quotaPerUnit > 0;
+  const targetMargin = parseTargetMargin(marginInput);
+  const ratioPlan =
+    !usesOfficialPricing &&
     basis &&
     optionsQuery.isSuccess &&
     groupRatioValid &&
@@ -97,127 +120,192 @@ export function PriceSyncDialog(props: {
           targetMargin,
           optionState.groupRatio,
           completionMeta?.locked ? completionMeta.ratio : undefined,
-          optionState.quotaPerUnit
+          optionState.quotaPerUnit,
         )
-      : null
+      : null;
+  const officialResolution = officialModelQuery.data ?? null;
+  const officialPlan =
+    usesOfficialPricing &&
+    officialResolution &&
+    optionsQuery.isSuccess &&
+    groupRatioValid &&
+    targetMargin !== null
+      ? computeOfficialSyncPlan(
+          officialResolution.model,
+          targetMargin,
+          optionState.groupRatio,
+        )
+      : null;
+  const previewPlan = officialPlan ?? ratioPlan;
   const hasFixedPrice =
     optionsQuery.isSuccess &&
-    optionState.modelPrices[optionState.pricingModelKey] !== undefined
+    optionState.modelPrices[optionState.pricingModelKey] !== undefined;
   const hasSharedFixedPrice =
-    hasFixedPrice && optionState.pricingModelKey === '*-openai-compact'
+    hasFixedPrice && optionState.pricingModelKey === "*-openai-compact";
 
   const syncMutation = useMutation({
     mutationFn: async () => {
       if (!optionsQuery.isSuccess) {
-        throw new Error(t('Pricing options could not be loaded'))
+        throw new Error(t("Pricing options could not be loaded"));
       }
       if (hasSharedFixedPrice) {
         throw new Error(
-          t('Shared fixed price rules cannot be synced per model')
-        )
+          t("Shared fixed price rules cannot be synced per model"),
+        );
       }
-      if (!plan) throw new Error(t('Margin must be between 0 and 95'))
-      const res = await updatePricingOptions(
-        buildSyncRequest(props.modelName, plan)
-      )
+      if (!ratioPlan && !officialPlan) {
+        throw new Error(t("Margin must be between 0 and 95"));
+      }
+      if (!props.channel) {
+        throw new Error(t("Channel pricing is unavailable"));
+      }
+      let request;
+      if (officialPlan && officialResolution) {
+        request = buildOfficialSyncRequest(
+          props.modelName,
+          props.channel.channel_id,
+          officialResolution.providerId,
+          officialPlan,
+        );
+      } else if (ratioPlan) {
+        request = buildSyncRequest(props.modelName, ratioPlan);
+      } else {
+        throw new Error(t("Margin must be between 0 and 95"));
+      }
+      const res = await updatePricingOptions(request);
       if (!res.success) {
-        throw new Error(res.message || t('Failed to sync selling price'))
+        throw new Error(res.message || t("Failed to sync selling price"));
       }
     },
     onSuccess: () => {
-      toast.success(t('Selling price synced'))
-      queryClient.invalidateQueries({ queryKey: ['channel-price-compare'] })
-      queryClient.invalidateQueries({ queryKey: ['system-options'] })
-      props.onOpenChange(false)
+      toast.success(t("Selling price synced"));
+      queryClient.invalidateQueries({ queryKey: ["channel-price-compare"] });
+      queryClient.invalidateQueries({ queryKey: ["system-options"] });
+      props.onOpenChange(false);
     },
     onError: (error: Error) => {
-      toast.error(error.message || t('Failed to sync selling price'))
+      toast.error(error.message || t("Failed to sync selling price"));
     },
-  })
+  });
 
   const confirmDisabled =
-    !plan ||
+    (!ratioPlan && !officialPlan) ||
     hasSharedFixedPrice ||
     syncMutation.isPending ||
-    !optionsQuery.isSuccess
+    !optionsQuery.isSuccess ||
+    (usesOfficialPricing && officialModelQuery.isLoading);
 
   return (
     <Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      title={t('Sync selling price')}
+      title={t("Sync selling price")}
       description={t(
-        'Selling prices apply globally to this model across all channels.'
+        "Selling prices apply globally to this model across all channels.",
       )}
       footer={
         <>
           <Button
-            variant='outline'
+            variant="outline"
             onClick={() => props.onOpenChange(false)}
             disabled={syncMutation.isPending}
           >
-            {t('Cancel')}
+            {t("Cancel")}
           </Button>
           <Button
             onClick={() => syncMutation.mutate()}
             disabled={confirmDisabled}
           >
             {syncMutation.isPending ? <Spinner /> : null}
-            {t('Apply selling price')}
+            {t("Apply selling price")}
           </Button>
         </>
       }
     >
-      <div className='space-y-4'>
-        <div className='space-y-1 text-sm'>
+      <div className="space-y-4">
+        <div className="space-y-1 text-sm">
           <div>
-            <span className='text-muted-foreground'>{t('Model')}: </span>
-            <span className='font-mono'>{props.modelName}</span>
+            <span className="text-muted-foreground">{t("Model")}: </span>
+            <span className="font-mono">{props.modelName}</span>
           </div>
           <div>
-            <span className='text-muted-foreground'>{t('Channel')}: </span>
+            <span className="text-muted-foreground">{t("Channel")}: </span>
             {props.channel?.channel_name}
           </div>
         </div>
 
-        {optionsQuery.isLoading ? (
-          <div className='text-muted-foreground flex items-center gap-2 text-sm'>
+        {optionsQuery.isLoading ||
+        (usesOfficialPricing && officialModelQuery.isLoading) ? (
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <Spinner />
-            {t('Loading pricing options...')}
+            {t("Loading pricing options...")}
           </div>
         ) : null}
 
         {optionsQuery.isError ? (
-          <Alert variant='destructive'>
-            <AlertTitle>{t('Pricing options could not be loaded')}</AlertTitle>
+          <Alert variant="destructive">
+            <AlertTitle>{t("Pricing options could not be loaded")}</AlertTitle>
             <AlertDescription>
-              {t('Check the service and try again.')}
+              {t("Check the service and try again.")}
             </AlertDescription>
           </Alert>
         ) : null}
 
-        {basis ? (
-          <div className='space-y-1 rounded-md border p-3 text-sm tabular-nums'>
-            <div className='text-muted-foreground text-xs'>
-              {basis.source === 'detected'
-                ? t('Using detected upstream price')
-                : t('Using manually maintained purchase price')}
+        {!usesOfficialPricing && basis ? (
+          <div className="space-y-1 rounded-md border p-3 text-sm tabular-nums">
+            <div className="text-muted-foreground text-xs">
+              {basis.source === "detected"
+                ? t("Using detected upstream price")
+                : t("Using manually maintained purchase price")}
             </div>
             <div>
-              {t('Cost')}: {formatUsd(basis.input)} / {formatUsd(basis.output)}
+              {t("Cost")}: {formatUsd(basis.input)} / {formatUsd(basis.output)}
             </div>
-            <div className='text-muted-foreground text-xs'>
-              {t('Cache Read')} / {t('Cache Write')}:{' '}
+            <div className="text-muted-foreground text-xs">
+              {t("Cache Read")} / {t("Cache Write")}:{" "}
               {formatUsd(basis.cacheRead)} / {formatUsd(basis.cacheWrite)}
             </div>
           </div>
         ) : null}
 
-        <div className='space-y-2'>
-          <Label htmlFor='price-sync-margin'>{t('Target margin (%)')}</Label>
+        {usesOfficialPricing && officialResolution ? (
+          <div className="space-y-1 rounded-md border p-3 text-sm tabular-nums">
+            <div className="text-muted-foreground text-xs">
+              {t("Using official model price")} ·{" "}
+              {officialResolution.providerName}
+            </div>
+            <div>
+              {t("Cost")}: {formatUsd(officialPlan?.input ?? 0)} /{" "}
+              {formatUsd(officialPlan?.output ?? 0)}
+            </div>
+            <div className="text-muted-foreground text-xs">
+              {t("Cache Read")} / {t("Cache Write")}:{" "}
+              {formatUsd(officialPlan?.cacheRead ?? 0)} /{" "}
+              {formatUsd(officialPlan?.cacheWrite ?? 0)}
+            </div>
+          </div>
+        ) : null}
+
+        {usesOfficialPricing &&
+        officialModelQuery.isSuccess &&
+        !officialResolution ? (
+          <Alert variant="destructive">
+            <AlertTitle>
+              {t("Official model price could not be loaded")}
+            </AlertTitle>
+            <AlertDescription>
+              {t(
+                "Official pricing is unavailable for this model and provider.",
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="space-y-2">
+          <Label htmlFor="price-sync-margin">{t("Target margin (%)")}</Label>
           <Input
-            id='price-sync-margin'
-            type='number'
+            id="price-sync-margin"
+            type="number"
             min={0}
             max={MAX_TARGET_MARGIN_PERCENT - 1}
             step={1}
@@ -225,85 +313,122 @@ export function PriceSyncDialog(props: {
             onChange={(event) => setMarginInput(event.target.value)}
           />
           {!groupRatioValid && optionsQuery.isSuccess ? (
-            <p className='text-destructive text-xs'>
-              {t('Pricing group ratio must be greater than 0')}
+            <p className="text-destructive text-xs">
+              {t("Pricing group ratio must be greater than 0")}
             </p>
           ) : null}
-          {!quotaPerUnitValid && optionsQuery.isSuccess ? (
-            <p className='text-destructive text-xs'>
-              {t('Pricing quota scale must be greater than 0')}
+          {!usesOfficialPricing &&
+          !quotaPerUnitValid &&
+          optionsQuery.isSuccess ? (
+            <p className="text-destructive text-xs">
+              {t("Pricing quota scale must be greater than 0")}
             </p>
           ) : null}
-          {!plan && basis && groupRatioValid && quotaPerUnitValid ? (
-            <p className='text-destructive text-xs'>
-              {t('Margin must be between 0 and 95')}
+          {!previewPlan &&
+          (basis || officialResolution) &&
+          groupRatioValid &&
+          (usesOfficialPricing || quotaPerUnitValid) ? (
+            <p className="text-destructive text-xs">
+              {t("Margin must be between 0 and 95")}
             </p>
           ) : null}
         </div>
 
-        {plan && props.channel ? (
-          <div className='space-y-2 rounded-md border p-3 text-sm tabular-nums'>
-            <div className='flex justify-between gap-4'>
-              <span className='text-muted-foreground'>
-                {t('Current selling price')}
+        {previewPlan && props.channel ? (
+          <div className="space-y-2 rounded-md border p-3 text-sm tabular-nums">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">
+                {t("Current selling price")}
               </span>
               <span>
                 {props.channel.uses_fixed_price ? (
                   <>
-                    {formatUsd(props.channel.fixed_price)} ·{' '}
-                    {t('Per-request (fixed price)')}
+                    {formatUsd(props.channel.fixed_price)} ·{" "}
+                    {t("Per-request (fixed price)")}
                   </>
                 ) : (
                   <>
-                    {formatUsd(props.channel.local_input)} /{' '}
+                    {formatUsd(props.channel.local_input)} /{" "}
                     {formatUsd(props.channel.local_output)}
                   </>
                 )}
               </span>
             </div>
-            <div className='flex justify-between gap-4 font-medium'>
-              <span>{t('New selling price (input / output)')}</span>
+            <div className="flex justify-between gap-4 font-medium">
+              <span>{t("New selling price (input / output)")}</span>
               <span>
-                {formatUsd(plan.sellInput)} / {formatUsd(plan.sellOutput)}
+                {formatUsd(previewPlan.sellInput)} /{" "}
+                {formatUsd(previewPlan.sellOutput)}
               </span>
             </div>
-            <div className='text-muted-foreground space-y-1 border-t pt-2 text-xs'>
-              <div>
-                {t('Model ratio')}: {plan.modelRatio}
+            {officialPlan ? (
+              <div className="text-muted-foreground space-y-1 border-t pt-2 text-xs">
+                <div className="text-foreground font-medium">
+                  {t("Context pricing tiers")}
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>{t("Base tier")}</span>
+                  <span>
+                    {formatUsd(officialPlan.sellInput)} /{" "}
+                    {formatUsd(officialPlan.sellOutput)}
+                  </span>
+                </div>
+                {officialPlan.tiers.map((tier) => (
+                  <div
+                    className="flex justify-between gap-3"
+                    key={tier.contextThreshold}
+                  >
+                    <span>
+                      {t("Context at least {{tokens}} tokens", {
+                        tokens: tier.contextThreshold.toLocaleString(),
+                      })}
+                    </span>
+                    <span>
+                      {formatUsd(tier.sellInput)} / {formatUsd(tier.sellOutput)}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <div>
-                {t('Completion ratio')}: {plan.completionRatio}
-                {plan.completionRatioLocked ? ` (${t('Locked')})` : ''}
+            ) : null}
+            {!officialPlan && ratioPlan ? (
+              <div className="text-muted-foreground space-y-1 border-t pt-2 text-xs">
+                <div>
+                  {t("Model ratio")}: {ratioPlan.modelRatio}
+                </div>
+                <div>
+                  {t("Completion ratio")}: {ratioPlan.completionRatio}
+                  {ratioPlan.completionRatioLocked ? ` (${t("Locked")})` : ""}
+                </div>
+                <div>
+                  {t("Prompt cache ratio")}: {ratioPlan.cacheRatio}
+                </div>
+                <div>
+                  {t("Create cache ratio")}: {ratioPlan.createCacheRatio}
+                </div>
               </div>
-              <div>
-                {t('Prompt cache ratio')}: {plan.cacheRatio}
-              </div>
-              <div>
-                {t('Create cache ratio')}: {plan.createCacheRatio}
-              </div>
-            </div>
+            ) : null}
           </div>
         ) : null}
 
         {hasFixedPrice ? (
-          <Alert variant='destructive'>
+          <Alert variant="destructive">
             <AlertTitle>
               {t(
                 hasSharedFixedPrice
-                  ? 'Shared fixed price conflict'
-                  : 'Fixed price conflict'
+                  ? "Shared fixed price conflict"
+                  : "Fixed price conflict",
               )}
             </AlertTitle>
             <AlertDescription>
               {t(
                 hasSharedFixedPrice
-                  ? 'This model inherits a fixed price shared by multiple models. Edit the shared pricing rule before switching billing modes.'
-                  : 'This model currently uses fixed per-request pricing. Syncing removes the fixed price and switches it to ratio billing.'
+                  ? "This model inherits a fixed price shared by multiple models. Edit the shared pricing rule before switching billing modes."
+                  : "This model currently uses fixed per-request pricing. Syncing removes the fixed price and switches it to ratio billing.",
               )}
             </AlertDescription>
           </Alert>
         ) : null}
       </div>
     </Dialog>
-  )
+  );
 }

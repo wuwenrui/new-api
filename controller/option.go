@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
@@ -137,11 +138,16 @@ type OptionUpdateRequest struct {
 }
 
 type PricingOptionsUpdateRequest struct {
-	ModelName        string   `json:"model_name"`
-	ModelRatio       float64  `json:"model_ratio"`
-	CompletionRatio  *float64 `json:"completion_ratio"`
-	CacheRatio       *float64 `json:"cache_ratio"`
-	CreateCacheRatio *float64 `json:"create_cache_ratio"`
+	ModelName        string                 `json:"model_name"`
+	ModelRatio       float64                `json:"model_ratio"`
+	CompletionRatio  *float64               `json:"completion_ratio"`
+	CacheRatio       *float64               `json:"cache_ratio"`
+	CreateCacheRatio *float64               `json:"create_cache_ratio"`
+	BillingMode      string                 `json:"billing_mode"`
+	BillingExpr      string                 `json:"billing_expr"`
+	ChannelID        int                    `json:"channel_id"`
+	UpstreamProvider string                 `json:"upstream_provider"`
+	PurchasePrice    *dto.ChannelModelPrice `json:"purchase_price"`
 }
 
 type pricingOptionMap struct {
@@ -165,9 +171,68 @@ func marshalPricingOptionMaps(optionMaps []pricingOptionMap) (map[string]string,
 
 var errSharedFixedPrice = errors.New("共享固定价格规则不能按单模型同步")
 
+func validateOfficialPurchasePrice(request PricingOptionsUpdateRequest) error {
+	price := request.PurchasePrice
+	provider := strings.TrimSpace(request.UpstreamProvider)
+	if request.ChannelID <= 0 || price == nil || provider == "" {
+		return fmt.Errorf("官方采购价缺少渠道或提供商")
+	}
+	switch provider {
+	case "openai", "xai", "anthropic", "google":
+	default:
+		return fmt.Errorf("官方采购价提供商无效")
+	}
+	if strings.TrimSpace(price.Source) != "models_dev" ||
+		strings.TrimSpace(price.Provider) != provider {
+		return fmt.Errorf("官方采购价来源或提供商无效")
+	}
+	basePrices := []*float64{price.Input, price.Output, price.CacheRead, price.CacheWrite}
+	for _, value := range basePrices {
+		if value == nil || !isFiniteNonNegative(*value) {
+			return fmt.Errorf("官方采购价必须完整且非负")
+		}
+	}
+	previousThreshold := 0
+	tierNames := make(map[string]struct{}, len(price.Tiers))
+	for _, tier := range price.Tiers {
+		name := strings.TrimSpace(tier.Name)
+		if name == "" || tier.ContextThreshold <= previousThreshold {
+			return fmt.Errorf("官方采购价分层无效")
+		}
+		if _, exists := tierNames[name]; exists {
+			return fmt.Errorf("官方采购价分层名称重复")
+		}
+		if !isFiniteNonNegative(tier.Input) ||
+			!isFiniteNonNegative(tier.Output) ||
+			!isFiniteNonNegative(tier.CacheRead) ||
+			!isFiniteNonNegative(tier.CacheWrite) {
+			return fmt.Errorf("官方采购价分层必须非负")
+		}
+		tierNames[name] = struct{}{}
+		previousThreshold = tier.ContextThreshold
+	}
+	return nil
+}
+
 func validatePricingOptionsRequest(request PricingOptionsUpdateRequest) error {
 	modelName := strings.TrimSpace(request.ModelName)
-	if modelName == "" || !isFiniteNonNegative(request.ModelRatio) || request.ModelRatio == 0 ||
+	if modelName == "" {
+		return fmt.Errorf("模型名称不能为空")
+	}
+	if request.BillingMode != "" {
+		if request.BillingMode != billing_setting.BillingModeTieredExpr {
+			return fmt.Errorf("不支持的计费模式")
+		}
+		request.BillingExpr = strings.TrimSpace(request.BillingExpr)
+		if request.BillingExpr == "" {
+			return fmt.Errorf("分层计费表达式不能为空")
+		}
+		if err := billing_setting.SmokeTestExpr(request.BillingExpr); err != nil {
+			return fmt.Errorf("分层计费表达式无效: %w", err)
+		}
+		return validateOfficialPurchasePrice(request)
+	}
+	if !isFiniteNonNegative(request.ModelRatio) || request.ModelRatio == 0 ||
 		request.CacheRatio == nil || !isFiniteNonNegative(*request.CacheRatio) ||
 		request.CreateCacheRatio == nil || !isFiniteNonNegative(*request.CreateCacheRatio) {
 		return fmt.Errorf("模型名称或定价值无效")
@@ -206,6 +271,36 @@ func pricingOptionMapValue(rawValues map[string]string, key string, fallback map
 	return values, nil
 }
 
+func pricingStringOptionMapValue(rawValues map[string]string, key string, fallback map[string]string) (map[string]string, error) {
+	raw := strings.TrimSpace(rawValues[key])
+	if raw == "" {
+		return fallback, nil
+	}
+	values := make(map[string]string)
+	if err := common.UnmarshalJsonStr(raw, &values); err != nil {
+		return nil, fmt.Errorf("%s 定价配置无效: %w", key, err)
+	}
+	if values == nil {
+		return nil, fmt.Errorf("%s 定价配置必须是 JSON 对象", key)
+	}
+	return values, nil
+}
+
+func appendPricingStringOption(
+	values map[string]string,
+	keys []string,
+	key string,
+	optionValues map[string]string,
+) (map[string]string, []string, error) {
+	jsonBytes, err := common.Marshal(optionValues)
+	if err != nil {
+		return nil, nil, err
+	}
+	values[key] = string(jsonBytes)
+	keys = append(keys, key)
+	return values, keys, nil
+}
+
 func fixedPriceKey(modelName string, modelPrices map[string]float64) (string, bool) {
 	pricingModelName := ratio_setting.FormatMatchingModelName(modelName)
 	if _, exists := modelPrices[pricingModelName]; exists {
@@ -219,6 +314,87 @@ func fixedPriceKey(modelName string, modelPrices map[string]float64) (string, bo
 	return "", false
 }
 
+func buildTieredPricingOptionValues(
+	request PricingOptionsUpdateRequest,
+	current map[string]string,
+) (map[string]string, []string, error) {
+	modelName := strings.TrimSpace(request.ModelName)
+	pricingModelName := ratio_setting.FormatMatchingModelName(modelName)
+	modelRatios, err := pricingOptionMapValue(current, "ModelRatio", ratio_setting.GetModelRatioCopy())
+	if err != nil {
+		return nil, nil, err
+	}
+	completionRatios, err := pricingOptionMapValue(current, "CompletionRatio", ratio_setting.GetCompletionRatioCopy())
+	if err != nil {
+		return nil, nil, err
+	}
+	cacheRatios, err := pricingOptionMapValue(current, "CacheRatio", ratio_setting.GetCacheRatioCopy())
+	if err != nil {
+		return nil, nil, err
+	}
+	createCacheRatios, err := pricingOptionMapValue(current, "CreateCacheRatio", ratio_setting.GetCreateCacheRatioCopy())
+	if err != nil {
+		return nil, nil, err
+	}
+	modelPrices, err := pricingOptionMapValue(current, "ModelPrice", ratio_setting.GetModelPriceCopy())
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, values := range []map[string]float64{
+		modelRatios,
+		completionRatios,
+		cacheRatios,
+		createCacheRatios,
+		modelPrices,
+	} {
+		delete(values, modelName)
+		delete(values, pricingModelName)
+	}
+	optionValues, keys, err := marshalPricingOptionMaps([]pricingOptionMap{
+		{key: "ModelRatio", value: modelRatios},
+		{key: "CompletionRatio", value: completionRatios},
+		{key: "CacheRatio", value: cacheRatios},
+		{key: "CreateCacheRatio", value: createCacheRatios},
+		{key: "ModelPrice", value: modelPrices},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	billingModes, err := pricingStringOptionMapValue(
+		current,
+		"billing_setting.billing_mode",
+		billing_setting.GetBillingModeCopy(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	billingExprs, err := pricingStringOptionMapValue(
+		current,
+		"billing_setting.billing_expr",
+		billing_setting.GetBillingExprCopy(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	billingModes[modelName] = billing_setting.BillingModeTieredExpr
+	billingExprs[modelName] = strings.TrimSpace(request.BillingExpr)
+	optionValues, keys, err = appendPricingStringOption(
+		optionValues,
+		keys,
+		"billing_setting.billing_mode",
+		billingModes,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return appendPricingStringOption(
+		optionValues,
+		keys,
+		"billing_setting.billing_expr",
+		billingExprs,
+	)
+}
+
 func buildPricingOptionValues(request PricingOptionsUpdateRequest) (map[string]string, []string, error) {
 	return buildPricingOptionValuesFromCurrent(request, nil)
 }
@@ -229,6 +405,9 @@ func buildPricingOptionValuesFromCurrent(request PricingOptionsUpdateRequest, cu
 	}
 	modelName := strings.TrimSpace(request.ModelName)
 	pricingModelName := ratio_setting.FormatMatchingModelName(modelName)
+	if request.BillingMode == billing_setting.BillingModeTieredExpr {
+		return buildTieredPricingOptionValues(request, current)
+	}
 
 	modelRatios, err := pricingOptionMapValue(current, "ModelRatio", ratio_setting.GetModelRatioCopy())
 	if err != nil {
@@ -287,13 +466,30 @@ func UpdatePricingOptions(c *gin.Context) {
 		return
 	}
 	var updatedKeys []string
-	_, err := model.UpdateOptionsAtomically(
-		[]string{"ModelRatio", "CompletionRatio", "CacheRatio", "CreateCacheRatio", "ModelPrice"},
+	var channelPrice *model.ChannelModelPriceUpdate
+	if request.BillingMode == billing_setting.BillingModeTieredExpr {
+		channelPrice = &model.ChannelModelPriceUpdate{
+			ChannelID: request.ChannelID,
+			ModelName: strings.TrimSpace(request.ModelName),
+			Price:     *request.PurchasePrice,
+		}
+	}
+	_, err := model.UpdateOptionsAndChannelPriceAtomically(
+		[]string{
+			"ModelRatio",
+			"CompletionRatio",
+			"CacheRatio",
+			"CreateCacheRatio",
+			"ModelPrice",
+			"billing_setting.billing_mode",
+			"billing_setting.billing_expr",
+		},
 		func(current map[string]string) (map[string]string, error) {
 			values, keys, err := buildPricingOptionValuesFromCurrent(request, current)
 			updatedKeys = keys
 			return values, err
 		},
+		channelPrice,
 	)
 	if err != nil {
 		if model.IsOptionUpdateConflict(err) {
@@ -310,10 +506,16 @@ func UpdatePricingOptions(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "option.pricing.update", map[string]interface{}{
+	auditParams := map[string]interface{}{
 		"model": strings.TrimSpace(request.ModelName),
 		"keys":  updatedKeys,
-	})
+	}
+	if channelPrice != nil {
+		auditParams["channel_id"] = channelPrice.ChannelID
+		auditParams["price_source"] = channelPrice.Price.Source
+		auditParams["upstream_provider"] = channelPrice.Price.Provider
+	}
+	recordManageAudit(c, "option.pricing.update", auditParams)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 

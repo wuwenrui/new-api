@@ -65,11 +65,23 @@ const (
 	AwsKeyTypeApiKey AwsKeyType = "api_key"
 )
 
+type ChannelModelPriceTier struct {
+	Name             string  `json:"name"`
+	ContextThreshold int     `json:"context_threshold"`
+	Input            float64 `json:"input"`
+	Output           float64 `json:"output"`
+	CacheRead        float64 `json:"cache_read"`
+	CacheWrite       float64 `json:"cache_write"`
+}
+
 type ChannelModelPrice struct {
-	Input      *float64 `json:"input,omitempty"`
-	Output     *float64 `json:"output,omitempty"`
-	CacheRead  *float64 `json:"cache_read,omitempty"`
-	CacheWrite *float64 `json:"cache_write,omitempty"`
+	Input      *float64                `json:"input,omitempty"`
+	Output     *float64                `json:"output,omitempty"`
+	CacheRead  *float64                `json:"cache_read,omitempty"`
+	CacheWrite *float64                `json:"cache_write,omitempty"`
+	Source     string                  `json:"source,omitempty"`
+	Provider   string                  `json:"provider,omitempty"`
+	Tiers      []ChannelModelPriceTier `json:"tiers,omitempty"`
 }
 
 type ChannelOtherSettings struct {

@@ -45,6 +45,28 @@ type BuildSub2APIProbeInput = {
   upstreamMultiplier: number
 }
 
+export type ResolvedModelsDevProbeModel = {
+  providerId: string
+  providerName: string
+  model: NewAPIProbeModel
+}
+
+const CANONICAL_MODELS_DEV_PROVIDERS = new Set([
+  'anthropic',
+  'google',
+  'openai',
+  'xai',
+])
+
+function inferCanonicalProviderId(modelName: string): string | null {
+  const normalized = modelName.trim().toLowerCase()
+  if (/^(gpt-|o[1-9](?:-|$))/.test(normalized)) return 'openai'
+  if (normalized.startsWith('grok-')) return 'xai'
+  if (normalized.startsWith('claude-')) return 'anthropic'
+  if (normalized.startsWith('gemini-')) return 'google'
+  return null
+}
+
 function isPricedTextModel(model: Model): model is Model & { cost: ModelCost } {
   return (
     model.modalities.output.includes('text') &&
@@ -125,6 +147,30 @@ function toProbeModel(
       tiers: costTiers(model.cost),
       upstream_multiplier: upstreamMultiplier,
     },
+  }
+}
+
+export function resolveModelsDevProbeModel(
+  providers: ProviderMap,
+  modelName: string,
+  providerHint: string
+): ResolvedModelsDevProbeModel | null {
+  const normalizedModel = modelName.trim()
+  const normalizedHint = providerHint.trim().toLowerCase()
+  const providerId = CANONICAL_MODELS_DEV_PROVIDERS.has(normalizedHint)
+    ? normalizedHint
+    : inferCanonicalProviderId(normalizedModel)
+  if (!providerId) return null
+  const provider = providers[providerId]
+  if (!provider) return null
+  const providerModel =
+    provider.models[normalizedModel] ??
+    Object.values(provider.models).find((model) => model.id === normalizedModel)
+  if (!providerModel || !isPricedTextModel(providerModel)) return null
+  return {
+    providerId,
+    providerName: provider.name,
+    model: toProbeModel(provider, providerModel, 1),
   }
 }
 

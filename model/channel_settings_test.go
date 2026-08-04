@@ -180,6 +180,92 @@ func TestChannelValidateSettingsAcceptsExplicitZeroModelPrices(t *testing.T) {
 	require.NoError(t, channel.ValidateSettings())
 }
 
+func TestChannelValidateSettingsAcceptsOrderedOfficialPriceTiers(t *testing.T) {
+	channel := &Channel{Models: "gpt-5.6-sol"}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		ModelPrices: map[string]dto.ChannelModelPrice{
+			"gpt-5.6-sol": {
+				Input:      modelPriceValue(5),
+				Output:     modelPriceValue(30),
+				CacheRead:  modelPriceValue(0.5),
+				CacheWrite: modelPriceValue(6.25),
+				Source:     "models_dev",
+				Provider:   "openai",
+				Tiers: []dto.ChannelModelPriceTier{
+					{
+						Name:             "context_272000",
+						ContextThreshold: 272000,
+						Input:            10,
+						Output:           45,
+						CacheRead:        1,
+						CacheWrite:       12.5,
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, channel.ValidateSettings())
+
+	price := channel.GetOtherSettings().ModelPrices["gpt-5.6-sol"]
+	assert.Equal(t, "models_dev", price.Source)
+	assert.Equal(t, "openai", price.Provider)
+	require.Len(t, price.Tiers, 1)
+	assert.Equal(t, 272000, price.Tiers[0].ContextThreshold)
+}
+
+func TestChannelValidateSettingsRejectsInvalidOfficialPriceTier(t *testing.T) {
+	tests := []struct {
+		name  string
+		tiers []dto.ChannelModelPriceTier
+	}{
+		{
+			name: "negative price",
+			tiers: []dto.ChannelModelPriceTier{{
+				Name:             "context_272000",
+				ContextThreshold: 272000,
+				Input:            -1,
+				Output:           45,
+			}},
+		},
+		{
+			name: "unordered thresholds",
+			tiers: []dto.ChannelModelPriceTier{
+				{Name: "context_272000", ContextThreshold: 272000},
+				{Name: "context_200000", ContextThreshold: 200000},
+			},
+		},
+		{
+			name: "duplicate names",
+			tiers: []dto.ChannelModelPriceTier{
+				{Name: "long", ContextThreshold: 200000},
+				{Name: "long", ContextThreshold: 272000},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			channel := &Channel{Models: "tiered-model"}
+			channel.SetOtherSettings(dto.ChannelOtherSettings{
+				ModelPrices: map[string]dto.ChannelModelPrice{
+					"tiered-model": {
+						Input:      modelPriceValue(1),
+						Output:     modelPriceValue(2),
+						CacheRead:  modelPriceValue(0),
+						CacheWrite: modelPriceValue(0),
+						Source:     "models_dev",
+						Provider:   "openai",
+						Tiers:      test.tiers,
+					},
+				},
+			})
+
+			require.Error(t, channel.ValidateSettings())
+		})
+	}
+}
+
 func TestChannelValidateSettingsDropsPerCallModelPrices(t *testing.T) {
 	originalModelPrices := ratio_setting.ModelPrice2JSONString()
 	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"fixed-model":0.1}`))

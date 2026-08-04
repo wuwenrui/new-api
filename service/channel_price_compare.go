@@ -13,6 +13,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
@@ -112,6 +114,8 @@ type ChannelPriceCompareChannel struct {
 	DetectedAvailable  bool                   `json:"detected_available"`
 	UsesFixedPrice     bool                   `json:"uses_fixed_price"`
 	FixedPrice         float64                `json:"fixed_price"`
+	BillingMode        string                 `json:"billing_mode"`
+	BillingExpr        string                 `json:"billing_expr,omitempty"`
 	LocalInput         float64                `json:"local_input"`
 	LocalOutput        float64                `json:"local_output"`
 	LocalCacheRead     float64                `json:"local_cache_read"`
@@ -130,6 +134,45 @@ type ChannelPriceCompareChannel struct {
 	Total              ChannelBusinessMetrics `json:"total"`
 	Quality24h         ChannelQualityMetrics  `json:"quality_24h"`
 	Recommendations    []string               `json:"recommendations"`
+}
+
+type channelSellingPrices struct {
+	Input      float64
+	Output     float64
+	CacheRead  float64
+	CacheWrite float64
+}
+
+func tieredSellingPrices(expr string, groupRatio float64) (channelSellingPrices, error) {
+	if strings.TrimSpace(expr) == "" || groupRatio <= 0 || common.QuotaPerUnit <= 0 {
+		return channelSellingPrices{}, fmt.Errorf("invalid tiered pricing inputs")
+	}
+	evaluate := func(params billingexpr.TokenParams) (float64, error) {
+		quota, _, err := billingexpr.RunExpr(expr, params)
+		if err != nil {
+			return 0, err
+		}
+		return quota * groupRatio / float64(common.QuotaPerUnit), nil
+	}
+	input, err := evaluate(billingexpr.TokenParams{P: 1_000_000, Len: 1})
+	if err != nil {
+		return channelSellingPrices{}, err
+	}
+	output, err := evaluate(billingexpr.TokenParams{C: 1_000_000, Len: 1})
+	if err != nil {
+		return channelSellingPrices{}, err
+	}
+	cacheRead, err := evaluate(billingexpr.TokenParams{CR: 1_000_000, Len: 1})
+	if err != nil {
+		return channelSellingPrices{}, err
+	}
+	cacheWrite, err := evaluate(billingexpr.TokenParams{CC: 1_000_000, Len: 1})
+	if err != nil {
+		return channelSellingPrices{}, err
+	}
+	return channelSellingPrices{
+		Input: input, Output: output, CacheRead: cacheRead, CacheWrite: cacheWrite,
+	}, nil
 }
 
 // ChannelPriceCompareModelRow 一个模型及其候选渠道（按优先级降序，与实际选路一致）
@@ -462,8 +505,20 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 		Recommendations: []string{},
 	}
 
+	row.BillingMode = billing_setting.GetBillingMode(modelName)
+
 	pricing := ratio_setting.GetModelPricingSnapshot(modelName)
-	if pricing.UsesFixedPrice {
+	if row.BillingMode == billing_setting.BillingModeTieredExpr {
+		if expr, ok := billing_setting.GetBillingExpr(modelName); ok {
+			row.BillingExpr = expr
+			if prices, err := tieredSellingPrices(expr, localGroupRatio); err == nil {
+				row.LocalInput = prices.Input
+				row.LocalOutput = prices.Output
+				row.LocalCacheRead = prices.CacheRead
+				row.LocalCacheWrite = prices.CacheWrite
+			}
+		}
+	} else if pricing.UsesFixedPrice {
 		row.UsesFixedPrice = true
 		row.FixedPrice = pricing.ModelPrice * localGroupRatio
 	} else if pricing.ModelRatioFound && pricing.ModelRatio > 0 {

@@ -23,6 +23,8 @@ For commercial licensing, please contact support@quantumnous.com
 // i.e. sellUsdPer1M = modelRatio * groupRatio * RATIO_USD_PER_MILLION.
 // ----------------------------------------------------------------------------
 
+import { buildModelsDevBillingExpression } from '../../channels/lib/newapi-onboard-pricing'
+import type { ModelsDevTokenCost, NewAPIProbeModel } from '../../channels/types'
 import type { PriceCompareChannel } from '../types'
 
 const DEFAULT_QUOTA_PER_UNIT = 500_000
@@ -52,6 +54,56 @@ export type PricingSyncRequest = {
   completion_ratio?: number
   cache_ratio: number
   create_cache_ratio: number
+}
+
+export type OfficialPriceTierPlan = {
+  name: string
+  contextThreshold: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  sellInput: number
+  sellOutput: number
+  sellCacheRead: number
+  sellCacheWrite: number
+}
+
+export type OfficialSyncPlan = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  sellInput: number
+  sellOutput: number
+  sellCacheRead: number
+  sellCacheWrite: number
+  tiers: OfficialPriceTierPlan[]
+  billingExpression: string
+}
+
+export type OfficialPricingSyncRequest = {
+  model_name: string
+  billing_mode: 'tiered_expr'
+  billing_expr: string
+  channel_id: number
+  upstream_provider: string
+  purchase_price: {
+    input: number
+    output: number
+    cache_read: number
+    cache_write: number
+    source: 'models_dev'
+    provider: string
+    tiers: Array<{
+      name: string
+      context_threshold: number
+      input: number
+      output: number
+      cache_read: number
+      cache_write: number
+    }>
+  }
 }
 
 // Prefer the live detected upstream price when available; it is fresher than
@@ -193,6 +245,102 @@ export function buildSyncRequest(
       : { completion_ratio: plan.completionRatio }),
     cache_ratio: plan.cacheRatio,
     create_cache_ratio: plan.createCacheRatio,
+  }
+}
+
+function officialTokenPrices(
+  cost: ModelsDevTokenCost,
+  multiplier: number
+): Pick<OfficialSyncPlan, 'input' | 'output' | 'cacheRead' | 'cacheWrite'> {
+  return {
+    input: cost.input * multiplier,
+    output: cost.output * multiplier,
+    cacheRead: (cost.cache_read ?? 0) * multiplier,
+    cacheWrite: (cost.cache_write ?? 0) * multiplier,
+  }
+}
+
+export function computeOfficialSyncPlan(
+  model: NewAPIProbeModel,
+  marginPercent: number,
+  groupRatio: number
+): OfficialSyncPlan | null {
+  const pricing = model.models_dev_pricing
+  if (
+    !pricing ||
+    !Number.isFinite(marginPercent) ||
+    marginPercent < 0 ||
+    marginPercent >= MAX_TARGET_MARGIN_PERCENT ||
+    !Number.isFinite(groupRatio) ||
+    groupRatio <= 0 ||
+    !Number.isFinite(pricing.upstream_multiplier) ||
+    pricing.upstream_multiplier <= 0
+  ) {
+    return null
+  }
+  const marginDivisor = 1 - marginPercent / 100
+  const base = officialTokenPrices(pricing.base, pricing.upstream_multiplier)
+  if (base.input <= 0 || base.output < 0) return null
+  const sellInput = base.input / marginDivisor
+  const sellOutput = base.output / marginDivisor
+  const billingExpression = buildModelsDevBillingExpression(
+    model,
+    sellInput,
+    sellOutput,
+    groupRatio
+  )
+  if (!billingExpression) return null
+  const tiers = pricing.tiers.map((tier) => {
+    const cost = officialTokenPrices(tier, pricing.upstream_multiplier)
+    return {
+      name: `context_${tier.context_threshold}`,
+      contextThreshold: tier.context_threshold,
+      ...cost,
+      sellInput: cost.input / marginDivisor,
+      sellOutput: cost.output / marginDivisor,
+      sellCacheRead: cost.cacheRead / marginDivisor,
+      sellCacheWrite: cost.cacheWrite / marginDivisor,
+    }
+  })
+  return {
+    ...base,
+    sellInput,
+    sellOutput,
+    sellCacheRead: base.cacheRead / marginDivisor,
+    sellCacheWrite: base.cacheWrite / marginDivisor,
+    tiers,
+    billingExpression,
+  }
+}
+
+export function buildOfficialSyncRequest(
+  modelName: string,
+  channelId: number,
+  providerId: string,
+  plan: OfficialSyncPlan
+): OfficialPricingSyncRequest {
+  return {
+    model_name: modelName,
+    billing_mode: 'tiered_expr',
+    billing_expr: plan.billingExpression,
+    channel_id: channelId,
+    upstream_provider: providerId,
+    purchase_price: {
+      input: plan.input,
+      output: plan.output,
+      cache_read: plan.cacheRead,
+      cache_write: plan.cacheWrite,
+      source: 'models_dev',
+      provider: providerId,
+      tiers: plan.tiers.map((tier) => ({
+        name: tier.name,
+        context_threshold: tier.contextThreshold,
+        input: tier.input,
+        output: tier.output,
+        cache_read: tier.cacheRead,
+        cache_write: tier.cacheWrite,
+      })),
+    },
   }
 }
 

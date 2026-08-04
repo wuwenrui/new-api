@@ -14,6 +14,7 @@ import {
 import {
   buildSub2APIProbeResult,
   listSub2APIProviders,
+  resolveModelsDevProbeModel,
 } from './sub2api-onboard'
 
 const providers = {
@@ -59,6 +60,45 @@ const providers = {
   },
 } as unknown as ProviderMap
 
+const resolutionProviders = {
+  openai: {
+    id: 'openai',
+    name: 'OpenAI',
+    models: {
+      'gpt-5.6-sol': {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        modalities: { input: ['text'], output: ['text'] },
+        cost: { input: 5, output: 30 },
+      },
+    },
+  },
+  xai: {
+    id: 'xai',
+    name: 'xAI',
+    models: {
+      'grok-4.5': {
+        id: 'grok-4.5',
+        name: 'Grok 4.5',
+        modalities: { input: ['text'], output: ['text'] },
+        cost: { input: 2, output: 6 },
+      },
+    },
+  },
+  reseller: {
+    id: 'reseller',
+    name: 'Cheap Reseller',
+    models: {
+      'gpt-5.6-sol': {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        modalities: { input: ['text'], output: ['text'] },
+        cost: { input: 0.01, output: 0.02 },
+      },
+    },
+  },
+} as unknown as ProviderMap
+
 describe('Sub2API models.dev onboarding', () => {
   test('lists only providers with token-priced text models', () => {
     assert.deepEqual(listSub2APIProviders(providers), [
@@ -85,6 +125,26 @@ describe('Sub2API models.dev onboarding', () => {
     )
     assert.equal(upstreamCostInUSD(result.models[0], 0.25), 0.5)
     assert.equal(upstreamCostOutUSD(result.models[0], 0.25), 2)
+  })
+
+  test('resolves official models only from canonical providers', () => {
+    const gpt = resolveModelsDevProbeModel(
+      resolutionProviders,
+      'gpt-5.6-sol',
+      ''
+    )
+    assert.equal(gpt?.providerId, 'openai')
+    assert.equal(gpt?.model.models_dev_pricing?.base.input, 5)
+
+    const grok = resolveModelsDevProbeModel(resolutionProviders, 'grok-4.5', '')
+    assert.equal(grok?.providerId, 'xai')
+    assert.equal(grok?.model.models_dev_pricing?.base.output, 6)
+
+    assert.equal(
+      resolveModelsDevProbeModel(resolutionProviders, 'gpt-5.6-sol', 'reseller')
+        ?.providerId,
+      'openai'
+    )
   })
 
   test('rejects invalid multipliers and unknown providers', () => {
@@ -120,7 +180,7 @@ describe('Sub2API models.dev onboarding', () => {
 
     assert.equal(
       buildModelsDevBillingExpression(model, 1.25, 5, 2.5),
-      'len < 200000 ? tier("base", p * 0.5 + c * 2 + cr * 0.05) : tier("context_200000", p * 1 + c * 3 + cr * 0.1)'
+      'len < 200000 ? tier("base", p * 0.25 + c * 1 + cr * 0.025) : tier("context_200000", p * 0.5 + c * 1.5 + cr * 0.05)'
     )
   })
 
@@ -143,7 +203,7 @@ describe('Sub2API models.dev onboarding', () => {
     )
     assert.equal(
       updated['billing_setting.billing_expr']['gpt-priced'],
-      'len < 200000 ? tier("base", p * 1 + c * 4 + cr * 0.1) : tier("context_200000", p * 2 + c * 6 + cr * 0.2)'
+      'len < 200000 ? tier("base", p * 0.5 + c * 2 + cr * 0.05) : tier("context_200000", p * 1 + c * 3 + cr * 0.1)'
     )
   })
 
