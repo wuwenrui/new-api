@@ -204,21 +204,15 @@ func BuildChannelPriceCompareReport(ctx context.Context, localGroup string) (Cha
 		return ChannelPriceCompareReport{}, err
 	}
 
-	tokenAbilities := make([]model.Ability, 0, len(abilities))
 	candidateChannelIDs := make([]int, 0, len(abilities))
 	candidateChannelIDSet := make(map[int]struct{}, len(abilities))
 	for _, ability := range abilities {
-		_, _, exists := ratio_setting.GetModelRatioOrPrice(ability.Model)
-		if !exists {
-			continue
-		}
-		tokenAbilities = append(tokenAbilities, ability)
 		if _, ok := candidateChannelIDSet[ability.ChannelId]; !ok {
 			candidateChannelIDSet[ability.ChannelId] = struct{}{}
 			candidateChannelIDs = append(candidateChannelIDs, ability.ChannelId)
 		}
 	}
-	if len(tokenAbilities) == 0 {
+	if len(abilities) == 0 {
 		return emptyChannelPriceCompareReport(localGroup), nil
 	}
 
@@ -233,10 +227,10 @@ func BuildChannelPriceCompareReport(ctx context.Context, localGroup string) (Cha
 		channelByID[channel.Id] = channel
 	}
 
-	activeAbilities := make([]model.Ability, 0, len(tokenAbilities))
+	activeAbilities := make([]model.Ability, 0, len(abilities))
 	channelIDs := make([]int, 0, len(channels))
 	channelIDSet := make(map[int]struct{}, len(channels))
-	for _, ability := range tokenAbilities {
+	for _, ability := range abilities {
 		if channelByID[ability.ChannelId] == nil {
 			continue
 		}

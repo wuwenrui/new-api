@@ -311,7 +311,7 @@ func TestBuildChannelPriceCompareReportShowsRoutingAndBusinessMetrics(t *testing
 	backupPriority := int64(50)
 	disabledPriority := int64(200)
 	primary := model.Channel{
-		Id: 1, Name: "primary", Status: common.ChannelStatusEnabled, Models: "test-model",
+		Id: 1, Name: "primary", Status: common.ChannelStatusEnabled, Models: "test-model,unpriced-model",
 		Group: "default", Priority: &primaryPriority, Weight: common.GetPointer(uint(20)),
 	}
 	primary.SetOtherSettings(dto.ChannelOtherSettings{
@@ -352,6 +352,7 @@ func TestBuildChannelPriceCompareReportShowsRoutingAndBusinessMetrics(t *testing
 		{Group: "default", Model: "test-model", ChannelId: 2, Enabled: true, Priority: &backupPriority, Weight: 10},
 		{Group: "default", Model: "test-model", ChannelId: 3, Enabled: true, Priority: &disabledPriority, Weight: 100},
 		{Group: "default", Model: "fixed-model", ChannelId: 1, Enabled: true, Priority: &primaryPriority, Weight: 20},
+		{Group: "default", Model: "unpriced-model", ChannelId: 1, Enabled: true, Priority: &primaryPriority, Weight: 20},
 	}).Error)
 
 	now := time.Now().Unix()
@@ -381,13 +382,17 @@ func TestBuildChannelPriceCompareReportShowsRoutingAndBusinessMetrics(t *testing
 
 	report, err := BuildChannelPriceCompareReport(context.Background(), "default")
 	require.NoError(t, err)
-	require.Len(t, report.Models, 2)
+	require.Len(t, report.Models, 3)
 	modelRows := make(map[string]ChannelPriceCompareModelRow, len(report.Models))
 	for _, row := range report.Models {
 		modelRows[row.ModelName] = row
 	}
 	require.Len(t, modelRows["test-model"].Channels, 2)
 	require.Len(t, modelRows["fixed-model"].Channels, 1)
+	require.Len(t, modelRows["unpriced-model"].Channels, 1)
+	unpricedRow := modelRows["unpriced-model"].Channels[0]
+	assert.Equal(t, "missing", unpricedRow.PriceSource)
+	assert.Equal(t, "unknown", unpricedRow.Status)
 	fixedRow := modelRows["fixed-model"].Channels[0]
 	assert.True(t, fixedRow.UsesFixedPrice)
 	assert.InDelta(t, 0.1, fixedRow.FixedPrice, 1e-9)
