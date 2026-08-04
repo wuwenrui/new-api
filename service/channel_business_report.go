@@ -338,7 +338,7 @@ func buildChannelBusinessModelRow(channel *model.Channel, aggregate pacUsageAggr
 	if localModelRatio, ok, _ := ratio_setting.GetModelRatio(modelName); ok && localModelRatio > 0 {
 		localGroupRatio := ratio_setting.GetGroupRatio(localGroup)
 		localCompletionRatio := ratio_setting.GetCompletionRatio(modelName)
-		row.LocalInputPrice = pricePerMillion(localModelRatio, localGroupRatio)
+		row.LocalInputPrice = localPricePerMillion(localModelRatio, localGroupRatio)
 		row.LocalOutputPrice = row.LocalInputPrice * localCompletionRatio
 		row.LocalPriceKnown = true
 	}

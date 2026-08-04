@@ -21,6 +21,7 @@ const (
 	defaultPACPriceMonitorTargetMargin = 60
 	defaultPackyPricingURL             = "https://www.packyapi.com/api/pricing"
 	pacMarginDisplayTolerance          = 0.005
+	defaultUpstreamQuotaPerUnit        = 500_000
 )
 
 type PACPriceMonitorParams struct {
@@ -328,7 +329,7 @@ func buildPACPriceMonitorRow(channel *model.Channel, modelName string, pricing p
 
 	localGroupRatio := ratio_setting.GetGroupRatio(localGroup)
 	localCompletionRatio := ratio_setting.GetCompletionRatio(modelName)
-	row.LocalInputPrice = pricePerMillion(localModelRatio, localGroupRatio)
+	row.LocalInputPrice = localPricePerMillion(localModelRatio, localGroupRatio)
 	row.LocalOutputPrice = row.LocalInputPrice * localCompletionRatio
 	row.UpstreamInputPrice = pricePerMillion(upstreamModel.ModelRatio, upstreamGroupRatio)
 	row.UpstreamOutputPrice = row.UpstreamInputPrice * upstreamModel.CompletionRatio
@@ -562,7 +563,25 @@ func pacUsageKey(channelID int, modelName string) string {
 }
 
 func pricePerMillion(modelRatio float64, groupRatio float64) float64 {
-	return modelRatio * groupRatio * 2
+	return pricePerMillionForQuota(modelRatio, groupRatio, defaultUpstreamQuotaPerUnit)
+}
+
+func localPricePerMillion(modelRatio float64, groupRatio float64) float64 {
+	return pricePerMillionForQuota(modelRatio, groupRatio, common.QuotaPerUnit)
+}
+
+func pricePerMillionForQuota(modelRatio float64, groupRatio float64, quotaPerUnit float64) float64 {
+	if quotaPerUnit <= 0 || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) {
+		return 0
+	}
+	return modelRatio * groupRatio * 1_000_000 / quotaPerUnit
+}
+
+func normalizeUpstreamQuotaPerUnit(quotaPerUnit float64) float64 {
+	if quotaPerUnit <= 0 || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) {
+		return defaultUpstreamQuotaPerUnit
+	}
+	return quotaPerUnit
 }
 
 func recommendedPrice(upstreamPrice float64, targetMargin float64) float64 {
@@ -578,7 +597,7 @@ func recommendedPrice(upstreamPrice float64, targetMargin float64) float64 {
 
 func tokenCostUSD(promptTokens int64, completionTokens int64, modelRatio float64, groupRatio float64, completionRatio float64) float64 {
 	billableTokens := float64(promptTokens) + float64(completionTokens)*completionRatio
-	return billableTokens * modelRatio * groupRatio / common.QuotaPerUnit
+	return billableTokens * modelRatio * groupRatio / defaultUpstreamQuotaPerUnit
 }
 
 func grossMargin(revenue float64, cost float64) float64 {

@@ -1,6 +1,10 @@
 package model
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Option struct {
@@ -199,12 +204,62 @@ func InitOptionMap() {
 }
 
 func loadOptionsFromDatabase() {
-	options, _ := AllOption()
+	options, err := AllOption()
+	if err != nil {
+		common.SysLog("failed to update option map: " + err.Error())
+		return
+	}
 	for _, option := range options {
-		err := updateOptionMap(option.Key, option.Value)
-		if err != nil {
+		if isPricingSnapshotOptionKey(option.Key) {
+			continue
+		}
+		if err := updateOptionMap(option.Key, option.Value); err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
+	}
+	err = ratio_setting.WritePricingSnapshot(func() error {
+		for _, option := range options {
+			if !isPricingSnapshotOptionKey(option.Key) {
+				continue
+			}
+			if err := updateOptionMap(option.Key, option.Value); err != nil {
+				common.SysLog("failed to update option map: " + err.Error())
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		common.SysLog("failed to update option map: " + err.Error())
+	}
+	InvalidatePricingCache()
+}
+
+const pricingOptionSyncChannel = "new-api:pricing-options:updated"
+
+func StartPricingOptionSync() {
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	pubsub := common.RDB.Subscribe(context.Background(), pricingOptionSyncChannel)
+	go func() {
+		defer func() {
+			if err := pubsub.Close(); err != nil {
+				common.SysLog("failed to close pricing option subscriber: " + err.Error())
+			}
+		}()
+		for range pubsub.Channel() {
+			loadOptionsFromDatabase()
+		}
+	}()
+}
+
+func notifyPricingOptionUpdate() {
+	InvalidatePricingCache()
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	if err := common.RDB.Publish(context.Background(), pricingOptionSyncChannel, "refresh").Err(); err != nil {
+		common.SysLog("failed to notify pricing option update: " + err.Error())
 	}
 }
 
@@ -223,49 +278,80 @@ func validateOptionValue(key string, value string) error {
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}
+	if isPricingSnapshotOptionKey(key) {
+		var ratios map[string]float64
+		if err := common.UnmarshalJsonStr(value, &ratios); err != nil {
+			return fmt.Errorf("%s must be a JSON number map: %w", key, err)
+		}
+		if ratios == nil {
+			return fmt.Errorf("%s must be a JSON number map", key)
+		}
+	}
 	return nil
+}
+
+func isPricingSnapshotOptionKey(key string) bool {
+	switch key {
+	case "ModelRatio", "CompletionRatio", "CacheRatio", "CreateCacheRatio", "ModelPrice", "GroupRatio":
+		return true
+	default:
+		return false
+	}
+}
+
+func invalidatesPublicPricingCache(key string) bool {
+	return isPricingSnapshotOptionKey(key) || strings.HasPrefix(key, "billing_setting.")
+}
+
+func containsPricingSnapshotOption(values map[string]string) bool {
+	for key := range values {
+		if isPricingSnapshotOptionKey(key) {
+			return true
+		}
+	}
+	return false
+}
+
+func persistAndPublishOption(key string, value string) error {
+	option := Option{Key: key}
+	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+		return err
+	}
+	option.Value = value
+	if err := DB.Save(&option).Error; err != nil {
+		return err
+	}
+	return updateOptionMap(key, value)
 }
 
 func UpdateOption(key string, value string) error {
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
-	// Save to database first
-	option := Option{
-		Key: key,
+	if isPricingSnapshotOptionKey(key) {
+		err := ratio_setting.WritePricingSnapshot(func() error {
+			return persistAndPublishOption(key, value)
+		})
+		if err == nil {
+			notifyPricingOptionUpdate()
+		}
+		return err
 	}
-	// https://gorm.io/docs/update.html#Save-All-Fields
-	DB.FirstOrCreate(&option, Option{Key: key})
-	option.Value = value
-	// Save is a combination function.
-	// If save value does not contain primary key, it will execute Create,
-	// otherwise it will execute Update (with all fields).
-	DB.Save(&option)
-	// Update OptionMap
-	return updateOptionMap(key, value)
+	err := persistAndPublishOption(key, value)
+	if err == nil && invalidatesPublicPricingCache(key) {
+		InvalidatePricingCache()
+	}
+	return err
 }
 
-// UpdateOptionsBulk persists multiple key/value pairs in a single database
-// transaction, then dispatches them through updateOptionMap in one pass. If
-// any DB write fails the whole transaction rolls back and no in-memory state
-// is touched — safe for callers that must commit a set of related options
-// atomically (e.g. payment gateway binding).
-func UpdateOptionsBulk(values map[string]string) error {
-	if len(values) == 0 {
-		return nil
-	}
-	for key, value := range values {
-		if err := validateOptionValue(key, value); err != nil {
-			return err
-		}
-	}
+func persistAndPublishOptionsBulk(values map[string]string) error {
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		for k, v := range values {
-			option := Option{Key: k}
-			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
+		for key, value := range values {
+			option := Option{Key: key}
+			if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
 				return err
 			}
-			option.Value = v
+			option.Value = value
 			if err := tx.Save(&option).Error; err != nil {
 				return err
 			}
@@ -275,12 +361,161 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err != nil {
 		return err
 	}
-	for k, v := range values {
-		if err := updateOptionMap(k, v); err != nil {
+	for key, value := range values {
+		if err := updateOptionMap(key, value); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// UpdateOptionsBulk persists and publishes a related set of options together.
+func UpdateOptionsBulk(values map[string]string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	for key, value := range values {
+		if err := validateOptionValue(key, value); err != nil {
+			return err
+		}
+	}
+	if containsPricingSnapshotOption(values) {
+		err := ratio_setting.WritePricingSnapshot(func() error {
+			return persistAndPublishOptionsBulk(values)
+		})
+		if err == nil {
+			notifyPricingOptionUpdate()
+		}
+		return err
+	}
+	err := persistAndPublishOptionsBulk(values)
+	if err == nil {
+		for key := range values {
+			if invalidatesPublicPricingCache(key) {
+				InvalidatePricingCache()
+				break
+			}
+		}
+	}
+	return err
+}
+
+var errOptionUpdateConflict = errors.New("option changed concurrently")
+
+func IsOptionUpdateConflict(err error) bool {
+	return errors.Is(err, errOptionUpdateConflict)
+}
+
+const maxOptionUpdateAttempts = 5
+
+// UpdateOptionsAtomically rebuilds JSON option values from the latest database
+// rows and retries compare-and-swap conflicts from another server instance.
+func UpdateOptionsAtomically(keys []string, build func(map[string]string) (map[string]string, error)) (map[string]string, error) {
+	var committed map[string]string
+	err := ratio_setting.WritePricingSnapshot(func() error {
+		var lastConflict error
+		for range maxOptionUpdateAttempts {
+			updates, err := updateOptionsAtomicallyOnce(keys, build)
+			if errors.Is(err, errOptionUpdateConflict) {
+				lastConflict = err
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			committed = updates
+			for _, key := range sortedOptionKeys(updates) {
+				if err := updateOptionMap(key, updates[key]); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		return fmt.Errorf("pricing options remained busy after %d attempts: %w", maxOptionUpdateAttempts, lastConflict)
+	})
+	if err == nil {
+		notifyPricingOptionUpdate()
+	}
+	return committed, err
+}
+
+func updateOptionsAtomicallyOnce(keys []string, build func(map[string]string) (map[string]string, error)) (map[string]string, error) {
+	var updates map[string]string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var options []Option
+		keyValues := make([]interface{}, len(keys))
+		for index, key := range keys {
+			keyValues[index] = key
+		}
+		query := lockForUpdate(tx)
+		if err := query.Where(clause.IN{
+			Column: clause.Column{Name: "key"},
+			Values: keyValues,
+		}).Find(&options).Error; err != nil {
+			return err
+		}
+		persisted := make(map[string]string, len(options))
+		current := make(map[string]string, len(keys))
+		for _, option := range options {
+			persisted[option.Key] = option.Value
+			current[option.Key] = option.Value
+		}
+		common.OptionMapRWMutex.RLock()
+		for _, key := range keys {
+			if _, exists := current[key]; !exists {
+				current[key] = common.OptionMap[key]
+			}
+		}
+		common.OptionMapRWMutex.RUnlock()
+
+		var err error
+		updates, err = build(current)
+		if err != nil {
+			return err
+		}
+		for _, key := range sortedOptionKeys(updates) {
+			value := updates[key]
+			if err := validateOptionValue(key, value); err != nil {
+				return err
+			}
+			oldValue, exists := persisted[key]
+			if exists && oldValue == value {
+				continue
+			}
+			if !exists {
+				result := tx.Clauses(clause.OnConflict{DoNothing: true}).
+					Create(&Option{Key: key, Value: value})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected != 1 {
+					return errOptionUpdateConflict
+				}
+				continue
+			}
+			result := tx.Model(&Option{}).
+				Where(&Option{Key: key}).
+				Where("value = ?", oldValue).
+				Update("value", value)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errOptionUpdateConflict
+			}
+		}
+		return nil
+	})
+	return updates, err
+}
+
+func sortedOptionKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func updateOptionMap(key string, value string) (err error) {
@@ -657,7 +892,6 @@ func handleConfigUpdate(key, value string) bool {
 	if configName == "performance_setting" {
 		performance_setting.UpdateAndSync()
 	} else if configName == "billing_setting" {
-		InvalidatePricingCache()
 		ratio_setting.InvalidateExposedDataCache()
 	} else if configName == "theme" {
 		system_setting.UpdateAndSyncTheme()

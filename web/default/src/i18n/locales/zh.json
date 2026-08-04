@@ -5498,6 +5498,27 @@
     "Upstream pricing endpoint not found": "上游未提供价格接口",
     "Upstream probe rate limited": "上游价格探测触发限流",
     "Upstream probe timed out": "上游价格探测超时",
-    "Upstream pricing probe failed": "上游价格探测失败"
+    "Upstream pricing probe failed": "上游价格探测失败",
+    "Sync selling price": "同步售价",
+    "Selling prices apply globally to this model across all channels.": "售价按模型全局生效，会影响该模型的所有渠道。",
+    "Apply selling price": "应用售价",
+    "Loading pricing options...": "正在加载定价设置...",
+    "Using detected upstream price": "使用探测到的上游价格",
+    "Using manually maintained purchase price": "使用手工维护的采购价",
+    "Target margin (%)": "目标毛利率（%）",
+    "Margin must be between 0 and 95": "毛利率需在 0 到 95 之间",
+    "Pricing group ratio must be greater than 0": "当前计价分组倍率必须大于 0",
+    "Pricing quota scale must be greater than 0": "计价额度换算值必须大于 0",
+    "Current selling price": "当前售价",
+    "New selling price (input / output)": "新售价（输入 / 输出）",
+    "Fixed price conflict": "固定价格冲突",
+    "This model currently uses fixed per-request pricing. Syncing removes the fixed price and switches it to ratio billing.": "该模型当前按请求固定价格计费；同步将移除固定价格并切换为倍率计费。",
+    "Selling price synced": "售价已同步",
+    "Failed to sync selling price": "同步售价失败",
+    "Pricing options could not be loaded": "定价设置加载失败",
+    "Shared fixed price rules cannot be synced per model": "共享固定价格规则不能按单个模型同步",
+    "Shared fixed price conflict": "共享固定价格冲突",
+    "This model inherits a fixed price shared by multiple models. Edit the shared pricing rule before switching billing modes.": "该模型继承多个模型共用的固定价格；切换计费方式前，请先编辑共享价格规则。",
+    "Synchronized selling price for model {{model}}": "已同步模型 {{model}} 的售价"
   }
 }

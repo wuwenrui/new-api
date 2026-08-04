@@ -41,8 +41,9 @@ type upstreamPricingModel struct {
 }
 
 type upstreamPricingSnapshot struct {
-	GroupRatios map[string]float64
-	Models      map[string]upstreamPricingModel
+	GroupRatios  map[string]float64
+	Models       map[string]upstreamPricingModel
+	QuotaPerUnit float64
 }
 
 type upstreamPricingItem struct {
@@ -55,10 +56,11 @@ type upstreamPricingItem struct {
 }
 
 type upstreamPricingResponse struct {
-	Success    bool                  `json:"success"`
-	Message    string                `json:"message"`
-	Data       []upstreamPricingItem `json:"data"`
-	GroupRatio map[string]float64    `json:"group_ratio"`
+	Success      bool                  `json:"success"`
+	Message      string                `json:"message"`
+	Data         []upstreamPricingItem `json:"data"`
+	GroupRatio   map[string]float64    `json:"group_ratio"`
+	QuotaPerUnit float64               `json:"quota_per_unit"`
 }
 
 type ChannelBusinessMetrics struct {
@@ -108,6 +110,8 @@ type ChannelPriceCompareChannel struct {
 	PriceSource        string                 `json:"price_source"`
 	PriceChanged       bool                   `json:"price_changed"`
 	DetectedAvailable  bool                   `json:"detected_available"`
+	UsesFixedPrice     bool                   `json:"uses_fixed_price"`
+	FixedPrice         float64                `json:"fixed_price"`
 	LocalInput         float64                `json:"local_input"`
 	LocalOutput        float64                `json:"local_output"`
 	LocalCacheRead     float64                `json:"local_cache_read"`
@@ -161,8 +165,8 @@ func BuildChannelPriceCompareReport(ctx context.Context, localGroup string) (Cha
 	candidateChannelIDs := make([]int, 0, len(abilities))
 	candidateChannelIDSet := make(map[int]struct{}, len(abilities))
 	for _, ability := range abilities {
-		_, useFixedPrice, exists := ratio_setting.GetModelRatioOrPrice(ability.Model)
-		if !exists || useFixedPrice {
+		_, _, exists := ratio_setting.GetModelRatioOrPrice(ability.Model)
+		if !exists {
 			continue
 		}
 		tokenAbilities = append(tokenAbilities, ability)
@@ -189,8 +193,6 @@ func BuildChannelPriceCompareReport(ctx context.Context, localGroup string) (Cha
 	activeAbilities := make([]model.Ability, 0, len(tokenAbilities))
 	channelIDs := make([]int, 0, len(channels))
 	channelIDSet := make(map[int]struct{}, len(channels))
-	maxPriority := make(map[string]int64)
-	topPriorityCount := make(map[string]int)
 	for _, ability := range tokenAbilities {
 		if channelByID[ability.ChannelId] == nil {
 			continue
@@ -199,17 +201,6 @@ func BuildChannelPriceCompareReport(ctx context.Context, localGroup string) (Cha
 		if _, ok := channelIDSet[ability.ChannelId]; !ok {
 			channelIDSet[ability.ChannelId] = struct{}{}
 			channelIDs = append(channelIDs, ability.ChannelId)
-		}
-		priority := int64(0)
-		if ability.Priority != nil {
-			priority = *ability.Priority
-		}
-		current, exists := maxPriority[ability.Model]
-		if !exists || priority > current {
-			maxPriority[ability.Model] = priority
-			topPriorityCount[ability.Model] = 1
-		} else if priority == current {
-			topPriorityCount[ability.Model]++
 		}
 	}
 	if len(activeAbilities) == 0 {
@@ -274,14 +265,6 @@ func BuildChannelPriceCompareReport(ctx context.Context, localGroup string) (Cha
 			row.Priority = *ability.Priority
 		}
 		row.Weight = ability.Weight
-		if row.Priority == maxPriority[ability.Model] {
-			row.RoutingRole = "primary"
-			if topPriorityCount[ability.Model] > 1 {
-				row.RoutingRole = "primary_pool"
-			}
-		} else {
-			row.RoutingRole = "backup"
-		}
 		key := channelPriceCompareUsageKey(channel.Id, ability.Model)
 		row.Today = buildChannelBusinessMetrics(todayUsage[key], row)
 		row.Total = buildChannelBusinessMetrics(totalUsage[key], row)
@@ -298,6 +281,26 @@ func BuildChannelPriceCompareReport(ctx context.Context, localGroup string) (Cha
 	}
 
 	for i := range rows {
+		maxPriority := rows[i].Channels[0].Priority
+		topPriorityCount := 0
+		for _, channel := range rows[i].Channels {
+			if channel.Priority > maxPriority {
+				maxPriority = channel.Priority
+				topPriorityCount = 1
+			} else if channel.Priority == maxPriority {
+				topPriorityCount++
+			}
+		}
+		for channelIndex := range rows[i].Channels {
+			channel := &rows[i].Channels[channelIndex]
+			if channel.Priority != maxPriority {
+				channel.RoutingRole = "backup"
+			} else if topPriorityCount > 1 {
+				channel.RoutingRole = "primary_pool"
+			} else {
+				channel.RoutingRole = "primary"
+			}
+		}
 		sort.SliceStable(rows[i].Channels, func(a, b int) bool {
 			if rows[i].Channels[a].Priority != rows[i].Channels[b].Priority {
 				return rows[i].Channels[a].Priority > rows[i].Channels[b].Priority
@@ -459,14 +462,15 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 		Recommendations: []string{},
 	}
 
-	if localModelRatio, ok, _ := ratio_setting.GetModelRatio(modelName); ok && localModelRatio > 0 {
-		localCompletion := ratio_setting.GetCompletionRatio(modelName)
-		localCacheRead, _ := ratio_setting.GetCacheRatio(modelName)
-		localCacheWrite, _ := ratio_setting.GetCreateCacheRatio(modelName)
-		row.LocalInput = pricePerMillion(localModelRatio, localGroupRatio)
-		row.LocalOutput = pricePerMillion(localModelRatio*localCompletion, localGroupRatio)
-		row.LocalCacheRead = pricePerMillion(localModelRatio*localCacheRead, localGroupRatio)
-		row.LocalCacheWrite = pricePerMillion(localModelRatio*localCacheWrite, localGroupRatio)
+	pricing := ratio_setting.GetModelPricingSnapshot(modelName)
+	if pricing.UsesFixedPrice {
+		row.UsesFixedPrice = true
+		row.FixedPrice = pricing.ModelPrice * localGroupRatio
+	} else if pricing.ModelRatioFound && pricing.ModelRatio > 0 {
+		row.LocalInput = localPricePerMillion(pricing.ModelRatio, localGroupRatio)
+		row.LocalOutput = localPricePerMillion(pricing.ModelRatio*pricing.CompletionRatio, localGroupRatio)
+		row.LocalCacheRead = localPricePerMillion(pricing.ModelRatio*pricing.CacheRatio, localGroupRatio)
+		row.LocalCacheWrite = localPricePerMillion(pricing.ModelRatio*pricing.CreateCacheRatio, localGroupRatio)
 	}
 
 	groupRatio, groupRatioFound := snapshot.GroupRatios[upstreamGroup]
@@ -475,10 +479,11 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 		groupRatioFound &&
 		validUpstreamRatioValue(groupRatio) {
 		if upstreamModel, ok := snapshot.Models[upstreamModelName]; ok {
-			row.DetectedInput = pricePerMillion(upstreamModel.ModelRatio, groupRatio)
-			row.DetectedOutput = pricePerMillion(upstreamModel.ModelRatio*upstreamModel.CompletionRatio, groupRatio)
-			row.DetectedCacheRead = pricePerMillion(upstreamModel.ModelRatio*upstreamModel.CacheRatio, groupRatio)
-			row.DetectedCacheWrite = pricePerMillion(upstreamModel.ModelRatio*upstreamModel.CreateCacheRatio, groupRatio)
+			upstreamQuotaPerUnit := normalizeUpstreamQuotaPerUnit(snapshot.QuotaPerUnit)
+			row.DetectedInput = pricePerMillionForQuota(upstreamModel.ModelRatio, groupRatio, upstreamQuotaPerUnit)
+			row.DetectedOutput = pricePerMillionForQuota(upstreamModel.ModelRatio*upstreamModel.CompletionRatio, groupRatio, upstreamQuotaPerUnit)
+			row.DetectedCacheRead = pricePerMillionForQuota(upstreamModel.ModelRatio*upstreamModel.CacheRatio, groupRatio, upstreamQuotaPerUnit)
+			row.DetectedCacheWrite = pricePerMillionForQuota(upstreamModel.ModelRatio*upstreamModel.CreateCacheRatio, groupRatio, upstreamQuotaPerUnit)
 			detected = true
 			row.DetectedAvailable = true
 		}
@@ -523,8 +528,10 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 		return row
 	}
 
-	row.MarginInput = grossMargin(row.LocalInput, row.UpstreamInput)
-	row.MarginOutput = grossMargin(row.LocalOutput, row.UpstreamOutput)
+	if !row.UsesFixedPrice {
+		row.MarginInput = grossMargin(row.LocalInput, row.UpstreamInput)
+		row.MarginOutput = grossMargin(row.LocalOutput, row.UpstreamOutput)
+	}
 	return row
 }
 
@@ -842,24 +849,37 @@ func channelRecommendations(row ChannelPriceCompareChannel) []string {
 	lowerMargin := math.Inf(1)
 	hasComparableMargin := false
 	negativeUnitEconomics := false
-	for _, prices := range [][2]float64{
-		{row.LocalInput, row.UpstreamInput},
-		{row.LocalOutput, row.UpstreamOutput},
-		{row.LocalCacheRead, row.UpstreamCacheRead},
-		{row.LocalCacheWrite, row.UpstreamCacheWrite},
-	} {
-		if prices[0] > 0 {
-			hasComparableMargin = true
-			lowerMargin = math.Min(lowerMargin, grossMargin(prices[0], prices[1]))
-		} else if prices[1] > 0 {
-			negativeUnitEconomics = true
+	if !row.UsesFixedPrice {
+		for _, prices := range [][2]float64{
+			{row.LocalInput, row.UpstreamInput},
+			{row.LocalOutput, row.UpstreamOutput},
+			{row.LocalCacheRead, row.UpstreamCacheRead},
+			{row.LocalCacheWrite, row.UpstreamCacheWrite},
+		} {
+			if prices[0] > 0 {
+				hasComparableMargin = true
+				lowerMargin = math.Min(lowerMargin, grossMargin(prices[0], prices[1]))
+			} else if prices[1] > 0 {
+				negativeUnitEconomics = true
+			}
 		}
 	}
 	actualLoss := (row.Today.CostAvailable && row.Today.Requests > 0 && row.Today.Profit < 0) ||
 		(row.Total.CostAvailable && row.Total.Requests > 0 && row.Total.Profit < 0)
+	actualLowMargin := false
+	if row.UsesFixedPrice {
+		for _, metrics := range []ChannelBusinessMetrics{row.Today, row.Total} {
+			if metrics.CostAvailable && metrics.Requests > 0 && metrics.Revenue > 0 &&
+				metrics.Margin < defaultPACPriceMonitorTargetMargin {
+				actualLowMargin = true
+				break
+			}
+		}
+	}
 	if row.PriceSource != "missing" && (actualLoss || negativeUnitEconomics || lowerMargin < 0) {
 		recommendations = append(recommendations, "negative_margin")
-	} else if row.PriceSource != "missing" && hasComparableMargin && lowerMargin < defaultPACPriceMonitorTargetMargin {
+	} else if row.PriceSource != "missing" &&
+		(actualLowMargin || hasComparableMargin && lowerMargin < defaultPACPriceMonitorTargetMargin) {
 		recommendations = append(recommendations, "low_margin")
 	}
 	attempts := row.Quality24h.Successes + row.Quality24h.Errors
@@ -1011,8 +1031,9 @@ func probeUpstreamPricingOnce(ctx context.Context, cfg UpstreamProbeConfig) (ups
 		return upstreamPricingSnapshot{}, fmt.Errorf("上游拒绝请求: %s", payload.Message)
 	}
 	snapshot := upstreamPricingSnapshot{
-		GroupRatios: payload.GroupRatio,
-		Models:      make(map[string]upstreamPricingModel, len(payload.Data)),
+		GroupRatios:  payload.GroupRatio,
+		Models:       make(map[string]upstreamPricingModel, len(payload.Data)),
+		QuotaPerUnit: normalizeUpstreamQuotaPerUnit(payload.QuotaPerUnit),
 	}
 	for _, item := range payload.Data {
 		name := strings.TrimSpace(item.ModelName)

@@ -5460,6 +5460,27 @@
     "Upstream pricing endpoint not found": "Upstream pricing endpoint not found",
     "Upstream probe rate limited": "Upstream probe rate limited",
     "Upstream probe timed out": "Upstream probe timed out",
-    "Upstream pricing probe failed": "Upstream pricing probe failed"
+    "Upstream pricing probe failed": "Upstream pricing probe failed",
+    "Sync selling price": "Sync selling price",
+    "Selling prices apply globally to this model across all channels.": "Selling prices apply globally to this model across all channels.",
+    "Apply selling price": "Apply selling price",
+    "Loading pricing options...": "Loading pricing options...",
+    "Using detected upstream price": "Using detected upstream price",
+    "Using manually maintained purchase price": "Using manually maintained purchase price",
+    "Target margin (%)": "Target margin (%)",
+    "Margin must be between 0 and 95": "Margin must be between 0 and 95",
+    "Pricing group ratio must be greater than 0": "Pricing group ratio must be greater than 0",
+    "Pricing quota scale must be greater than 0": "Pricing quota scale must be greater than 0",
+    "Current selling price": "Current selling price",
+    "New selling price (input / output)": "New selling price (input / output)",
+    "Fixed price conflict": "Fixed price conflict",
+    "This model currently uses fixed per-request pricing. Syncing removes the fixed price and switches it to ratio billing.": "This model currently uses fixed per-request pricing. Syncing removes the fixed price and switches it to ratio billing.",
+    "Selling price synced": "Selling price synced",
+    "Failed to sync selling price": "Failed to sync selling price",
+    "Pricing options could not be loaded": "Pricing options could not be loaded",
+    "Shared fixed price rules cannot be synced per model": "Shared fixed price rules cannot be synced per model",
+    "Shared fixed price conflict": "Shared fixed price conflict",
+    "This model inherits a fixed price shared by multiple models. Edit the shared pricing rule before switching billing modes.": "This model inherits a fixed price shared by multiple models. Edit the shared pricing rule before switching billing modes.",
+    "Synchronized selling price for model {{model}}": "Synchronized selling price for model {{model}}"
   }
 }

@@ -22,6 +22,7 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  PricingOptionsUpdateRequest,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskResponse,
@@ -36,8 +37,25 @@ export async function getSystemOptions() {
   return res.data
 }
 
+export async function getSystemOptionsForModel(modelName: string) {
+  const res = await api.get<SystemOptionsResponse>('/api/option/', {
+    params: { model: modelName },
+  })
+  return res.data
+}
+
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function updatePricingOptions(
+  request: PricingOptionsUpdateRequest
+) {
+  const res = await api.put<UpdateOptionResponse>(
+    '/api/option/pricing',
+    request
+  )
   return res.data
 }
 

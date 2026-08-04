@@ -54,6 +54,8 @@ export interface PriceCompareChannel {
   price_source: 'manual' | 'detected' | 'missing'
   price_changed: boolean
   detected_available: boolean
+  uses_fixed_price: boolean
+  fixed_price: number
   local_input: number
   local_output: number
   local_cache_read: number

@@ -391,12 +391,18 @@ func GetModelOriginalPriceCopy() map[string]ModelOriginalPrice {
 	return modelOriginalPriceMap.ReadAll()
 }
 
-// GetModelPrice 返回模型的价格，如果模型不存在则返回-1，false
+// GetModelPrice 返回模型的价格，如果模型不存在则返回-1，false。
 func GetModelPrice(name string, printErr bool) (float64, bool) {
+	price, ok, _ := GetModelPriceInfo(name, printErr)
+	return price, ok
+}
+
+// GetModelPriceInfo 同时返回实际命中的固定价格配置键。
+func GetModelPriceInfo(name string, printErr bool) (float64, bool, string) {
 	name = FormatMatchingModelName(name)
 
 	if price, ok := modelPriceMap.Get(name); ok {
-		return price, true
+		return price, true, name
 	}
 
 	if strings.HasSuffix(name, CompactModelSuffix) {
@@ -405,15 +411,15 @@ func GetModelPrice(name string, printErr bool) (float64, bool) {
 			if printErr {
 				common.SysError("model price not found: " + name)
 			}
-			return -1, false
+			return -1, false, ""
 		}
-		return price, true
+		return price, true, CompactWildcardModelKey
 	}
 
 	if printErr {
 		common.SysError("model price not found: " + name)
 	}
-	return -1, false
+	return -1, false, ""
 }
 
 func UpdateModelRatioByJSONString(jsonStr string) error {

@@ -256,7 +256,7 @@ export function decodeBillingExprB64(exprB64: string | undefined): string {
 
     return decodeURIComponent(
       Array.prototype.map
-        .call(bytes, (byte: number) => '%' + byte.toString(16).padStart(2, '0'))
+        .call(bytes, (byte: number) => `%${byte.toString(16).padStart(2, '0')}`)
         .join('')
     )
   } catch {
@@ -388,6 +388,7 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.oauth_unbind': 'Removed an OAuth binding for the user',
   // System settings
   'option.update': 'Updated system setting {{key}}',
+  'option.pricing.update': 'Synchronized selling price for model {{model}}',
   'option.payment_compliance': 'Confirmed payment compliance',
   'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',

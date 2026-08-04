@@ -34,6 +34,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getChannelPriceCompare } from './api'
 import { ChannelSummaryTable } from './components/channel-summary-table'
@@ -86,6 +88,8 @@ function MetricCard(props: {
 
 export function ChannelPriceCompare() {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
+  const canSyncPrice = user?.role === ROLE.SUPER_ADMIN
   const [group, setGroup] = useState('default')
   const [groupInput, setGroupInput] = useState('default')
   const [modelFilter, setModelFilter] = useState('')
@@ -366,7 +370,12 @@ export function ChannelPriceCompare() {
               </div>
             ) : (
               models.map((model) => (
-                <PriceCompareTable key={model.model_name} model={model} />
+                <PriceCompareTable
+                  key={model.model_name}
+                  model={model}
+                  group={group}
+                  canSyncPrice={canSyncPrice}
+                />
               ))
             )}
           </div>

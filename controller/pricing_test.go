@@ -13,8 +13,9 @@ import (
 )
 
 type pricingResponse struct {
-	Success bool            `json:"success"`
-	Data    []model.Pricing `json:"data"`
+	Success      bool            `json:"success"`
+	Data         []model.Pricing `json:"data"`
+	QuotaPerUnit float64         `json:"quota_per_unit"`
 }
 
 func decodePricingResponse(t *testing.T, recorder *httptest.ResponseRecorder) pricingResponse {
@@ -82,6 +83,7 @@ func TestGetPricingHidesChannelsFromNonAdmin(t *testing.T) {
 
 	payload := callPricing(t, 2101, common.RoleCommonUser)
 
+	require.Equal(t, common.QuotaPerUnit, payload.QuotaPerUnit)
 	byName := pricingByModelName(payload.Data)
 	pricing, ok := byName["zz-channel-filter-model"]
 	require.True(t, ok)

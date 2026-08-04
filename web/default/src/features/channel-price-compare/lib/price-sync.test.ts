@@ -1,0 +1,262 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+
+import type { PriceCompareChannel } from '../types'
+import {
+  buildSyncRequest,
+  computeSyncRatios,
+  parseCompletionRatioMeta,
+  parseTargetMargin,
+  parseNumberRecord,
+  resolveSyncBasis,
+  type UpstreamCostBasis,
+} from './price-sync'
+
+const basis = (overrides: Partial<UpstreamCostBasis>): UpstreamCostBasis => ({
+  input: 2,
+  output: 8,
+  cacheRead: 0.2,
+  cacheWrite: 2,
+  source: 'detected',
+  ...overrides,
+})
+
+const channel = (
+  overrides: Partial<PriceCompareChannel>
+): PriceCompareChannel => ({
+  channel_id: 1,
+  channel_name: 'c',
+  upstream_group: 'default',
+  upstream_model: 'm',
+  priority: 0,
+  weight: 1,
+  routing_role: 'primary',
+  status: 'ok',
+  status_reason: '',
+  price_source: 'detected',
+  price_changed: false,
+  detected_available: true,
+  uses_fixed_price: false,
+  fixed_price: 0,
+  local_input: 0,
+  local_output: 0,
+  local_cache_read: 0,
+  local_cache_write: 0,
+  upstream_input: 3,
+  upstream_output: 9,
+  upstream_cache_read: 0.3,
+  upstream_cache_write: 3,
+  detected_input: 2,
+  detected_output: 8,
+  detected_cache_read: 0.2,
+  detected_cache_write: 2,
+  margin_input: 0,
+  margin_output: 0,
+  today: {
+    requests: 0,
+    revenue: 0,
+    upstream_cost: 0,
+    profit: 0,
+    margin: 0,
+    cost_available: false,
+  },
+  total: {
+    requests: 0,
+    revenue: 0,
+    upstream_cost: 0,
+    profit: 0,
+    margin: 0,
+    cost_available: false,
+  },
+  quality_24h: {
+    successes: 0,
+    errors: 0,
+    success_rate: 0,
+    average_use_time: 0,
+    last_error_at: 0,
+    last_error_code: '',
+  },
+  recommendations: [],
+  ...overrides,
+})
+
+describe('resolveSyncBasis', () => {
+  test('prefers detected prices when available', () => {
+    const result = resolveSyncBasis(channel({}))
+    assert.equal(result?.source, 'detected')
+    assert.equal(result?.input, 2)
+    assert.equal(result?.output, 8)
+  })
+
+  test('falls back to manual purchase price without detection', () => {
+    const result = resolveSyncBasis(
+      channel({ detected_available: false, price_source: 'manual' })
+    )
+    assert.equal(result?.source, 'manual')
+    assert.equal(result?.input, 3)
+  })
+
+  test('returns null when price is not maintained', () => {
+    assert.equal(resolveSyncBasis(channel({ status: 'unknown' })), null)
+  })
+})
+
+describe('computeSyncRatios', () => {
+  test('derives ratios from cost, margin and group ratio', () => {
+    // cost in 2 / out 8, margin 50% -> sell 4 / 16; group 1 -> modelRatio 2
+    const plan = computeSyncRatios(basis({}), 50, 1)
+    assert.ok(plan)
+    assert.equal(plan.modelRatio, 2)
+    assert.equal(plan.completionRatio, 4)
+    assert.equal(plan.cacheRatio, 0.1)
+    assert.equal(plan.createCacheRatio, 1)
+    assert.equal(plan.sellInput, 4)
+    assert.equal(plan.sellOutput, 16)
+  })
+
+  test('divides the group ratio out of the model ratio', () => {
+    const plan = computeSyncRatios(basis({}), 50, 2)
+    assert.ok(plan)
+    assert.equal(plan.modelRatio, 1)
+    // relative ratios do not depend on margin or group ratio
+    assert.equal(plan.completionRatio, 4)
+  })
+
+  test('uses the configured quota scale when deriving the model ratio', () => {
+    const plan = computeSyncRatios(basis({}), 50, 1, undefined, 1_000_000)
+    assert.ok(plan)
+    assert.equal(plan.modelRatio, 4)
+    assert.equal(plan.sellInput, 4)
+  })
+
+  test('zero margin prices at cost', () => {
+    const plan = computeSyncRatios(basis({}), 0, 1)
+    assert.ok(plan)
+    assert.equal(plan.modelRatio, 1)
+    assert.equal(plan.sellInput, 2)
+  })
+
+  test('treats an empty target margin as invalid instead of zero', () => {
+    assert.equal(parseTargetMargin(''), null)
+    assert.equal(parseTargetMargin('   '), null)
+    assert.equal(parseTargetMargin('0'), 0)
+  })
+
+  test('writes zero ratios when the upstream does not charge', () => {
+    const plan = computeSyncRatios(
+      basis({ output: 0, cacheRead: 0, cacheWrite: 0 }),
+      50,
+      1
+    )
+    assert.ok(plan)
+    assert.equal(plan.completionRatio, 0)
+    assert.equal(plan.cacheRatio, 0)
+    assert.equal(plan.createCacheRatio, 0)
+  })
+
+  test('rejects invalid margin and non-positive cost', () => {
+    assert.equal(computeSyncRatios(basis({}), -1, 1), null)
+    assert.equal(computeSyncRatios(basis({}), 95, 1), null)
+    assert.equal(computeSyncRatios(basis({}), Number.NaN, 1), null)
+    assert.equal(computeSyncRatios(basis({ input: 0 }), 50, 1), null)
+  })
+
+  test('rejects a non-positive or invalid group ratio', () => {
+    assert.equal(computeSyncRatios(basis({}), 50, 0), null)
+    assert.equal(computeSyncRatios(basis({}), 50, -1), null)
+    assert.equal(computeSyncRatios(basis({}), 50, Number.NaN), null)
+  })
+
+  test('rejects a non-positive or invalid quota scale', () => {
+    assert.equal(computeSyncRatios(basis({}), 50, 1, undefined, 0), null)
+    assert.equal(computeSyncRatios(basis({}), 50, 1, undefined, -1), null)
+    assert.equal(
+      computeSyncRatios(basis({}), 50, 1, undefined, Number.NaN),
+      null
+    )
+  })
+
+  test('rejects calculations that overflow finite pricing ratios', () => {
+    assert.equal(
+      computeSyncRatios(basis({ input: Number.MAX_VALUE }), 94, 1e-300),
+      null
+    )
+  })
+
+  test('honors a locked completion ratio without dropping below target margin', () => {
+    const plan = computeSyncRatios(basis({ output: 12 }), 50, 1, 4)
+    assert.ok(plan)
+    assert.equal(plan.completionRatioLocked, true)
+    assert.equal(plan.modelRatio, 3)
+    assert.equal(plan.completionRatio, 4)
+    assert.equal(plan.sellInput, 6)
+    assert.equal(plan.sellOutput, 24)
+    assert.equal(plan.cacheRatio, 0.066667)
+    assert.equal(plan.createCacheRatio, 0.666667)
+  })
+})
+
+describe('buildSyncRequest', () => {
+  test('builds a model-level pricing update', () => {
+    const plan = computeSyncRatios(basis({}), 50, 1)
+    assert.ok(plan)
+    assert.deepEqual(buildSyncRequest('m', plan), {
+      model_name: 'm',
+      model_ratio: 2,
+      completion_ratio: 4,
+      cache_ratio: 0.1,
+      create_cache_ratio: 1,
+    })
+  })
+
+  test('omits an ignored completion ratio when it is locked', () => {
+    const plan = computeSyncRatios(basis({ output: 12 }), 50, 1, 4)
+    assert.ok(plan)
+    assert.deepEqual(buildSyncRequest('m', plan), {
+      model_name: 'm',
+      model_ratio: 3,
+      cache_ratio: 0.066667,
+      create_cache_ratio: 0.666667,
+    })
+  })
+})
+
+describe('parseCompletionRatioMeta', () => {
+  test('keeps only valid completion ratio constraints', () => {
+    assert.deepEqual(
+      parseCompletionRatioMeta(
+        '{"m":{"ratio":4,"locked":true},"bad":{"ratio":"x","locked":true}}'
+      ),
+      { m: { ratio: 4, locked: true } }
+    )
+    assert.deepEqual(parseCompletionRatioMeta(undefined), {})
+    assert.deepEqual(parseCompletionRatioMeta('[1,2]'), {})
+  })
+})
+
+describe('parseNumberRecord', () => {
+  test('parses JSON maps and tolerates invalid input', () => {
+    assert.deepEqual(parseNumberRecord('{"a":1}'), { a: 1 })
+    assert.deepEqual(parseNumberRecord(undefined), {})
+    assert.deepEqual(parseNumberRecord('not json'), {})
+    assert.deepEqual(parseNumberRecord('[1,2]'), {})
+  })
+})

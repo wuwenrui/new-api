@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, FileSearch, Settings2 } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  ChevronDown,
+  ChevronRight,
+  FileSearch,
+  Settings2,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -40,6 +46,7 @@ import {
 
 import { formatPercent, formatUsd } from '../lib/formatters'
 import type { PriceCompareChannel, PriceCompareModel } from '../types'
+import { PriceSyncDialog } from './price-sync-dialog'
 
 const RECOMMENDATION_KEYS: Record<string, string> = {
   missing_price: 'Add purchase price',
@@ -139,6 +146,8 @@ function PriceCell(props: { channel: PriceCompareChannel }) {
 function ChannelRow(props: {
   channel: PriceCompareChannel
   modelName: string
+  onSyncPrice: (channel: PriceCompareChannel) => void
+  canSyncPrice: boolean
 }) {
   const { t } = useTranslation()
   const attempts =
@@ -178,20 +187,31 @@ function ChannelRow(props: {
         <PriceCell channel={props.channel} />
       </TableCell>
       <TableCell className='text-right tabular-nums'>
-        <div>
-          {formatUsd(props.channel.local_input)} /{' '}
-          {formatUsd(props.channel.local_output)}
-        </div>
-        <div className='text-muted-foreground text-xs'>
-          {formatPercent(
-            props.channel.price_source === 'missing'
-              ? undefined
-              : Math.min(
-                  props.channel.margin_input,
-                  props.channel.margin_output
-                )
-          )}
-        </div>
+        {props.channel.uses_fixed_price ? (
+          <>
+            <div>{formatUsd(props.channel.fixed_price)}</div>
+            <div className='text-muted-foreground text-xs'>
+              {t('Fixed price')} · {t('per request')}
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              {formatUsd(props.channel.local_input)} /{' '}
+              {formatUsd(props.channel.local_output)}
+            </div>
+            <div className='text-muted-foreground text-xs'>
+              {formatPercent(
+                props.channel.price_source === 'missing'
+                  ? undefined
+                  : Math.min(
+                      props.channel.margin_input,
+                      props.channel.margin_output
+                    )
+              )}
+            </div>
+          </>
+        )}
       </TableCell>
       <TableCell className='text-right tabular-nums'>
         <div>{formatUsd(props.channel.today.revenue)}</div>
@@ -302,6 +322,17 @@ function ChannelRow(props: {
       </TableCell>
       <TableCell>
         <div className='flex gap-1'>
+          {props.canSyncPrice ? (
+            <Button
+              size='icon-sm'
+              variant='outline'
+              aria-label={t('Sync selling price')}
+              disabled={props.channel.status !== 'ok'}
+              onClick={() => props.onSyncPrice(props.channel)}
+            >
+              <ArrowLeftRight aria-hidden='true' />
+            </Button>
+          ) : null}
           <Button
             size='icon-sm'
             variant='outline'
@@ -338,9 +369,14 @@ function ChannelRow(props: {
   )
 }
 
-export function PriceCompareTable(props: { model: PriceCompareModel }) {
+export function PriceCompareTable(props: {
+  model: PriceCompareModel
+  group: string
+  canSyncPrice: boolean
+}) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(true)
+  const [syncTarget, setSyncTarget] = useState<PriceCompareChannel | null>(null)
 
   return (
     <Card>
@@ -402,12 +438,25 @@ export function PriceCompareTable(props: { model: PriceCompareModel }) {
                     key={channel.channel_id}
                     channel={channel}
                     modelName={props.model.model_name}
+                    canSyncPrice={props.canSyncPrice}
+                    onSyncPrice={setSyncTarget}
                   />
                 ))}
               </TableBody>
             </Table>
           </div>
         </CardContent>
+      ) : null}
+      {props.canSyncPrice ? (
+        <PriceSyncDialog
+          open={syncTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setSyncTarget(null)
+          }}
+          modelName={props.model.model_name}
+          channel={syncTarget}
+          group={props.group}
+        />
       ) : null}
     </Card>
   )

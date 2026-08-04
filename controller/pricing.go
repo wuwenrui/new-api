@@ -86,6 +86,7 @@ func GetPricing(c *gin.Context) {
 		"usable_group":       usableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroup(group),
+		"quota_per_unit":     common.QuotaPerUnit,
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
 }
@@ -93,14 +94,6 @@ func GetPricing(c *gin.Context) {
 func ResetModelRatio(c *gin.Context) {
 	defaultStr := ratio_setting.DefaultModelRatio2JSONString()
 	err := model.UpdateOption("ModelRatio", defaultStr)
-	if err != nil {
-		c.JSON(200, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
-	err = ratio_setting.UpdateModelRatioByJSONString(defaultStr)
 	if err != nil {
 		c.JSON(200, gin.H{
 			"success": false,

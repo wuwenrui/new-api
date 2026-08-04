@@ -81,7 +81,7 @@ func GetPricing() []Pricing {
 		if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 {
 			modelSupportEndpointsLock.Lock()
 			defer modelSupportEndpointsLock.Unlock()
-			updatePricing()
+			ratio_setting.ReadPricingSnapshot(updatePricing)
 		}
 	}
 	return pricingMap

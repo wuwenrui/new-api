@@ -34,6 +34,14 @@ export type UpdateOptionRequest = {
   value: string | boolean | number
 }
 
+export type PricingOptionsUpdateRequest = {
+  model_name: string
+  model_ratio: number
+  completion_ratio?: number
+  cache_ratio: number
+  create_cache_ratio: number
+}
+
 export type UpdateOptionResponse = {
   success: boolean
   message: string

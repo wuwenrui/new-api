@@ -41,6 +41,8 @@ func GetExposedData() gin.H {
 	if c, ok := exposedData.Load().(*exposedCache); ok && c != nil && time.Now().Before(c.expiresAt) {
 		return cloneGinH(c.data)
 	}
+	pricingSnapshotMutex.RLock()
+	defer pricingSnapshotMutex.RUnlock()
 	newData := gin.H{
 		"model_ratio":          GetModelRatioCopy(),
 		"completion_ratio":     GetCompletionRatioCopy(),

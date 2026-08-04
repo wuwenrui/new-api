@@ -72,6 +72,63 @@ func TestBuildChannelPriceCompareRowOK(t *testing.T) {
 	assert.InDelta(t, 88.0, row.MarginOutput, 1e-9)
 }
 
+func TestBuildChannelPriceCompareRowUsesConfiguredQuotaScale(t *testing.T) {
+	setupPriceCompareRatios(t)
+	originalQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 1_000_000
+	t.Cleanup(func() {
+		common.QuotaPerUnit = originalQuotaPerUnit
+	})
+
+	row := buildChannelPriceCompareRow(
+		newPriceCompareChannel(),
+		"grp",
+		"test-model",
+		snapshotWithTestModel(),
+		1,
+	)
+
+	assert.InDelta(t, 5.0, row.LocalInput, 1e-9)
+	assert.InDelta(t, 3.0, row.DetectedInput, 1e-9)
+}
+
+func TestBuildChannelPriceCompareRowUsesReportedUpstreamQuotaScale(t *testing.T) {
+	setupPriceCompareRatios(t)
+	snapshot := snapshotWithTestModel()
+	snapshot.QuotaPerUnit = 1_000_000
+
+	row := buildChannelPriceCompareRow(
+		newPriceCompareChannel(),
+		"grp",
+		"test-model",
+		snapshot,
+		1,
+	)
+
+	assert.InDelta(t, 1.5, row.DetectedInput, 1e-9)
+}
+
+func TestBuildChannelPriceCompareRowUsesGroupRatioForFixedPrice(t *testing.T) {
+	originalModelPrices := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalModelPrices))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"fixed-model":0.1}`))
+	snapshot := upstreamPricingSnapshot{
+		GroupRatios: map[string]float64{"grp": 1},
+		Models: map[string]upstreamPricingModel{
+			"fixed-model": {ModelRatio: 1, CompletionRatio: 2, CacheRatio: 0.1, CreateCacheRatio: 1},
+		},
+	}
+
+	row := buildChannelPriceCompareRow(newPriceCompareChannel(), "grp", "fixed-model", snapshot, 2.5)
+
+	assert.True(t, row.UsesFixedPrice)
+	assert.InDelta(t, 0.25, row.FixedPrice, 1e-9)
+	assert.NotContains(t, channelRecommendations(row), "negative_margin")
+	assert.NotContains(t, channelRecommendations(row), "low_margin")
+}
+
 func TestBuildChannelPriceCompareRowShowsMatchingDetectedManualPrice(t *testing.T) {
 	setupPriceCompareRatios(t)
 	channel := newPriceCompareChannel()
@@ -170,7 +227,7 @@ func TestProbeUpstreamPricingRetriesOnFailure(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"group_ratio":{"g":0.3},"data":[{"model_name":"m","quota_type":0,"model_ratio":5,"completion_ratio":5,"cache_ratio":0.1,"create_cache_ratio":1.25},{"model_name":"fixed","quota_type":1,"model_price":0.1}]}`))
+		_, _ = w.Write([]byte(`{"success":true,"quota_per_unit":1000000,"group_ratio":{"g":0.3},"data":[{"model_name":"m","quota_type":0,"model_ratio":5,"completion_ratio":5,"cache_ratio":0.1,"create_cache_ratio":1.25},{"model_name":"fixed","quota_type":1,"model_price":0.1}]}`))
 	}))
 	defer srv.Close()
 
@@ -180,6 +237,7 @@ func TestProbeUpstreamPricingRetriesOnFailure(t *testing.T) {
 	assert.Contains(t, snapshot.Models, "m")
 	assert.NotContains(t, snapshot.Models, "fixed")
 	assert.InDelta(t, 0.3, snapshot.GroupRatios["g"], 1e-9)
+	assert.InDelta(t, 1_000_000, snapshot.QuotaPerUnit, 1e-9)
 }
 
 func TestProbeUpstreamPricingSkipsIncompleteTokenPrices(t *testing.T) {
@@ -323,10 +381,18 @@ func TestBuildChannelPriceCompareReportShowsRoutingAndBusinessMetrics(t *testing
 
 	report, err := BuildChannelPriceCompareReport(context.Background(), "default")
 	require.NoError(t, err)
-	require.Len(t, report.Models, 1)
-	require.Len(t, report.Models[0].Channels, 2)
+	require.Len(t, report.Models, 2)
+	modelRows := make(map[string]ChannelPriceCompareModelRow, len(report.Models))
+	for _, row := range report.Models {
+		modelRows[row.ModelName] = row
+	}
+	require.Len(t, modelRows["test-model"].Channels, 2)
+	require.Len(t, modelRows["fixed-model"].Channels, 1)
+	fixedRow := modelRows["fixed-model"].Channels[0]
+	assert.True(t, fixedRow.UsesFixedPrice)
+	assert.InDelta(t, 0.1, fixedRow.FixedPrice, 1e-9)
 
-	primaryRow := report.Models[0].Channels[0]
+	primaryRow := modelRows["test-model"].Channels[0]
 	assert.Equal(t, "primary", primaryRow.RoutingRole)
 	assert.Equal(t, "manual", primaryRow.PriceSource)
 	assert.InDelta(t, 1.0, primaryRow.Today.Revenue, 1e-9)
@@ -335,7 +401,7 @@ func TestBuildChannelPriceCompareReportShowsRoutingAndBusinessMetrics(t *testing
 	assert.EqualValues(t, 1, primaryRow.Today.Requests)
 	assert.EqualValues(t, 2, primaryRow.Total.Requests)
 
-	backupRow := report.Models[0].Channels[1]
+	backupRow := modelRows["test-model"].Channels[1]
 	assert.Equal(t, "backup", backupRow.RoutingRole)
 	assert.EqualValues(t, 20, backupRow.Quality24h.Errors)
 	assert.Equal(t, "Upstream request timed out", backupRow.Quality24h.LastErrorCode)
@@ -404,6 +470,24 @@ func TestChannelRecommendationsIncludesCacheLoss(t *testing.T) {
 	}
 
 	assert.Contains(t, channelRecommendations(row), "negative_margin")
+}
+
+func TestChannelRecommendationsIncludesRealizedLowMarginForFixedPrice(t *testing.T) {
+	row := ChannelPriceCompareChannel{
+		PriceSource:    "manual",
+		UsesFixedPrice: true,
+		Today: ChannelBusinessMetrics{
+			Requests:      5,
+			Revenue:       10,
+			UpstreamCost:  8,
+			Profit:        2,
+			Margin:        20,
+			CostAvailable: true,
+		},
+	}
+
+	assert.Contains(t, channelRecommendations(row), "low_margin")
+	assert.NotContains(t, channelRecommendations(row), "negative_margin")
 }
 
 func TestLoadChannelQualityFiltersExactPairs(t *testing.T) {
