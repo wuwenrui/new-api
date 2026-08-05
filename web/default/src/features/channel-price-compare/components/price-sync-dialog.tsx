@@ -34,13 +34,15 @@ import {
   updatePricingOptions,
 } from '@/features/system-settings/api'
 
-import { formatUsd } from '../lib/formatters'
+import { formatPercent, formatUsd } from '../lib/formatters'
 import {
   buildOfficialSyncRequest,
   buildSyncRequest,
   computeOfficialSyncPlan,
   computeSyncRatios,
   defaultTargetMarkupPercent,
+  grossMarginPercent,
+  grossProfitUsd,
   officialTokenPrices,
   parseCompletionRatioMeta,
   parseTargetMarkup,
@@ -211,6 +213,44 @@ export function PriceSyncDialog(props: {
         )
       : null
   const previewPlan = officialPlan ?? ratioPlan
+  // Effective upstream cost the preview compares against: the official base
+  // tier for official pricing, the resolved upstream basis otherwise. Any
+  // existing preview plan guarantees a finite cost on its own path.
+  const comparisonCost = usesOfficialPricing ? officialCost : basis
+  // Current profit/margin are omitted for fixed per-request pricing because
+  // the units are incomparable with per-1M-token costs.
+  const currentProfitInput =
+    props.channel && !props.channel.uses_fixed_price && comparisonCost
+      ? grossProfitUsd(props.channel.local_input, comparisonCost.input)
+      : null
+  const currentProfitOutput =
+    props.channel && !props.channel.uses_fixed_price && comparisonCost
+      ? grossProfitUsd(props.channel.local_output, comparisonCost.output)
+      : null
+  const currentMarginInput =
+    props.channel && !props.channel.uses_fixed_price && comparisonCost
+      ? grossMarginPercent(props.channel.local_input, comparisonCost.input)
+      : null
+  const currentMarginOutput =
+    props.channel && !props.channel.uses_fixed_price && comparisonCost
+      ? grossMarginPercent(props.channel.local_output, comparisonCost.output)
+      : null
+  const afterProfitInput =
+    previewPlan && comparisonCost
+      ? grossProfitUsd(previewPlan.sellInput, comparisonCost.input)
+      : null
+  const afterProfitOutput =
+    previewPlan && comparisonCost
+      ? grossProfitUsd(previewPlan.sellOutput, comparisonCost.output)
+      : null
+  const afterMarginInput =
+    previewPlan && comparisonCost
+      ? grossMarginPercent(previewPlan.sellInput, comparisonCost.input)
+      : null
+  const afterMarginOutput =
+    previewPlan && comparisonCost
+      ? grossMarginPercent(previewPlan.sellOutput, comparisonCost.output)
+      : null
   const hasFixedPrice =
     optionsQuery.isSuccess &&
     optionState.modelPrices[optionState.pricingModelKey] !== undefined
@@ -412,11 +452,16 @@ export function PriceSyncDialog(props: {
 
         {previewPlan && props.channel ? (
           <div className='space-y-2 rounded-md border p-3 text-sm tabular-nums'>
-            <div className='flex justify-between gap-4'>
-              <span className='text-muted-foreground'>
-                {t('Current selling price')}
-              </span>
-              <span>
+            <div className='text-muted-foreground text-xs'>
+              {t('Input / Output')} · {t('Per 1M tokens')}
+            </div>
+            <div className='grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-1'>
+              <div />
+              <div className='text-muted-foreground'>{t('Current')}</div>
+              <div className='text-muted-foreground'>{t('After sync')}</div>
+
+              <div className='text-muted-foreground'>{t('Selling price')}</div>
+              <div>
                 {props.channel.uses_fixed_price ? (
                   <>
                     {formatUsd(props.channel.fixed_price)} ·{' '}
@@ -428,40 +473,75 @@ export function PriceSyncDialog(props: {
                     {formatUsd(props.channel.local_output)}
                   </>
                 )}
-              </span>
-            </div>
-            <div className='flex justify-between gap-4 font-medium'>
-              <span>{t('New selling price (input / output)')}</span>
-              <span>
+              </div>
+              <div className='font-medium'>
                 {formatUsd(previewPlan.sellInput)} /{' '}
                 {formatUsd(previewPlan.sellOutput)}
-              </span>
+              </div>
+
+              <div className='text-muted-foreground'>{t('Gross profit')}</div>
+              <div>
+                {formatUsd(currentProfitInput ?? undefined)} /{' '}
+                {formatUsd(currentProfitOutput ?? undefined)}
+              </div>
+              <div>
+                {formatUsd(afterProfitInput ?? undefined)} /{' '}
+                {formatUsd(afterProfitOutput ?? undefined)}
+              </div>
+
+              <div className='text-muted-foreground'>{t('Gross margin')}</div>
+              <div>
+                {formatPercent(currentMarginInput ?? undefined)} /{' '}
+                {formatPercent(currentMarginOutput ?? undefined)}
+              </div>
+              <div>
+                {formatPercent(afterMarginInput ?? undefined)} /{' '}
+                {formatPercent(afterMarginOutput ?? undefined)}
+              </div>
             </div>
             {officialPlan ? (
-              <div className='text-muted-foreground space-y-1 border-t pt-2 text-xs'>
+              <div className='text-muted-foreground space-y-2 border-t pt-2 text-xs'>
                 <div className='text-foreground font-medium'>
                   {t('Context pricing tiers')}
                 </div>
-                <div className='flex justify-between gap-3'>
-                  <span>{t('Base tier')}</span>
-                  <span>
-                    {formatUsd(officialPlan.sellInput)} /{' '}
-                    {formatUsd(officialPlan.sellOutput)}
-                  </span>
-                </div>
                 {officialPlan.tiers.map((tier) => (
-                  <div
-                    className='flex justify-between gap-3'
-                    key={tier.contextThreshold}
-                  >
-                    <span>
+                  <div className='space-y-0.5' key={tier.contextThreshold}>
+                    <div>
                       {t('Context at least {{tokens}} tokens', {
                         tokens: tier.contextThreshold.toLocaleString(),
                       })}
-                    </span>
-                    <span>
-                      {formatUsd(tier.sellInput)} / {formatUsd(tier.sellOutput)}
-                    </span>
+                    </div>
+                    <div className='grid grid-cols-[auto_1fr] gap-x-4'>
+                      <div>{t('Selling price')}</div>
+                      <div>
+                        {formatUsd(tier.sellInput)} /{' '}
+                        {formatUsd(tier.sellOutput)}
+                      </div>
+                      <div>{t('Gross profit')}</div>
+                      <div>
+                        {formatUsd(
+                          grossProfitUsd(tier.sellInput, tier.input) ??
+                            undefined
+                        )}{' '}
+                        /{' '}
+                        {formatUsd(
+                          grossProfitUsd(tier.sellOutput, tier.output) ??
+                            undefined
+                        )}
+                      </div>
+                      <div>{t('Gross margin')}</div>
+                      <div>
+                        {formatPercent(
+                          grossMarginPercent(tier.sellInput, tier.input) ??
+                            undefined
+                        )}{' '}
+                        /{' '}
+                        {formatPercent(
+                          grossMarginPercent(tier.sellOutput, tier.output) ??
+                            undefined
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -157,6 +157,74 @@ function markupInputIn(container: HTMLElement): HTMLInputElement {
   return input
 }
 
+// Scoped accessors for the preview comparison card. Assertions must address
+// the exact row/cell instead of the whole body text, which would also match
+// the cost card above the preview.
+function previewCard(): HTMLElement {
+  // the bordered card carries the unit note above the comparison grid
+  const note = [...document.querySelectorAll('div')].find(
+    (el) => el.textContent?.trim() === 'Input / Output · Per 1M tokens'
+  )
+  assert.ok(note, 'preview unit note missing')
+  const card = note.parentElement
+  assert.ok(card)
+  return card
+}
+
+function mainComparisonGrid(card: HTMLElement): HTMLElement {
+  // three rows (Selling price / Gross profit / Gross margin) x (label,
+  // Current cell, After sync cell), preceded by a spacer and two column
+  // headers: 2 + 3 * 3 = 11 -> spacer makes 12 direct children
+  const grids = [...card.querySelectorAll('div')].filter(
+    (el) =>
+      el.children.length === 12 &&
+      el.children[1].textContent?.trim() === 'Current' &&
+      el.children[2].textContent?.trim() === 'After sync' &&
+      el.children[3].textContent?.trim() === 'Selling price'
+  )
+  assert.equal(grids.length, 1, 'main comparison grid must be unique')
+  return grids[0]
+}
+
+function comparisonCell(
+  card: HTMLElement,
+  rowLabel: string,
+  column: 'current' | 'after'
+): string {
+  const grid = mainComparisonGrid(card)
+  const labelIndex = [...grid.children].findIndex(
+    (el) => el.textContent?.trim() === rowLabel
+  )
+  assert.notEqual(labelIndex, -1, `row "${rowLabel}" missing in comparison`)
+  const cell = grid.children[labelIndex + (column === 'current' ? 1 : 2)]
+  assert.ok(cell)
+  return cell.textContent?.trim() ?? ''
+}
+
+function tierBlock(card: HTMLElement, contextLabel: string): HTMLElement {
+  const labels = [...card.querySelectorAll('div')].filter(
+    (el) => el.textContent?.trim() === contextLabel
+  )
+  assert.equal(labels.length, 1, `tier "${contextLabel}" must be unique`)
+  const block = labels[0].parentElement
+  assert.ok(block)
+  return block
+}
+
+function tierRowValue(block: HTMLElement, rowLabel: string): string {
+  const grid = [...block.children].find(
+    (el) => el.tagName === 'DIV' && el.children.length === 6
+  )
+  assert.ok(grid, `tier grid for "${rowLabel}" missing`)
+  const label = [...grid.children].find(
+    (el) => el.textContent?.trim() === rowLabel
+  )
+  assert.ok(label)
+  const cell = label.nextElementSibling
+  assert.ok(cell)
+  return cell.textContent?.trim() ?? ''
+}
+
 describe('price sync dialog target markup default', () => {
   after(() => {
     domWindow.close()
@@ -334,7 +402,15 @@ describe('price sync dialog target markup default', () => {
                 cache_read: 0.5,
                 cache_write: 6.25,
               },
-              tiers: [],
+              tiers: [
+                {
+                  context_threshold: 272_000,
+                  input: 10,
+                  output: 45,
+                  cache_read: 1,
+                  cache_write: 12.5,
+                },
+              ],
               upstream_multiplier: 0.25,
             },
           },
@@ -370,24 +446,97 @@ describe('price sync dialog target markup default', () => {
         (button) => button.textContent?.trim() === 'Apply selling price'
       )
     assert.ok(applyButton())
+    assert.equal(applyButton()?.disabled, false)
+
+    const tierLabel = 'Context at least 272,000 tokens'
+    // default markup 566.67: current sale 9/50 vs cost 1.25/7.50 ->
+    // profit 7.75/42.50, margin 86.1%/85.0%; the screenshot example lands at
+    // sale 8.33/50.00, profit 7.08/42.50, margin 85.0%/85.0%
+    const card = previewCard()
+    assert.equal(
+      comparisonCell(card, 'Selling price', 'current'),
+      '$9.00 / $50.00'
+    )
+    assert.equal(
+      comparisonCell(card, 'Selling price', 'after'),
+      '$8.33 / $50.00'
+    )
+    assert.equal(
+      comparisonCell(card, 'Gross profit', 'current'),
+      '$7.75 / $42.50'
+    )
+    assert.equal(
+      comparisonCell(card, 'Gross profit', 'after'),
+      '$7.08 / $42.50'
+    )
+    assert.equal(
+      comparisonCell(card, 'Gross margin', 'current'),
+      '86.1% / 85.0%'
+    )
+    assert.equal(comparisonCell(card, 'Gross margin', 'after'), '85.0% / 85.0%')
+    const tier = tierBlock(card, tierLabel)
+    assert.equal(tierRowValue(tier, 'Selling price'), '$16.67 / $75.00')
+    assert.equal(tierRowValue(tier, 'Gross profit'), '$14.17 / $63.75')
+    assert.equal(tierRowValue(tier, 'Gross margin'), '85.0% / 85.0%')
 
     // markup 100 doubles the official cost 1.25/7.50 to a 2.50/15.00 preview
     await act(async () => {
       changeInputValue(input, '100')
     })
     assert.equal(input.value, '100')
-    assert.ok(document.body.textContent?.includes('$1.25'))
-    assert.ok(document.body.textContent?.includes('$7.50'))
-    assert.ok(document.body.textContent?.includes('$2.50'))
-    assert.ok(document.body.textContent?.includes('$15.00'))
+    assert.equal(
+      comparisonCell(card, 'Selling price', 'current'),
+      '$9.00 / $50.00'
+    )
+    assert.equal(
+      comparisonCell(card, 'Selling price', 'after'),
+      '$2.50 / $15.00'
+    )
+    assert.equal(
+      comparisonCell(card, 'Gross profit', 'current'),
+      '$7.75 / $42.50'
+    )
+    assert.equal(comparisonCell(card, 'Gross profit', 'after'), '$1.25 / $7.50')
+    assert.equal(
+      comparisonCell(card, 'Gross margin', 'current'),
+      '86.1% / 85.0%'
+    )
+    assert.equal(comparisonCell(card, 'Gross margin', 'after'), '50.0% / 50.0%')
+    // context tier cost 2.50/11.25 -> sale 5.00/22.50, profit 2.50/11.25,
+    // margin 50.0%/50.0%
+    assert.equal(tierRowValue(tier, 'Selling price'), '$5.00 / $22.50')
+    assert.equal(tierRowValue(tier, 'Gross profit'), '$2.50 / $11.25')
+    assert.equal(tierRowValue(tier, 'Gross margin'), '50.0% / 50.0%')
     assert.equal(applyButton()?.disabled, false)
 
     // markup 200 triples it; there is no business upper bound
     await act(async () => {
       changeInputValue(input, '200')
     })
-    assert.ok(document.body.textContent?.includes('$3.75'))
-    assert.ok(document.body.textContent?.includes('$22.50'))
+    assert.equal(
+      comparisonCell(card, 'Selling price', 'current'),
+      '$9.00 / $50.00'
+    )
+    assert.equal(
+      comparisonCell(card, 'Selling price', 'after'),
+      '$3.75 / $22.50'
+    )
+    assert.equal(
+      comparisonCell(card, 'Gross profit', 'current'),
+      '$7.75 / $42.50'
+    )
+    assert.equal(
+      comparisonCell(card, 'Gross profit', 'after'),
+      '$2.50 / $15.00'
+    )
+    assert.equal(
+      comparisonCell(card, 'Gross margin', 'current'),
+      '86.1% / 85.0%'
+    )
+    assert.equal(comparisonCell(card, 'Gross margin', 'after'), '66.7% / 66.7%')
+    assert.equal(tierRowValue(tier, 'Selling price'), '$7.50 / $33.75')
+    assert.equal(tierRowValue(tier, 'Gross profit'), '$5.00 / $22.50')
+    assert.equal(tierRowValue(tier, 'Gross margin'), '66.7% / 66.7%')
     assert.equal(applyButton()?.disabled, false)
 
     // a negative markup blanks the plan but never the official cost

@@ -127,6 +127,40 @@ export function currentMarkupPercent(
   return Number.isFinite(markup) ? markup : null
 }
 
+// Gross profit for one token class: selling price minus the effective
+// upstream cost. May be negative when the price sits below cost. Returns null
+// when either input is not finite.
+export function grossProfitUsd(
+  sellingPrice: number,
+  effectiveCost: number
+): number | null {
+  if (!Number.isFinite(sellingPrice) || !Number.isFinite(effectiveCost)) {
+    return null
+  }
+  const profit = sellingPrice - effectiveCost
+  return Number.isFinite(profit) ? profit : null
+}
+
+// True gross margin for one token class:
+// (selling price - effective upstream cost) / selling price * 100. Requires a
+// positive finite selling price — a zero sale price cannot anchor a margin —
+// and a finite cost. Unlike markup, margin divides by the selling price, not
+// by the cost.
+export function grossMarginPercent(
+  sellingPrice: number,
+  effectiveCost: number
+): number | null {
+  if (
+    !Number.isFinite(sellingPrice) ||
+    sellingPrice <= 0 ||
+    !Number.isFinite(effectiveCost)
+  ) {
+    return null
+  }
+  const margin = ((sellingPrice - effectiveCost) / sellingPrice) * 100
+  return Number.isFinite(margin) ? margin : null
+}
+
 export type CurrentMarkupInput = {
   sellingInput: number
   sellingOutput: number

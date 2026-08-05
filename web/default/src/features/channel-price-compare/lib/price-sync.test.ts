@@ -28,6 +28,8 @@ import {
   computeSyncRatios,
   currentMarkupPercent,
   defaultTargetMarkupPercent,
+  grossMarginPercent,
+  grossProfitUsd,
   shouldUseOfficialPricing,
   parseCompletionRatioMeta,
   parseTargetMarkup,
@@ -604,5 +606,45 @@ describe('currentMarkupPercent / defaultTargetMarkupPercent', () => {
       }),
       null
     )
+  })
+})
+
+describe('grossProfitUsd / grossMarginPercent', () => {
+  test('screenshot example: cost 1.25/7.50, sale 8.333375/50.00025 -> profit 7.083375/42.50025, margin 85.0%', () => {
+    assert.equal(grossProfitUsd(8.333375, 1.25), 7.083375)
+    assert.equal(grossProfitUsd(50.00025, 7.5), 42.50025)
+    assert.equal(grossMarginPercent(8.333375, 1.25), 85.000074999625)
+    assert.equal(grossMarginPercent(50.00025, 7.5), 85.000074999625)
+  })
+
+  test('keeps negative profit and negative margin when price is below cost', () => {
+    assert.equal(grossProfitUsd(1, 2), -1)
+    assert.equal(grossProfitUsd(0, 2), -2)
+    assert.equal(grossMarginPercent(1, 2), -100)
+  })
+
+  test('has no margin on a zero or negative selling price', () => {
+    assert.equal(grossMarginPercent(0, 2), null)
+    assert.equal(grossMarginPercent(-1, 2), null)
+    // a zero sale price still yields a finite loss as gross profit
+    assert.equal(grossProfitUsd(0, 2), -2)
+  })
+
+  test('returns null for non-finite inputs', () => {
+    assert.equal(grossProfitUsd(Number.NaN, 1), null)
+    assert.equal(grossProfitUsd(1, Number.NaN), null)
+    assert.equal(grossProfitUsd(Number.POSITIVE_INFINITY, 1), null)
+    assert.equal(grossMarginPercent(Number.NaN, 1), null)
+    assert.equal(grossMarginPercent(1, Number.NaN), null)
+    assert.equal(grossMarginPercent(Number.POSITIVE_INFINITY, 1), null)
+  })
+
+  test('free upstream cost still yields profit and a full margin', () => {
+    assert.equal(grossProfitUsd(2, 0), 2)
+    assert.equal(grossMarginPercent(2, 0), 100)
+  })
+
+  test('returns null when the margin overflows finite numbers', () => {
+    assert.equal(grossMarginPercent(1e-323, Number.MAX_VALUE), null)
   })
 })
