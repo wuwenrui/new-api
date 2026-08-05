@@ -413,15 +413,15 @@ describe('parseNumberRecord', () => {
 })
 
 describe('currentMarginPercent / defaultTargetMarginPercent', () => {
-  test('official 5/30 at multiplier 0.25 against 18/100 selling defaults to 92.5', () => {
+  test('official 5/30 at multiplier 0.25 against 9/50 selling defaults to 85', () => {
     assert.equal(
       defaultTargetMarginPercent({
-        sellingInput: 18,
-        sellingOutput: 100,
+        sellingInput: 9,
+        sellingOutput: 50,
         costInput: 5 * 0.25,
         costOutput: 30 * 0.25,
       }),
-      92.5
+      85
     )
   })
 

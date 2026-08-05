@@ -471,17 +471,23 @@ func TestBuildChannelBusinessMetricsLeavesMissingCostUnknown(t *testing.T) {
 	assert.Zero(t, metrics.Profit)
 }
 
-func TestTieredSellingPricesUseQuotaAnchorAndGroupRatio(t *testing.T) {
+func TestTieredSellingPricesUsePerMillionCoefficientsAndGroupRatio(t *testing.T) {
+	originalQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 500_000
+	t.Cleanup(func() {
+		common.QuotaPerUnit = originalQuotaPerUnit
+	})
+
 	prices, err := tieredSellingPrices(
-		`tier("base", p * 3.571428571 + c * 21.428571429 + cr * 0.357142857 + cc * 4.464285714 + cc1h * 4.464285714)`,
-		1,
+		`tier("base", p * 3.6 + c * 20 + cr * 0.36 + cc * 4.5 + cc1h * 4.5)`,
+		2.5,
 	)
 
 	require.NoError(t, err)
-	assert.InDelta(t, 5.0/0.7, prices.Input, 1e-6)
-	assert.InDelta(t, 30.0/0.7, prices.Output, 1e-6)
-	assert.InDelta(t, 0.5/0.7, prices.CacheRead, 1e-6)
-	assert.InDelta(t, 6.25/0.7, prices.CacheWrite, 1e-6)
+	assert.InDelta(t, 9.0, prices.Input, 1e-9)
+	assert.InDelta(t, 50.0, prices.Output, 1e-9)
+	assert.InDelta(t, 0.9, prices.CacheRead, 1e-9)
+	assert.InDelta(t, 11.25, prices.CacheWrite, 1e-9)
 }
 
 func TestSummarizeChannelPriceCompareClearsPartialCosts(t *testing.T) {

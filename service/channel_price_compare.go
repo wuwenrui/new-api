@@ -148,15 +148,15 @@ type channelSellingPrices struct {
 }
 
 func tieredSellingPrices(expr string, groupRatio float64) (channelSellingPrices, error) {
-	if strings.TrimSpace(expr) == "" || groupRatio <= 0 || common.QuotaPerUnit <= 0 {
+	if strings.TrimSpace(expr) == "" || groupRatio <= 0 {
 		return channelSellingPrices{}, fmt.Errorf("invalid tiered pricing inputs")
 	}
 	evaluate := func(params billingexpr.TokenParams) (float64, error) {
-		quota, _, err := billingexpr.RunExpr(expr, params)
+		rawCost, _, err := billingexpr.RunExpr(expr, params)
 		if err != nil {
 			return 0, err
 		}
-		return quota * groupRatio / float64(common.QuotaPerUnit), nil
+		return rawCost * groupRatio / 1_000_000, nil
 	}
 	input, err := evaluate(billingexpr.TokenParams{P: 1_000_000, Len: 1})
 	if err != nil {

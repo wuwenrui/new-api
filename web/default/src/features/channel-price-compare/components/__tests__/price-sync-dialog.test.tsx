@@ -220,8 +220,8 @@ describe('price sync dialog target margin default', () => {
       status: 'unknown',
       price_source: 'missing',
       detected_available: false,
-      local_input: 18,
-      local_output: 100,
+      local_input: 9,
+      local_output: 50,
     })
 
     await act(async () => {
@@ -294,7 +294,7 @@ describe('price sync dialog target margin default', () => {
         </QueryClientProvider>
       )
     })
-    assert.equal(marginInputIn(document.body).value, '92.5')
+    assert.equal(marginInputIn(document.body).value, '85')
 
     await act(async () => root.unmount())
     container.remove()
