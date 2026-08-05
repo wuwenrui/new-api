@@ -26,11 +26,11 @@ import {
   buildSyncRequest,
   computeOfficialSyncPlan,
   computeSyncRatios,
-  currentMarginPercent,
-  defaultTargetMarginPercent,
+  currentMarkupPercent,
+  defaultTargetMarkupPercent,
   shouldUseOfficialPricing,
   parseCompletionRatioMeta,
-  parseTargetMargin,
+  parseTargetMarkup,
   parseNumberRecord,
   resolveSyncBasis,
   type UpstreamCostBasis,
@@ -218,9 +218,9 @@ describe('shouldUseOfficialPricing', () => {
 })
 
 describe('computeSyncRatios', () => {
-  test('derives ratios from cost, margin and group ratio', () => {
-    // cost in 2 / out 8, margin 50% -> sell 4 / 16; group 1 -> modelRatio 2
-    const plan = computeSyncRatios(basis({}), 50, 1)
+  test('derives ratios from cost, markup and group ratio', () => {
+    // cost in 2 / out 8, markup 100% -> sell 4 / 16; group 1 -> modelRatio 2
+    const plan = computeSyncRatios(basis({}), 100, 1)
     assert.ok(plan)
     assert.equal(plan.modelRatio, 2)
     assert.equal(plan.completionRatio, 4)
@@ -231,37 +231,63 @@ describe('computeSyncRatios', () => {
   })
 
   test('divides the group ratio out of the model ratio', () => {
-    const plan = computeSyncRatios(basis({}), 50, 2)
+    const plan = computeSyncRatios(basis({}), 100, 2)
     assert.ok(plan)
     assert.equal(plan.modelRatio, 1)
-    // relative ratios do not depend on margin or group ratio
+    // relative ratios do not depend on markup or group ratio
     assert.equal(plan.completionRatio, 4)
   })
 
   test('uses the configured quota scale when deriving the model ratio', () => {
-    const plan = computeSyncRatios(basis({}), 50, 1, undefined, 1_000_000)
+    const plan = computeSyncRatios(basis({}), 100, 1, undefined, 1_000_000)
     assert.ok(plan)
     assert.equal(plan.modelRatio, 4)
     assert.equal(plan.sellInput, 4)
   })
 
-  test('zero margin prices at cost', () => {
+  test('zero markup prices at cost', () => {
     const plan = computeSyncRatios(basis({}), 0, 1)
     assert.ok(plan)
     assert.equal(plan.modelRatio, 1)
     assert.equal(plan.sellInput, 2)
   })
 
-  test('treats an empty target margin as invalid instead of zero', () => {
-    assert.equal(parseTargetMargin(''), null)
-    assert.equal(parseTargetMargin('   '), null)
-    assert.equal(parseTargetMargin('0'), 0)
+  test('marks up 0, 100 and 200 to cost, double and triple', () => {
+    const atCost = computeSyncRatios(basis({}), 0, 1)
+    assert.ok(atCost)
+    assert.equal(atCost.sellInput, 2)
+    const doubled = computeSyncRatios(basis({}), 100, 1)
+    assert.ok(doubled)
+    assert.equal(doubled.sellInput, 4)
+    const tripled = computeSyncRatios(basis({}), 200, 1)
+    assert.ok(tripled)
+    assert.equal(tripled.sellInput, 6)
+    const decimal = computeSyncRatios(basis({}), 99.99, 1)
+    assert.ok(decimal)
+    assert.ok(Number.isFinite(decimal.sellInput))
+    assert.ok(Number.isFinite(decimal.sellOutput))
+    assert.ok(decimal.sellInput > atCost.sellInput)
+  })
+
+  test('treats an empty target markup as invalid instead of zero', () => {
+    assert.equal(parseTargetMarkup(''), null)
+    assert.equal(parseTargetMarkup('   '), null)
+    assert.equal(parseTargetMarkup('0'), 0)
+  })
+
+  test('accepts any finite non-negative markup and rejects negatives and NaN', () => {
+    assert.equal(parseTargetMarkup('99'), 99)
+    assert.equal(parseTargetMarkup('99.99'), 99.99)
+    assert.equal(parseTargetMarkup('100'), 100)
+    assert.equal(parseTargetMarkup('200'), 200)
+    assert.equal(parseTargetMarkup('-1'), null)
+    assert.equal(parseTargetMarkup('abc'), null)
   })
 
   test('writes zero ratios when the upstream does not charge', () => {
     const plan = computeSyncRatios(
       basis({ output: 0, cacheRead: 0, cacheWrite: 0 }),
-      50,
+      100,
       1
     )
     assert.ok(plan)
@@ -270,37 +296,36 @@ describe('computeSyncRatios', () => {
     assert.equal(plan.createCacheRatio, 0)
   })
 
-  test('rejects invalid margin and non-positive cost', () => {
+  test('rejects invalid markup and non-positive cost', () => {
     assert.equal(computeSyncRatios(basis({}), -1, 1), null)
-    assert.equal(computeSyncRatios(basis({}), 95, 1), null)
     assert.equal(computeSyncRatios(basis({}), Number.NaN, 1), null)
-    assert.equal(computeSyncRatios(basis({ input: 0 }), 50, 1), null)
+    assert.equal(computeSyncRatios(basis({ input: 0 }), 100, 1), null)
   })
 
   test('rejects a non-positive or invalid group ratio', () => {
-    assert.equal(computeSyncRatios(basis({}), 50, 0), null)
-    assert.equal(computeSyncRatios(basis({}), 50, -1), null)
-    assert.equal(computeSyncRatios(basis({}), 50, Number.NaN), null)
+    assert.equal(computeSyncRatios(basis({}), 100, 0), null)
+    assert.equal(computeSyncRatios(basis({}), 100, -1), null)
+    assert.equal(computeSyncRatios(basis({}), 100, Number.NaN), null)
   })
 
   test('rejects a non-positive or invalid quota scale', () => {
-    assert.equal(computeSyncRatios(basis({}), 50, 1, undefined, 0), null)
-    assert.equal(computeSyncRatios(basis({}), 50, 1, undefined, -1), null)
+    assert.equal(computeSyncRatios(basis({}), 100, 1, undefined, 0), null)
+    assert.equal(computeSyncRatios(basis({}), 100, 1, undefined, -1), null)
     assert.equal(
-      computeSyncRatios(basis({}), 50, 1, undefined, Number.NaN),
+      computeSyncRatios(basis({}), 100, 1, undefined, Number.NaN),
       null
     )
   })
 
   test('rejects calculations that overflow finite pricing ratios', () => {
     assert.equal(
-      computeSyncRatios(basis({ input: Number.MAX_VALUE }), 94, 1e-300),
+      computeSyncRatios(basis({ input: Number.MAX_VALUE }), 100, 1e-300),
       null
     )
   })
 
-  test('honors a locked completion ratio without dropping below target margin', () => {
-    const plan = computeSyncRatios(basis({ output: 12 }), 50, 1, 4)
+  test('honors a locked completion ratio without dropping below target markup', () => {
+    const plan = computeSyncRatios(basis({ output: 12 }), 100, 1, 4)
     assert.ok(plan)
     assert.equal(plan.completionRatioLocked, true)
     assert.equal(plan.modelRatio, 3)
@@ -313,19 +338,38 @@ describe('computeSyncRatios', () => {
 })
 
 describe('computeOfficialSyncPlan', () => {
-  test('prices every context tier at a 30 percent gross margin', () => {
+  test('prices every context tier at a 30 percent markup', () => {
     const plan = computeOfficialSyncPlan(officialModel, 30, 1)
     assert.ok(plan)
-    assert.equal(plan.sellInput, 5 / 0.7)
-    assert.equal(plan.sellOutput, 30 / 0.7)
-    assert.equal(plan.sellCacheRead, 0.5 / 0.7)
-    assert.equal(plan.sellCacheWrite, 6.25 / 0.7)
+    assert.equal(plan.sellInput, 5 * 1.3)
+    assert.equal(plan.sellOutput, 30 * 1.3)
+    assert.equal(plan.sellCacheRead, 0.5 * 1.3)
+    assert.equal(plan.sellCacheWrite, 6.25 * 1.3)
     assert.equal(plan.tiers[0].name, 'context_272000')
-    assert.equal(plan.tiers[0].sellInput, 10 / 0.7)
-    assert.equal(plan.tiers[0].sellOutput, 45 / 0.7)
+    assert.equal(plan.tiers[0].sellInput, 10 * 1.3)
+    assert.equal(plan.tiers[0].sellOutput, 45 * 1.3)
     assert.match(plan.billingExpression, /len < 272000/)
-    assert.ok(plan.billingExpression.includes('p * 3.571428571'))
+    assert.ok(plan.billingExpression.includes('p * 3.25'))
     assert.ok(plan.billingExpression.includes('tier("context_272000"'))
+  })
+
+  test('marks up 0, 100 and 200 to cost, double and triple official prices', () => {
+    const atCost = computeOfficialSyncPlan(officialModel, 0, 1)
+    assert.ok(atCost)
+    assert.equal(atCost.sellInput, 5)
+    assert.equal(atCost.sellOutput, 30)
+    const doubled = computeOfficialSyncPlan(officialModel, 100, 1)
+    assert.ok(doubled)
+    assert.equal(doubled.sellInput, 10)
+    assert.equal(doubled.sellOutput, 60)
+    const tripled = computeOfficialSyncPlan(officialModel, 200, 1)
+    assert.ok(tripled)
+    assert.equal(tripled.sellInput, 15)
+    assert.equal(tripled.sellOutput, 90)
+    const decimal = computeOfficialSyncPlan(officialModel, 99.99, 1)
+    assert.ok(decimal)
+    assert.ok(Number.isFinite(decimal.sellInput))
+    assert.ok(Number.isFinite(decimal.sellOutput))
   })
 
   test('builds an atomic official-price update request', () => {
@@ -351,8 +395,9 @@ describe('computeOfficialSyncPlan', () => {
     ])
   })
 
-  test('rejects invalid margin, group ratio, and missing official pricing', () => {
-    assert.equal(computeOfficialSyncPlan(officialModel, 95, 1), null)
+  test('rejects invalid markup, group ratio, and missing official pricing', () => {
+    assert.equal(computeOfficialSyncPlan(officialModel, -1, 1), null)
+    assert.equal(computeOfficialSyncPlan(officialModel, Number.NaN, 1), null)
     assert.equal(computeOfficialSyncPlan(officialModel, 30, 0), null)
     assert.equal(
       computeOfficialSyncPlan(
@@ -363,11 +408,42 @@ describe('computeOfficialSyncPlan', () => {
       null
     )
   })
+
+  test('rejects official plans when cache or tier selling prices overflow', () => {
+    const pricing = officialModel.models_dev_pricing
+    assert.ok(pricing)
+
+    const overflowCache = computeOfficialSyncPlan(
+      {
+        ...officialModel,
+        models_dev_pricing: {
+          ...pricing,
+          base: { ...pricing.base, cache_read: Number.MAX_VALUE },
+        },
+      },
+      30,
+      1
+    )
+    assert.equal(overflowCache, null)
+
+    const overflowTier = computeOfficialSyncPlan(
+      {
+        ...officialModel,
+        models_dev_pricing: {
+          ...pricing,
+          tiers: [{ ...pricing.tiers[0], input: Number.MAX_VALUE }],
+        },
+      },
+      30,
+      1
+    )
+    assert.equal(overflowTier, null)
+  })
 })
 
 describe('buildSyncRequest', () => {
   test('builds a model-level pricing update', () => {
-    const plan = computeSyncRatios(basis({}), 50, 1)
+    const plan = computeSyncRatios(basis({}), 100, 1)
     assert.ok(plan)
     assert.deepEqual(buildSyncRequest('m', plan), {
       model_name: 'm',
@@ -379,7 +455,7 @@ describe('buildSyncRequest', () => {
   })
 
   test('omits an ignored completion ratio when it is locked', () => {
-    const plan = computeSyncRatios(basis({ output: 12 }), 50, 1, 4)
+    const plan = computeSyncRatios(basis({ output: 12 }), 100, 1, 4)
     assert.ok(plan)
     assert.deepEqual(buildSyncRequest('m', plan), {
       model_name: 'm',
@@ -412,71 +488,83 @@ describe('parseNumberRecord', () => {
   })
 })
 
-describe('currentMarginPercent / defaultTargetMarginPercent', () => {
-  test('official 5/30 at multiplier 0.25 against 9/50 selling defaults to 85', () => {
+describe('currentMarkupPercent / defaultTargetMarkupPercent', () => {
+  test('official 5/30 at multiplier 0.25 against 9/50 selling defaults to 566.67', () => {
     assert.equal(
-      defaultTargetMarginPercent({
+      defaultTargetMarkupPercent({
         sellingInput: 9,
         sellingOutput: 50,
         costInput: 5 * 0.25,
         costOutput: 30 * 0.25,
       }),
-      85
+      566.67
     )
   })
 
-  test('detected 2/8 against 6/20 selling defaults to 60', () => {
+  test('detected 2/8 against 6/20 selling defaults to 150', () => {
     assert.equal(
-      defaultTargetMarginPercent({
+      defaultTargetMarkupPercent({
         sellingInput: 6,
         sellingOutput: 20,
         costInput: 2,
         costOutput: 8,
       }),
-      60
+      150
     )
   })
 
-  test('rounds the lower margin to at most two decimals', () => {
-    // input margin 93.055... is the lower one and rounds to 93.06
+  test('rounds the lower markup to at most two decimals', () => {
+    // input markup 566.66... is the lower one and rounds to 566.67
     assert.equal(
-      defaultTargetMarginPercent({
-        sellingInput: 18,
+      defaultTargetMarkupPercent({
+        sellingInput: 20,
         sellingOutput: 100,
-        costInput: 1.25,
-        costOutput: 6,
+        costInput: 3,
+        costOutput: 5,
       }),
-      93.06
+      566.67
     )
   })
 
-  test('falls back when rounding would cross the 95 percent limit', () => {
+  test('uses a current markup of 99 as the dialog default', () => {
+    assert.equal(currentMarkupPercent(199, 100), 99)
     assert.equal(
-      defaultTargetMarginPercent({
-        sellingInput: 100,
-        sellingOutput: 100,
-        costInput: 5.005,
-        costOutput: 5.005,
+      defaultTargetMarkupPercent({
+        sellingInput: 199,
+        sellingOutput: 199,
+        costInput: 100,
+        costOutput: 100,
       }),
-      null
+      99
     )
   })
 
-  test('returns null when the current margin is out of the valid range', () => {
-    assert.equal(currentMarginPercent(10, 0.1), 99)
+  test('keeps markups of 100 and above as dialog defaults', () => {
     assert.equal(
-      defaultTargetMarginPercent({
-        sellingInput: 10,
-        sellingOutput: 10,
-        costInput: 0.1,
-        costOutput: 0.1,
+      defaultTargetMarkupPercent({
+        sellingInput: 200,
+        sellingOutput: 200,
+        costInput: 100,
+        costOutput: 100,
       }),
-      null
+      100
     )
-    // selling below cost is a negative margin
-    // the lower class controls: a negative input margin must not be discarded
     assert.equal(
-      defaultTargetMarginPercent({
+      defaultTargetMarkupPercent({
+        sellingInput: 300,
+        sellingOutput: 300,
+        costInput: 100,
+        costOutput: 100,
+      }),
+      200
+    )
+  })
+
+  test('returns null when the current markup is negative', () => {
+    assert.equal(currentMarkupPercent(1, 2), -50)
+    // the lower class controls: a negative input markup must not be discarded
+    assert.equal(
+      defaultTargetMarkupPercent({
         sellingInput: 1,
         sellingOutput: 10,
         costInput: 2,
@@ -486,13 +574,18 @@ describe('currentMarginPercent / defaultTargetMarginPercent', () => {
     )
   })
 
-  test('returns null when the margin cannot be computed', () => {
-    assert.equal(currentMarginPercent(0, 2), null)
-    assert.equal(currentMarginPercent(2, 0), 100)
-    assert.equal(currentMarginPercent(Number.NaN, 2), null)
-    // both input and output are required to establish the lower margin
+  test('returns null when the markup overflows finite numbers', () => {
+    assert.equal(currentMarkupPercent(Number.MAX_VALUE, 1), null)
+  })
+
+  test('returns null when the markup cannot be computed', () => {
+    assert.equal(currentMarkupPercent(Number.NaN, 2), null)
+    assert.equal(currentMarkupPercent(2, 0), null)
+    assert.equal(currentMarkupPercent(2, -1), null)
+    assert.equal(currentMarkupPercent(-1, 2), null)
+    // both input and output are required to establish the lower markup
     assert.equal(
-      defaultTargetMarginPercent({
+      defaultTargetMarkupPercent({
         sellingInput: 0,
         sellingOutput: 20,
         costInput: 2,
@@ -501,15 +594,15 @@ describe('currentMarginPercent / defaultTargetMarginPercent', () => {
       null
     )
 
-    // A free output class has a valid 100% margin; the lower input margin wins.
+    // a non-positive output cost cannot anchor a markup
     assert.equal(
-      defaultTargetMarginPercent({
+      defaultTargetMarkupPercent({
         sellingInput: 20,
         sellingOutput: 20,
         costInput: 8,
         costOutput: 0,
       }),
-      60
+      null
     )
   })
 })

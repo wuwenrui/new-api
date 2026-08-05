@@ -40,17 +40,17 @@ import {
   buildSyncRequest,
   computeOfficialSyncPlan,
   computeSyncRatios,
-  defaultTargetMarginPercent,
-  MAX_TARGET_MARGIN_PERCENT,
+  defaultTargetMarkupPercent,
+  officialTokenPrices,
   parseCompletionRatioMeta,
-  parseTargetMargin,
+  parseTargetMarkup,
   parseNumberRecord,
   resolveSyncBasis,
   shouldUseOfficialPricing,
 } from '../lib/price-sync'
 import type { PriceCompareChannel } from '../types'
 
-const DEFAULT_MARGIN_INPUT = '30'
+const DEFAULT_MARKUP_INPUT = '30'
 
 export function PriceSyncDialog(props: {
   open: boolean
@@ -61,25 +61,25 @@ export function PriceSyncDialog(props: {
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [marginInput, setMarginInput] = useState(DEFAULT_MARGIN_INPUT)
-  // 目标利润率默认值：每个打开周期只在定价数据就绪后应用一次，
+  const [markupInput, setMarkupInput] = useState(DEFAULT_MARKUP_INPUT)
+  // 目标加价率默认值：每个打开周期只在定价数据就绪后应用一次，
   // 用户在数据加载完成前输入则不再覆盖。
-  const [marginUserEdited, setMarginUserEdited] = useState(false)
-  const [marginDefaulted, setMarginDefaulted] = useState(false)
+  const [markupUserEdited, setMarkupUserEdited] = useState(false)
+  const [markupDefaulted, setMarkupDefaulted] = useState(false)
   const basis = props.channel ? resolveSyncBasis(props.channel) : null
   const usesOfficialPricing = props.channel
     ? shouldUseOfficialPricing(props.channel, basis)
     : false
   const upstreamMultiplier = props.channel?.upstream_price_multiplier ?? 1
 
-  const marginTargetKey = `${props.modelName}|${props.channel?.channel_id ?? 'none'}`
+  const markupTargetKey = `${props.modelName}|${props.channel?.channel_id ?? 'none'}`
 
   useEffect(() => {
     if (!props.open) return
-    setMarginInput(DEFAULT_MARGIN_INPUT)
-    setMarginUserEdited(false)
-    setMarginDefaulted(false)
-  }, [props.open, marginTargetKey])
+    setMarkupInput(DEFAULT_MARKUP_INPUT)
+    setMarkupUserEdited(false)
+    setMarkupDefaulted(false)
+  }, [props.open, markupTargetKey])
 
   const officialModelQuery = useQuery({
     queryKey: [
@@ -126,31 +126,40 @@ export function PriceSyncDialog(props: {
     Number.isFinite(optionState.groupRatio) && optionState.groupRatio > 0
   const quotaPerUnitValid =
     Number.isFinite(optionState.quotaPerUnit) && optionState.quotaPerUnit > 0
-  const targetMargin = parseTargetMargin(marginInput)
+  const targetMarkup = parseTargetMarkup(markupInput)
   const ratioPlan =
     !usesOfficialPricing &&
     basis &&
     optionsQuery.isSuccess &&
     groupRatioValid &&
     quotaPerUnitValid &&
-    targetMargin !== null
+    targetMarkup !== null
       ? computeSyncRatios(
           basis,
-          targetMargin,
+          targetMarkup,
           optionState.groupRatio,
           completionMeta?.locked ? completionMeta.ratio : undefined,
           optionState.quotaPerUnit
         )
       : null
   const officialResolution = officialModelQuery.data ?? null
+  // Effective upstream cost comes from the Models.dev base price times the
+  // multiplier; it is independent of the target markup, so an invalid markup
+  // must never blank out the displayed official cost.
+  const officialCost = useMemo(() => {
+    if (!officialResolution) return null
+    const pricing = officialResolution.model.models_dev_pricing
+    if (!pricing) return null
+    return officialTokenPrices(pricing.base, pricing.upstream_multiplier)
+  }, [officialResolution])
 
-  // 默认目标利润率取自当前毛利率（售价-有效上游成本）/售价，
+  // 默认目标加价率取自当前加价率（售价-有效上游成本）/有效上游成本，
   // 取输入/输出中较低者；只在数据就绪后应用一次，不覆盖用户编辑。
   useEffect(() => {
-    if (!props.open || marginUserEdited || marginDefaulted) return
+    if (!props.open || markupUserEdited || markupDefaulted) return
     const channel = props.channel
     if (!channel || channel.uses_fixed_price) return
-    const marginInputs = {
+    const markupInputs = {
       sellingInput: channel.local_input,
       sellingOutput: channel.local_output,
     }
@@ -158,14 +167,18 @@ export function PriceSyncDialog(props: {
     if (usesOfficialPricing) {
       const pricing = officialResolution?.model.models_dev_pricing
       if (!pricing) return
-      target = defaultTargetMarginPercent({
-        ...marginInputs,
-        costInput: pricing.base.input * pricing.upstream_multiplier,
-        costOutput: pricing.base.output * pricing.upstream_multiplier,
+      const cost = officialTokenPrices(
+        pricing.base,
+        pricing.upstream_multiplier
+      )
+      target = defaultTargetMarkupPercent({
+        ...markupInputs,
+        costInput: cost.input,
+        costOutput: cost.output,
       })
     } else if (basis) {
-      target = defaultTargetMarginPercent({
-        ...marginInputs,
+      target = defaultTargetMarkupPercent({
+        ...markupInputs,
         costInput: basis.input,
         costOutput: basis.output,
       })
@@ -173,14 +186,14 @@ export function PriceSyncDialog(props: {
       return
     }
     if (target !== null) {
-      setMarginInput(String(target))
-      setMarginDefaulted(true)
+      setMarkupInput(String(target))
+      setMarkupDefaulted(true)
     }
   }, [
     props.open,
     props.channel,
-    marginUserEdited,
-    marginDefaulted,
+    markupUserEdited,
+    markupDefaulted,
     usesOfficialPricing,
     basis,
     officialResolution,
@@ -190,10 +203,10 @@ export function PriceSyncDialog(props: {
     officialResolution &&
     optionsQuery.isSuccess &&
     groupRatioValid &&
-    targetMargin !== null
+    targetMarkup !== null
       ? computeOfficialSyncPlan(
           officialResolution.model,
-          targetMargin,
+          targetMarkup,
           optionState.groupRatio
         )
       : null
@@ -215,7 +228,7 @@ export function PriceSyncDialog(props: {
         )
       }
       if (!ratioPlan && !officialPlan) {
-        throw new Error(t('Margin must be between 0 and 95'))
+        throw new Error(t('Markup must be at least 0'))
       }
       if (!props.channel) {
         throw new Error(t('Channel pricing is unavailable'))
@@ -231,7 +244,7 @@ export function PriceSyncDialog(props: {
       } else if (ratioPlan) {
         request = buildSyncRequest(props.modelName, ratioPlan)
       } else {
-        throw new Error(t('Margin must be between 0 and 95'))
+        throw new Error(t('Markup must be at least 0'))
       }
       const res = await updatePricingOptions(request)
       if (!res.success) {
@@ -336,13 +349,13 @@ export function PriceSyncDialog(props: {
               {officialResolution.providerName}
             </div>
             <div>
-              {t('Cost')}: {formatUsd(officialPlan?.input ?? 0)} /{' '}
-              {formatUsd(officialPlan?.output ?? 0)}
+              {t('Cost')}: {formatUsd(officialCost?.input ?? 0)} /{' '}
+              {formatUsd(officialCost?.output ?? 0)}
             </div>
             <div className='text-muted-foreground text-xs'>
               {t('Cache Read')} / {t('Cache Write')}:{' '}
-              {formatUsd(officialPlan?.cacheRead ?? 0)} /{' '}
-              {formatUsd(officialPlan?.cacheWrite ?? 0)}
+              {formatUsd(officialCost?.cacheRead ?? 0)} /{' '}
+              {formatUsd(officialCost?.cacheWrite ?? 0)}
             </div>
           </div>
         ) : null}
@@ -363,17 +376,16 @@ export function PriceSyncDialog(props: {
         ) : null}
 
         <div className='space-y-2'>
-          <Label htmlFor='price-sync-margin'>{t('Target margin (%)')}</Label>
+          <Label htmlFor='price-sync-markup'>{t('Target markup (%)')}</Label>
           <Input
-            id='price-sync-margin'
+            id='price-sync-markup'
             type='number'
             min={0}
-            max={MAX_TARGET_MARGIN_PERCENT - 1}
-            step={1}
-            value={marginInput}
+            step={0.01}
+            value={markupInput}
             onChange={(event) => {
-              setMarginUserEdited(true)
-              setMarginInput(event.target.value)
+              setMarkupUserEdited(true)
+              setMarkupInput(event.target.value)
             }}
           />
           {!groupRatioValid && optionsQuery.isSuccess ? (
@@ -393,7 +405,7 @@ export function PriceSyncDialog(props: {
           groupRatioValid &&
           (usesOfficialPricing || quotaPerUnitValid) ? (
             <p className='text-destructive text-xs'>
-              {t('Margin must be between 0 and 95')}
+              {t('Markup must be at least 0')}
             </p>
           ) : null}
         </div>

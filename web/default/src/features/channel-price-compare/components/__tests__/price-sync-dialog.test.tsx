@@ -149,15 +149,15 @@ function changeInputValue(input: HTMLInputElement, value: string) {
   )
 }
 
-function marginInputIn(container: HTMLElement): HTMLInputElement {
+function markupInputIn(container: HTMLElement): HTMLInputElement {
   const input = container.querySelector<HTMLInputElement>(
-    'input[id="price-sync-margin"]'
+    'input[id="price-sync-markup"]'
   )
   assert.ok(input)
   return input
 }
 
-describe('price sync dialog target margin default', () => {
+describe('price sync dialog target markup default', () => {
   after(() => {
     domWindow.close()
   })
@@ -166,7 +166,7 @@ describe('price sync dialog target margin default', () => {
     onlineManager.setOnline(true)
   })
 
-  test('defaults the target margin from the current detected margin once', async () => {
+  test('defaults the target markup from the current detected markup once', async () => {
     const container = document.createElement('div')
     document.body.append(container)
     const root = createRoot(container)
@@ -193,9 +193,9 @@ describe('price sync dialog target margin default', () => {
       )
     })
 
-    const input = marginInputIn(document.body)
-    // detected cost 2/8 vs local selling 6/20 -> lower margin 60
-    assert.equal(input.value, '60')
+    const input = markupInputIn(document.body)
+    // detected cost 2/8 vs local selling 6/20 -> lower markup 150
+    assert.equal(input.value, '150')
 
     await act(async () => root.unmount())
     container.remove()
@@ -240,7 +240,7 @@ describe('price sync dialog target margin default', () => {
       )
     })
 
-    const input = marginInputIn(document.body)
+    const input = markupInputIn(document.body)
     await act(async () => {
       changeInputValue(input, '45')
     })
@@ -294,7 +294,111 @@ describe('price sync dialog target margin default', () => {
         </QueryClientProvider>
       )
     })
-    assert.equal(marginInputIn(document.body).value, '85')
+    assert.equal(markupInputIn(document.body).value, '566.67')
+
+    await act(async () => root.unmount())
+    container.remove()
+    queryClient.clear()
+  })
+
+  test('shows unbounded markup previews and keeps official cost visible when invalid', async () => {
+    onlineManager.setOnline(false)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    })
+    const channel = detectedChannel({
+      uses_official_pricing: true,
+      local_input: 9,
+      local_output: 50,
+    })
+    await act(async () => {
+      queryClient.setQueryData(['system-options', 'gpt-5.6-sol'], {
+        data: [],
+      })
+      queryClient.setQueryData(
+        ['models-dev-official-price', 'gpt-5.6-sol', 'openai', 0.25],
+        {
+          providerId: 'openai',
+          providerName: 'OpenAI',
+          model: {
+            models_dev_pricing: {
+              base: {
+                input: 5,
+                output: 30,
+                cache_read: 0.5,
+                cache_write: 6.25,
+              },
+              tiers: [],
+              upstream_multiplier: 0.25,
+            },
+          },
+        }
+      )
+    })
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <I18nextProvider i18n={i18n}>
+            <PriceSyncDialog
+              open
+              onOpenChange={() => undefined}
+              modelName='gpt-5.6-sol'
+              channel={channel}
+              group='default'
+            />
+          </I18nextProvider>
+        </QueryClientProvider>
+      )
+    })
+
+    const input = markupInputIn(document.body)
+    // official cost 5/30 at multiplier 0.25 vs selling 9/50 -> default 566.67
+    assert.equal(input.value, '566.67')
+    // no arbitrary HTML maximum/spinner cap; decimals step by 0.01
+    assert.equal(input.hasAttribute('max'), false)
+    assert.equal(input.getAttribute('min'), '0')
+    assert.equal(input.getAttribute('step'), '0.01')
+
+    const applyButton = () =>
+      [...document.body.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === 'Apply selling price'
+      )
+    assert.ok(applyButton())
+
+    // markup 100 doubles the official cost 1.25/7.50 to a 2.50/15.00 preview
+    await act(async () => {
+      changeInputValue(input, '100')
+    })
+    assert.equal(input.value, '100')
+    assert.ok(document.body.textContent?.includes('$1.25'))
+    assert.ok(document.body.textContent?.includes('$7.50'))
+    assert.ok(document.body.textContent?.includes('$2.50'))
+    assert.ok(document.body.textContent?.includes('$15.00'))
+    assert.equal(applyButton()?.disabled, false)
+
+    // markup 200 triples it; there is no business upper bound
+    await act(async () => {
+      changeInputValue(input, '200')
+    })
+    assert.ok(document.body.textContent?.includes('$3.75'))
+    assert.ok(document.body.textContent?.includes('$22.50'))
+    assert.equal(applyButton()?.disabled, false)
+
+    // a negative markup blanks the plan but never the official cost
+    await act(async () => {
+      changeInputValue(input, '-5')
+    })
+    assert.equal(input.value, '-5')
+    assert.ok(document.body.textContent?.includes('Markup must be at least 0'))
+    assert.ok(document.body.textContent?.includes('$1.25'))
+    assert.ok(document.body.textContent?.includes('$7.50'))
+    assert.equal(applyButton()?.disabled, true)
 
     await act(async () => root.unmount())
     container.remove()
