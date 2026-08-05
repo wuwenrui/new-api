@@ -46,6 +46,8 @@ export interface PriceCompareChannel {
   channel_name: string
   upstream_group: string
   upstream_model: string
+  upstream_price_multiplier: number
+  uses_official_pricing?: boolean
   priority: number
   weight: number
   routing_role: 'primary' | 'primary_pool' | 'backup'

@@ -32,10 +32,6 @@ import { useSystemConfig } from '@/hooks/use-system-config'
 import { createChannel, getGroups, probeNewAPIUpstream } from '../api'
 import { channelsQueryKeys } from '../lib'
 import {
-  UPSTREAM_PROBE_CONFIGS_OPTION_KEY,
-  upsertUpstreamProbeConfig,
-} from '../lib/upstream-probe-configs'
-import {
   RATIO_OPTION_KEYS,
   type SaleOverride,
   buildModelsDevBillingExpression,
@@ -48,8 +44,13 @@ import {
 } from '../lib/newapi-onboard-pricing'
 import {
   buildSub2APIProbeResult,
+  buildUpstreamChannelSettings,
   listSub2APIProviders,
 } from '../lib/sub2api-onboard'
+import {
+  UPSTREAM_PROBE_CONFIGS_OPTION_KEY,
+  upsertUpstreamProbeConfig,
+} from '../lib/upstream-probe-configs'
 import type { NewAPIProbeModel, NewAPIProbeResult } from '../types'
 
 export const CHANNEL_TYPE_OPENAI = 1
@@ -620,6 +621,13 @@ export function useNewAPIOnboard(
           mapping[local] = m.model_name
         }
       })
+      // 比价 / 巡检按上游分组读取价格；Sub2API 还持久化连接时输入的
+      // Models.dev 美元成本倍率，NewAPI 渠道不写该字段。
+      const channelSettings = buildUpstreamChannelSettings(
+        source,
+        billingGroup,
+        Number(upstreamMultiplierInput)
+      )
       const createResp = await createChannel({
         mode: 'single',
         channel: {
@@ -633,8 +641,7 @@ export function useNewAPIOnboard(
             Object.keys(mapping).length > 0
               ? JSON.stringify(mapping, null, 2)
               : '',
-          // 让比价 / 巡检知道该渠道上游按哪个分组计费（resolvePACUpstreamGroup 优先读它）
-          settings: JSON.stringify({ pac_upstream_group: billingGroup }),
+          settings: JSON.stringify(channelSettings),
           status: 1,
           priority: 0,
           weight: 0,

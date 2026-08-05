@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
@@ -100,40 +102,42 @@ type ChannelPriceCompareChannelSummary struct {
 
 // ChannelPriceCompareChannel 单个渠道在某模型下的上游价、本地价与盈利率（单位美元 / 1M tokens）
 type ChannelPriceCompareChannel struct {
-	ChannelID          int                    `json:"channel_id"`
-	ChannelName        string                 `json:"channel_name"`
-	UpstreamGroup      string                 `json:"upstream_group"`
-	UpstreamModel      string                 `json:"upstream_model"`
-	Priority           int64                  `json:"priority"`
-	Weight             uint                   `json:"weight"`
-	RoutingRole        string                 `json:"routing_role"`
-	Status             string                 `json:"status"`
-	StatusReason       string                 `json:"status_reason"`
-	PriceSource        string                 `json:"price_source"`
-	PriceChanged       bool                   `json:"price_changed"`
-	DetectedAvailable  bool                   `json:"detected_available"`
-	UsesFixedPrice     bool                   `json:"uses_fixed_price"`
-	FixedPrice         float64                `json:"fixed_price"`
-	BillingMode        string                 `json:"billing_mode"`
-	BillingExpr        string                 `json:"billing_expr,omitempty"`
-	LocalInput         float64                `json:"local_input"`
-	LocalOutput        float64                `json:"local_output"`
-	LocalCacheRead     float64                `json:"local_cache_read"`
-	LocalCacheWrite    float64                `json:"local_cache_write"`
-	UpstreamInput      float64                `json:"upstream_input"`
-	UpstreamOutput     float64                `json:"upstream_output"`
-	UpstreamCacheRead  float64                `json:"upstream_cache_read"`
-	UpstreamCacheWrite float64                `json:"upstream_cache_write"`
-	DetectedInput      float64                `json:"detected_input"`
-	DetectedOutput     float64                `json:"detected_output"`
-	DetectedCacheRead  float64                `json:"detected_cache_read"`
-	DetectedCacheWrite float64                `json:"detected_cache_write"`
-	MarginInput        float64                `json:"margin_input"`
-	MarginOutput       float64                `json:"margin_output"`
-	Today              ChannelBusinessMetrics `json:"today"`
-	Total              ChannelBusinessMetrics `json:"total"`
-	Quality24h         ChannelQualityMetrics  `json:"quality_24h"`
-	Recommendations    []string               `json:"recommendations"`
+	ChannelID               int                    `json:"channel_id"`
+	ChannelName             string                 `json:"channel_name"`
+	UpstreamGroup           string                 `json:"upstream_group"`
+	UpstreamModel           string                 `json:"upstream_model"`
+	Priority                int64                  `json:"priority"`
+	UpstreamPriceMultiplier float64                `json:"upstream_price_multiplier"`       // Sub2API 上游 Models.dev 成本倍率，历史渠道归一为 1
+	UsesOfficialPricing     *bool                  `json:"uses_official_pricing,omitempty"` // true/false 为显式来源；省略表示旧渠道，前端沿用旧选择规则
+	Weight                  uint                   `json:"weight"`
+	RoutingRole             string                 `json:"routing_role"`
+	Status                  string                 `json:"status"`
+	StatusReason            string                 `json:"status_reason"`
+	PriceSource             string                 `json:"price_source"`
+	PriceChanged            bool                   `json:"price_changed"`
+	DetectedAvailable       bool                   `json:"detected_available"`
+	UsesFixedPrice          bool                   `json:"uses_fixed_price"`
+	FixedPrice              float64                `json:"fixed_price"`
+	BillingMode             string                 `json:"billing_mode"`
+	BillingExpr             string                 `json:"billing_expr,omitempty"`
+	LocalInput              float64                `json:"local_input"`
+	LocalOutput             float64                `json:"local_output"`
+	LocalCacheRead          float64                `json:"local_cache_read"`
+	LocalCacheWrite         float64                `json:"local_cache_write"`
+	UpstreamInput           float64                `json:"upstream_input"`
+	UpstreamOutput          float64                `json:"upstream_output"`
+	UpstreamCacheRead       float64                `json:"upstream_cache_read"`
+	UpstreamCacheWrite      float64                `json:"upstream_cache_write"`
+	DetectedInput           float64                `json:"detected_input"`
+	DetectedOutput          float64                `json:"detected_output"`
+	DetectedCacheRead       float64                `json:"detected_cache_read"`
+	DetectedCacheWrite      float64                `json:"detected_cache_write"`
+	MarginInput             float64                `json:"margin_input"`
+	MarginOutput            float64                `json:"margin_output"`
+	Today                   ChannelBusinessMetrics `json:"today"`
+	Total                   ChannelBusinessMetrics `json:"total"`
+	Quality24h              ChannelQualityMetrics  `json:"quality_24h"`
+	Recommendations         []string               `json:"recommendations"`
 }
 
 type channelSellingPrices struct {
@@ -478,6 +482,29 @@ func channelProbeErrorCode(err error) string {
 	}
 }
 
+func channelOfficialPricingMarker(channelType int, settings *dto.ChannelOtherSettings) *bool {
+	if settings != nil {
+		switch settings.UpstreamPricingSource {
+		case dto.UpstreamPricingSourceModelsDev:
+			value := true
+			return &value
+		case dto.UpstreamPricingSourceNewAPI:
+			value := false
+			return &value
+		}
+	}
+	if channelType == constant.ChannelTypeSub2API ||
+		(settings != nil && settings.UpstreamPriceMultiplier != nil) {
+		value := true
+		return &value
+	}
+	if channelType == constant.ChannelTypeNewAPI {
+		value := false
+		return &value
+	}
+	return nil
+}
+
 func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, modelName string, snapshot upstreamPricingSnapshot, localGroupRatio float64) ChannelPriceCompareChannel {
 	upstreamModelName := modelName
 	if rawMapping := strings.TrimSpace(channel.GetModelMapping()); rawMapping != "" {
@@ -488,15 +515,18 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 			}
 		}
 	}
+	settings := channel.GetOtherSettings()
 	row := ChannelPriceCompareChannel{
-		ChannelID:       channel.Id,
-		ChannelName:     channel.Name,
-		UpstreamGroup:   upstreamGroup,
-		UpstreamModel:   upstreamModelName,
-		Priority:        channelPriorityValue(channel),
-		Weight:          uint(channel.GetWeight()),
-		PriceSource:     "missing",
-		Recommendations: []string{},
+		ChannelID:               channel.Id,
+		ChannelName:             channel.Name,
+		UpstreamGroup:           upstreamGroup,
+		UpstreamModel:           upstreamModelName,
+		Priority:                channelPriorityValue(channel),
+		Weight:                  uint(channel.GetWeight()),
+		UpstreamPriceMultiplier: settings.NormalizeUpstreamPriceMultiplier(),
+		UsesOfficialPricing:     channelOfficialPricingMarker(channel.Type, &settings),
+		PriceSource:             "missing",
+		Recommendations:         []string{},
 	}
 
 	row.BillingMode = billing_setting.GetBillingMode(modelName)
@@ -538,7 +568,6 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 		}
 	}
 
-	settings := channel.GetOtherSettings()
 	manualPrice, hasManualPrice := settings.ModelPrices[modelName]
 	manualPriceComplete := hasManualPrice &&
 		manualPrice.Input != nil &&

@@ -111,6 +111,8 @@ export interface ChannelOtherSettings {
   claude_beta_query?: boolean
   disable_task_polling_sleep?: boolean
   pac_upstream_group?: string
+  upstream_price_multiplier?: number
+  upstream_pricing_source?: 'newapi' | 'models_dev'
   upstream_model_update_check_enabled?: boolean
   upstream_model_update_auto_sync_enabled?: boolean
   upstream_model_update_auto_remove_enabled?: boolean

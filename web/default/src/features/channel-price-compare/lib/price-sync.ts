@@ -106,6 +106,51 @@ export type OfficialPricingSyncRequest = {
   }
 }
 
+// Current gross margin of one token class:
+// (selling price - effective upstream cost) / selling price * 100.
+// Returns null when the selling price is missing/non-positive or the cost is
+// invalid/negative. A zero cost is valid and yields a 100% gross margin.
+export function currentMarginPercent(
+  sellingPrice: number,
+  effectiveCost: number
+): number | null {
+  if (
+    !Number.isFinite(sellingPrice) ||
+    sellingPrice <= 0 ||
+    !Number.isFinite(effectiveCost) ||
+    effectiveCost < 0
+  ) {
+    return null
+  }
+  return ((sellingPrice - effectiveCost) / sellingPrice) * 100
+}
+
+export type CurrentMarginInput = {
+  sellingInput: number
+  sellingOutput: number
+  costInput: number
+  costOutput: number
+}
+
+// Default target margin is the lower of the current input and output gross
+// margins, rounded to at most two decimals (no trailing zeroes). Both margins
+// must be computable; the lower result must be within [0, 95), otherwise the
+// dialog keeps its existing safe fallback.
+export function defaultTargetMarginPercent(
+  input: CurrentMarginInput
+): number | null {
+  const inputMargin = currentMarginPercent(input.sellingInput, input.costInput)
+  const outputMargin = currentMarginPercent(
+    input.sellingOutput,
+    input.costOutput
+  )
+  if (inputMargin === null || outputMargin === null) return null
+  const margin = Math.min(inputMargin, outputMargin)
+  if (margin < 0 || margin >= MAX_TARGET_MARGIN_PERCENT) return null
+  const roundedMargin = Math.round(margin * 100) / 100
+  return roundedMargin < MAX_TARGET_MARGIN_PERCENT ? roundedMargin : null
+}
+
 // Prefer the live detected upstream price when available; it is fresher than
 // the manually maintained purchase price whenever the two drift apart.
 export function resolveSyncBasis(
@@ -128,6 +173,18 @@ export function resolveSyncBasis(
     cacheWrite: channel.upstream_cache_write,
     source: 'manual',
   }
+}
+
+// New rows carry an explicit channel-level source marker. Rows created before
+// that marker existed retain the prior selection rule for compatibility.
+export function shouldUseOfficialPricing(
+  channel: PriceCompareChannel,
+  basis: UpstreamCostBasis | null
+): boolean {
+  if (channel.uses_official_pricing !== undefined) {
+    return channel.uses_official_pricing
+  }
+  return channel.billing_mode === 'tiered_expr' || basis === null
 }
 
 function ceilRatio(value: number): number {

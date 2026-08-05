@@ -1,6 +1,7 @@
 package model
 
 import (
+	"math"
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -264,6 +265,70 @@ func TestChannelValidateSettingsRejectsInvalidOfficialPriceTier(t *testing.T) {
 			require.Error(t, channel.ValidateSettings())
 		})
 	}
+}
+
+func TestChannelValidateSettingsRejectsInvalidUpstreamPriceMultiplier(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings string
+	}{
+		{name: "explicit zero", settings: `{"upstream_price_multiplier":0}`},
+		{name: "negative", settings: `{"upstream_price_multiplier":-0.5}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channel := &Channel{OtherSettings: tt.settings}
+
+			err := channel.ValidateSettings()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "upstream price multiplier")
+		})
+	}
+}
+
+func TestChannelValidateSettingsRejectsInvalidUpstreamPricingSource(t *testing.T) {
+	channel := &Channel{OtherSettings: `{"upstream_pricing_source":"unknown"}`}
+
+	err := channel.ValidateSettings()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "upstream pricing source")
+}
+
+func TestChannelValidateSettingsRejectsNonFiniteUpstreamPriceMultiplier(t *testing.T) {
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		require.False(t, validChannelUpstreamPriceMultiplier(&value))
+	}
+}
+
+func TestChannelValidateSettingsAcceptsMissingAndPositiveUpstreamPriceMultiplier(t *testing.T) {
+	channel := &Channel{}
+	require.NoError(t, channel.ValidateSettings())
+	require.Nil(t, channel.GetOtherSettings().UpstreamPriceMultiplier)
+
+	multiplier := 0.25
+	channel = &Channel{}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		UpstreamPriceMultiplier: &multiplier,
+		UpstreamPricingSource:   "models_dev",
+	})
+	require.NoError(t, channel.ValidateSettings())
+	require.Equal(t, 0.25, *channel.GetOtherSettings().UpstreamPriceMultiplier)
+	assert.Contains(t, channel.OtherSettings, `"upstream_price_multiplier":0.25`)
+}
+
+func TestChannelOtherSettingsNormalizeUpstreamPriceMultiplier(t *testing.T) {
+	var settings *dto.ChannelOtherSettings
+	assert.Equal(t, 1.0, settings.NormalizeUpstreamPriceMultiplier())
+
+	settings = &dto.ChannelOtherSettings{}
+	assert.Equal(t, 1.0, settings.NormalizeUpstreamPriceMultiplier())
+
+	multiplier := 0.25
+	settings = &dto.ChannelOtherSettings{UpstreamPriceMultiplier: &multiplier}
+	assert.Equal(t, 0.25, settings.NormalizeUpstreamPriceMultiplier())
 }
 
 func TestChannelValidateSettingsDropsPerCallModelPrices(t *testing.T) {

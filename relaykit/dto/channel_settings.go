@@ -84,6 +84,11 @@ type ChannelModelPrice struct {
 	Tiers      []ChannelModelPriceTier `json:"tiers,omitempty"`
 }
 
+const (
+	UpstreamPricingSourceNewAPI    = "newapi"
+	UpstreamPricingSourceModelsDev = "models_dev"
+)
+
 type ChannelOtherSettings struct {
 	AzureResponsesVersion                 string                       `json:"azure_responses_version,omitempty"`
 	VertexKeyType                         VertexKeyType                `json:"vertex_key_type,omitempty"` // "json" or "api_key"
@@ -105,6 +110,8 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string                     `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string                     `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	PACUpstreamGroup                      string                       `json:"pac_upstream_group,omitempty"`                         // PAC 价格监控与分组模型同步使用的上游分组
+	UpstreamPriceMultiplier               *float64                     `json:"upstream_price_multiplier,omitempty"`                  // Sub2API 上游 Models.dev 美元成本倍率；未设置的历史渠道按 1 处理
+	UpstreamPricingSource                 string                       `json:"upstream_pricing_source,omitempty"`                    // 上游定价来源：newapi=探测/手工采购价，models_dev=官方目录价
 	ModelPrices                           map[string]ChannelModelPrice `json:"model_prices,omitempty"`                               // 按站内模型名维护的上游采购价（美元 / 1M tokens）
 	LowBalanceNotified                    bool                         `json:"low_balance_notified,omitempty"`                       // 渠道余额不足定时告警：已推送过低余额通知（余额回升后清除）
 	AdvancedCustom                        *AdvancedCustomConfig        `json:"advanced_custom,omitempty"`
@@ -115,6 +122,15 @@ func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {
 		return false
 	}
 	return *s.OpenRouterEnterprise
+}
+
+// NormalizeUpstreamPriceMultiplier 返回生效的 Sub2API 上游价倍率；
+// 未配置该字段的历史渠道按 1 处理，保证既有渠道定价语义不变。
+func (s *ChannelOtherSettings) NormalizeUpstreamPriceMultiplier() float64 {
+	if s == nil || s.UpstreamPriceMultiplier == nil {
+		return 1
+	}
+	return *s.UpstreamPriceMultiplier
 }
 
 const (

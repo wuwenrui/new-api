@@ -51,6 +51,25 @@ export type ResolvedModelsDevProbeModel = {
   model: NewAPIProbeModel
 }
 
+export function buildUpstreamChannelSettings(
+  source: 'newapi' | 'sub2api',
+  billingGroup: string,
+  upstreamMultiplier: number
+): Record<string, unknown> {
+  const settings: Record<string, unknown> = {
+    pac_upstream_group: billingGroup,
+    upstream_pricing_source: source === 'sub2api' ? 'models_dev' : 'newapi',
+  }
+  if (
+    source === 'sub2api' &&
+    Number.isFinite(upstreamMultiplier) &&
+    upstreamMultiplier > 0
+  ) {
+    settings.upstream_price_multiplier = upstreamMultiplier
+  }
+  return settings
+}
+
 const CANONICAL_MODELS_DEV_PROVIDERS = new Set([
   'anthropic',
   'google',
@@ -153,7 +172,8 @@ function toProbeModel(
 export function resolveModelsDevProbeModel(
   providers: ProviderMap,
   modelName: string,
-  providerHint: string
+  providerHint: string,
+  upstreamMultiplier = 1
 ): ResolvedModelsDevProbeModel | null {
   const normalizedModel = modelName.trim()
   const normalizedHint = providerHint.trim().toLowerCase()
@@ -170,7 +190,7 @@ export function resolveModelsDevProbeModel(
   return {
     providerId,
     providerName: provider.name,
-    model: toProbeModel(provider, providerModel, 1),
+    model: toProbeModel(provider, providerModel, upstreamMultiplier),
   }
 }
 

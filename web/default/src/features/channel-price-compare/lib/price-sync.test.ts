@@ -26,6 +26,9 @@ import {
   buildSyncRequest,
   computeOfficialSyncPlan,
   computeSyncRatios,
+  currentMarginPercent,
+  defaultTargetMarginPercent,
+  shouldUseOfficialPricing,
   parseCompletionRatioMeta,
   parseTargetMargin,
   parseNumberRecord,
@@ -83,6 +86,8 @@ const channel = (
   channel_name: 'c',
   upstream_group: 'default',
   upstream_model: 'm',
+  upstream_price_multiplier: 1,
+  uses_official_pricing: false,
   priority: 0,
   weight: 1,
   routing_role: 'primary',
@@ -154,6 +159,61 @@ describe('resolveSyncBasis', () => {
 
   test('returns null when price is not maintained', () => {
     assert.equal(resolveSyncBasis(channel({ status: 'unknown' })), null)
+  })
+})
+
+describe('shouldUseOfficialPricing', () => {
+  test('honors explicit source markers before legacy fallbacks', () => {
+    const detectedBasis = resolveSyncBasis(channel({}))
+    assert.equal(
+      shouldUseOfficialPricing(
+        channel({ uses_official_pricing: false, billing_mode: 'tiered_expr' }),
+        detectedBasis
+      ),
+      false
+    )
+    assert.equal(
+      shouldUseOfficialPricing(
+        channel({
+          uses_official_pricing: false,
+          status: 'unknown',
+          detected_available: false,
+        }),
+        null
+      ),
+      false
+    )
+    assert.equal(
+      shouldUseOfficialPricing(
+        channel({ uses_official_pricing: true }),
+        detectedBasis
+      ),
+      true
+    )
+  })
+
+  test('preserves the previous routing only for unmarked legacy rows', () => {
+    assert.equal(
+      shouldUseOfficialPricing(
+        channel({
+          uses_official_pricing: undefined,
+          billing_mode: 'tiered_expr',
+        }),
+        resolveSyncBasis(channel({}))
+      ),
+      true
+    )
+    assert.equal(
+      shouldUseOfficialPricing(
+        channel({
+          uses_official_pricing: undefined,
+          status: 'unknown',
+          detected_available: false,
+        }),
+        null
+      ),
+      true
+    )
   })
 })
 
@@ -349,5 +409,107 @@ describe('parseNumberRecord', () => {
     assert.deepEqual(parseNumberRecord(undefined), {})
     assert.deepEqual(parseNumberRecord('not json'), {})
     assert.deepEqual(parseNumberRecord('[1,2]'), {})
+  })
+})
+
+describe('currentMarginPercent / defaultTargetMarginPercent', () => {
+  test('official 5/30 at multiplier 0.25 against 18/100 selling defaults to 92.5', () => {
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 18,
+        sellingOutput: 100,
+        costInput: 5 * 0.25,
+        costOutput: 30 * 0.25,
+      }),
+      92.5
+    )
+  })
+
+  test('detected 2/8 against 6/20 selling defaults to 60', () => {
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 6,
+        sellingOutput: 20,
+        costInput: 2,
+        costOutput: 8,
+      }),
+      60
+    )
+  })
+
+  test('rounds the lower margin to at most two decimals', () => {
+    // input margin 93.055... is the lower one and rounds to 93.06
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 18,
+        sellingOutput: 100,
+        costInput: 1.25,
+        costOutput: 6,
+      }),
+      93.06
+    )
+  })
+
+  test('falls back when rounding would cross the 95 percent limit', () => {
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 100,
+        sellingOutput: 100,
+        costInput: 5.005,
+        costOutput: 5.005,
+      }),
+      null
+    )
+  })
+
+  test('returns null when the current margin is out of the valid range', () => {
+    assert.equal(currentMarginPercent(10, 0.1), 99)
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 10,
+        sellingOutput: 10,
+        costInput: 0.1,
+        costOutput: 0.1,
+      }),
+      null
+    )
+    // selling below cost is a negative margin
+    // the lower class controls: a negative input margin must not be discarded
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 1,
+        sellingOutput: 10,
+        costInput: 2,
+        costOutput: 4,
+      }),
+      null
+    )
+  })
+
+  test('returns null when the margin cannot be computed', () => {
+    assert.equal(currentMarginPercent(0, 2), null)
+    assert.equal(currentMarginPercent(2, 0), 100)
+    assert.equal(currentMarginPercent(Number.NaN, 2), null)
+    // both input and output are required to establish the lower margin
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 0,
+        sellingOutput: 20,
+        costInput: 2,
+        costOutput: 8,
+      }),
+      null
+    )
+
+    // A free output class has a valid 100% margin; the lower input margin wins.
+    assert.equal(
+      defaultTargetMarginPercent({
+        sellingInput: 20,
+        sellingOutput: 20,
+        costInput: 8,
+        costOutput: 0,
+      }),
+      60
+    )
   })
 })

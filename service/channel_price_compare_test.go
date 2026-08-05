@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -70,6 +71,50 @@ func TestBuildChannelPriceCompareRowOK(t *testing.T) {
 
 	assert.InDelta(t, 88.0, row.MarginInput, 1e-9)
 	assert.InDelta(t, 88.0, row.MarginOutput, 1e-9)
+}
+
+func TestBuildChannelPriceCompareRowExposesNormalizedUpstreamPriceMultiplier(t *testing.T) {
+	setupPriceCompareRatios(t)
+
+	// New wizard-created NewAPI channels carry an explicit false marker even
+	// though their relay protocol type is OpenAI/Anthropic.
+	explicitNewAPIChannel := newPriceCompareChannel()
+	explicitNewAPIChannel.Type = constant.ChannelTypeOpenAI
+	explicitNewAPISettings := explicitNewAPIChannel.GetOtherSettings()
+	explicitNewAPISettings.UpstreamPricingSource = "newapi"
+	explicitNewAPIChannel.SetOtherSettings(explicitNewAPISettings)
+	row := buildChannelPriceCompareRow(explicitNewAPIChannel, "grp", "test-model", snapshotWithTestModel(), 1)
+	require.NotNil(t, row.UsesOfficialPricing)
+	assert.False(t, *row.UsesOfficialPricing)
+
+	// The Sub2API wizard persists the Models.dev source and multiplier while
+	// retaining the OpenAI/Anthropic relay protocol type.
+	onboardedSub2APIChannel := newPriceCompareChannel()
+	onboardedSub2APIChannel.Type = constant.ChannelTypeOpenAI
+	multiplier := 0.25
+	settings := onboardedSub2APIChannel.GetOtherSettings()
+	settings.UpstreamPricingSource = "models_dev"
+	settings.UpstreamPriceMultiplier = &multiplier
+	onboardedSub2APIChannel.SetOtherSettings(settings)
+	row = buildChannelPriceCompareRow(onboardedSub2APIChannel, "grp", "test-model", snapshotWithTestModel(), 1)
+	assert.Equal(t, 0.25, row.UpstreamPriceMultiplier)
+	require.NotNil(t, row.UsesOfficialPricing)
+	assert.True(t, *row.UsesOfficialPricing)
+
+	// Direct type-59 Sub2API channels are unambiguously official.
+	legacySub2APIChannel := newPriceCompareChannel()
+	legacySub2APIChannel.Type = constant.ChannelTypeSub2API
+	row = buildChannelPriceCompareRow(legacySub2APIChannel, "grp", "test-model", snapshotWithTestModel(), 1)
+	assert.Equal(t, 1.0, row.UpstreamPriceMultiplier)
+	require.NotNil(t, row.UsesOfficialPricing)
+	assert.True(t, *row.UsesOfficialPricing)
+
+	// Pre-marker OpenAI/Anthropic rows are ambiguous and must preserve the old
+	// frontend selection behavior rather than being mislabeled false.
+	legacyWizardChannel := newPriceCompareChannel()
+	legacyWizardChannel.Type = constant.ChannelTypeOpenAI
+	row = buildChannelPriceCompareRow(legacyWizardChannel, "grp", "test-model", snapshotWithTestModel(), 1)
+	assert.Nil(t, row.UsesOfficialPricing)
 }
 
 func TestBuildChannelPriceCompareRowUsesConfiguredQuotaScale(t *testing.T) {

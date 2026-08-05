@@ -13,6 +13,7 @@ import {
 } from './newapi-onboard-pricing'
 import {
   buildSub2APIProbeResult,
+  buildUpstreamChannelSettings,
   listSub2APIProviders,
   resolveModelsDevProbeModel,
 } from './sub2api-onboard'
@@ -145,6 +146,40 @@ describe('Sub2API models.dev onboarding', () => {
         ?.providerId,
       'openai'
     )
+  })
+
+  test('applies the channel upstream multiplier to resolved official prices', () => {
+    const gpt = resolveModelsDevProbeModel(
+      resolutionProviders,
+      'gpt-5.6-sol',
+      '',
+      0.25
+    )
+    assert.equal(gpt?.providerId, 'openai')
+    assert.equal(gpt?.model.models_dev_pricing?.upstream_multiplier, 0.25)
+    // Models.dev base prices stay canonical USD
+    assert.equal(gpt?.model.models_dev_pricing?.base.input, 5)
+    assert.equal(gpt?.model.models_dev_pricing?.base.output, 30)
+
+    // legacy callers omit the multiplier and keep 1
+    const legacy = resolveModelsDevProbeModel(
+      resolutionProviders,
+      'gpt-5.6-sol',
+      ''
+    )
+    assert.equal(legacy?.model.models_dev_pricing?.upstream_multiplier, 1)
+  })
+
+  test('persists source and multiplier in channel creation settings', () => {
+    assert.deepEqual(buildUpstreamChannelSettings('sub2api', 'openai', 0.25), {
+      pac_upstream_group: 'openai',
+      upstream_pricing_source: 'models_dev',
+      upstream_price_multiplier: 0.25,
+    })
+    assert.deepEqual(buildUpstreamChannelSettings('newapi', 'vip', 0.25), {
+      pac_upstream_group: 'vip',
+      upstream_pricing_source: 'newapi',
+    })
   })
 
   test('rejects invalid multipliers and unknown providers', () => {

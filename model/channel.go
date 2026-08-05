@@ -949,6 +949,16 @@ func validChannelModelPriceNumber(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0
 }
 
+// validChannelUpstreamPriceMultiplier 校验 Sub2API 上游价倍率：未设置（历史渠道）
+// 视为合法并归一为 1；显式设置时必须为正有限数，0 / 负数 / NaN / Inf 一律拒绝，
+// 绝不把显式非法值静默当作 1 使用。
+func validChannelUpstreamPriceMultiplier(value *float64) bool {
+	if value == nil {
+		return true
+	}
+	return *value > 0 && !math.IsNaN(*value) && !math.IsInf(*value, 0)
+}
+
 func normalizeChannelModelPrice(modelName string, price dto.ChannelModelPrice) (dto.ChannelModelPrice, error) {
 	basePrices := []struct {
 		name  string
@@ -1026,6 +1036,14 @@ func (channel *Channel) ValidateSettings() error {
 		}
 	}
 	channelOtherSettings.PACUpstreamGroup = strings.TrimSpace(channelOtherSettings.PACUpstreamGroup)
+	switch channelOtherSettings.UpstreamPricingSource {
+	case "", dto.UpstreamPricingSourceNewAPI, dto.UpstreamPricingSourceModelsDev:
+	default:
+		return fmt.Errorf("invalid upstream pricing source: must be newapi or models_dev when set")
+	}
+	if !validChannelUpstreamPriceMultiplier(channelOtherSettings.UpstreamPriceMultiplier) {
+		return fmt.Errorf("invalid upstream price multiplier: must be a positive finite number when set")
+	}
 	if len(channelOtherSettings.ModelPrices) > 0 {
 		allowedModels := make(map[string]struct{}, len(channel.GetModels()))
 		for _, modelName := range channel.GetModels() {
