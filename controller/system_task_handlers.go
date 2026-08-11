@@ -168,6 +168,11 @@ func (channelBalanceMonitorHandler) Interval() time.Duration {
 func (channelBalanceMonitorHandler) NewPayload() any { return nil }
 
 func (channelBalanceMonitorHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	// 巡检前先刷新 PAC 渠道上游余额（packyapi 系统访问令牌），
+	// 使经营报表的 low_balance 标记基于最新余额；刷新失败不中断巡检。
+	if err := service.RefreshPACChannelBalances(ctx); err != nil {
+		common.SysLog("刷新 PAC 渠道余额失败: " + err.Error())
+	}
 	report, err := service.BuildChannelBusinessReport(ctx, service.ChannelBusinessReportParams{})
 	if err != nil {
 		service.NotifyUpstreamModelUpdateWatchers("渠道余额巡检失败", "渠道余额巡检失败："+err.Error())
@@ -183,6 +188,8 @@ func (channelBalanceMonitorHandler) Run(ctx context.Context, task *model.SystemT
 	if len(alerts) > 0 {
 		subject, content := service.BuildChannelLowBalanceNotification(alerts)
 		service.NotifyUpstreamModelUpdateWatchers(subject, content)
+		// 余额不足告警额外通过 Bark 推送（复用充值通知 Bark URL）
+		service.NotifyChannelLowBalanceViaBark(subject, content)
 	}
 	summary := map[string]any{
 		"checked_channels": len(report.Rows),

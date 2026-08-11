@@ -6,6 +6,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 // ChannelLowBalanceAlert 本次巡检新跌破余额阈值的渠道
@@ -100,4 +102,17 @@ func BuildChannelLowBalanceNotification(alerts []ChannelLowBalanceAlert) (string
 		strings.Join(lines, "\n"),
 	)
 	return "渠道余额不足告警", content
+}
+
+// NotifyChannelLowBalanceViaBark 通过 Bark 推送渠道余额不足告警，复用充值通知的 Bark URL
+// （operation_setting.RechargeNotifyBarkUrl）。未配置 Bark URL 或发送失败时仅记日志，不阻塞调用方。
+func NotifyChannelLowBalanceViaBark(subject string, content string) {
+	barkURL := operation_setting.RechargeNotifyBarkUrl
+	if barkURL == "" {
+		return
+	}
+	notify := dto.NewNotify(dto.NotifyTypeChannelUpdate, subject, content, nil)
+	if err := sendBarkRequest(barkURL, notify, ""); err != nil {
+		common.SysLog(fmt.Sprintf("failed to send channel low balance bark notify: %s", err.Error()))
+	}
 }
