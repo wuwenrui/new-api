@@ -111,8 +111,12 @@ export function upstreamCostOutUSD(
   return upstreamCostInUSD(model, upstreamGroupRatio) * model.completion_ratio
 }
 
+export function quantizeModelsDevExpressionCoefficient(value: number): number {
+  return Math.round(value * 1e9) / 1e9
+}
+
 function formatExprNumber(value: number): string {
-  return String(Math.round(value * 1e9) / 1e9)
+  return String(quantizeModelsDevExpressionCoefficient(value))
 }
 
 function modelsDevCostExpression(
@@ -174,7 +178,8 @@ export function buildModelsDevBillingExpression(
   const baseInputCost = pricing.base.input * pricing.upstream_multiplier
   const baseOutputCost = pricing.base.output * pricing.upstream_multiplier
   const inputScale = baseInputCost > 0 ? saleInUSD / baseInputCost : 1
-  const outputScale = baseOutputCost > 0 ? saleOutUSD / baseOutputCost : 1
+  const outputScale =
+    baseOutputCost > 0 ? saleOutUSD / baseOutputCost : inputScale
   const tierExpr = (
     name: string,
     cost: NonNullable<NewAPIProbeModel['models_dev_pricing']>['base']

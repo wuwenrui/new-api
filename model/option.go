@@ -211,7 +211,7 @@ func loadOptionsFromDatabase() {
 		return
 	}
 	for _, option := range options {
-		if isPricingSnapshotOptionKey(option.Key) {
+		if isRuntimePricingOptionKey(option.Key) {
 			continue
 		}
 		if err := updateOptionMap(option.Key, option.Value); err != nil {
@@ -220,7 +220,7 @@ func loadOptionsFromDatabase() {
 	}
 	err = ratio_setting.WritePricingSnapshot(func() error {
 		for _, option := range options {
-			if !isPricingSnapshotOptionKey(option.Key) {
+			if !isRuntimePricingOptionKey(option.Key) {
 				continue
 			}
 			if err := updateOptionMap(option.Key, option.Value); err != nil {
@@ -300,13 +300,19 @@ func isPricingSnapshotOptionKey(key string) bool {
 	}
 }
 
+func isRuntimePricingOptionKey(key string) bool {
+	return isPricingSnapshotOptionKey(key) ||
+		key == "billing_setting.billing_mode" ||
+		key == "billing_setting.billing_expr"
+}
+
 func invalidatesPublicPricingCache(key string) bool {
 	return isPricingSnapshotOptionKey(key) || strings.HasPrefix(key, "billing_setting.")
 }
 
 func containsPricingSnapshotOption(values map[string]string) bool {
 	for key := range values {
-		if isPricingSnapshotOptionKey(key) {
+		if isRuntimePricingOptionKey(key) {
 			return true
 		}
 	}
@@ -329,7 +335,7 @@ func UpdateOption(key string, value string) error {
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
-	if isPricingSnapshotOptionKey(key) {
+	if isRuntimePricingOptionKey(key) {
 		err := ratio_setting.WritePricingSnapshot(func() error {
 			return persistAndPublishOption(key, value)
 		})
@@ -438,15 +444,23 @@ func updateChannelModelPrice(tx *gorm.DB, update *ChannelModelPriceUpdate) error
 	if err != nil {
 		return err
 	}
-	settings := channel.GetOtherSettings()
+	settings := dto.ChannelOtherSettings{}
+	if rawSettings := strings.TrimSpace(channel.OtherSettings); rawSettings != "" {
+		if err := common.UnmarshalJsonStr(rawSettings, &settings); err != nil {
+			return fmt.Errorf("invalid channel settings for channel %d: %w", channel.Id, err)
+		}
+	}
 	if settings.ModelPrices == nil {
 		settings.ModelPrices = make(map[string]dto.ChannelModelPrice)
 	}
 	settings.ModelPrices[modelName] = price
-	channel.SetOtherSettings(settings)
+	settingsBytes, err := common.Marshal(settings)
+	if err != nil {
+		return err
+	}
 	return tx.Model(&Channel{}).
 		Where("id = ?", channel.Id).
-		Update("settings", channel.OtherSettings).Error
+		Update("settings", string(settingsBytes)).Error
 }
 
 // UpdateOptionsAtomically rebuilds JSON option values from the latest database

@@ -37,10 +37,29 @@ export type UpdateOptionRequest = {
 export type PricingOptionsUpdateRequest =
   | {
       model_name: string
+      billing_mode: 'ratio'
       model_ratio: number
       completion_ratio?: number
       cache_ratio: number
       create_cache_ratio: number
+      channel_id?: never
+      purchase_price?: never
+    }
+  | {
+      model_name: string
+      billing_mode: 'ratio'
+      model_ratio: number
+      completion_ratio?: number
+      cache_ratio: number
+      create_cache_ratio: number
+      channel_id: number
+      purchase_price: {
+        input: number
+        output: number
+        cache_read: number
+        cache_write: number
+        source: 'manual'
+      }
     }
   | {
       model_name: string

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -47,6 +48,24 @@ func snapshotWithTestModel() upstreamPricingSnapshot {
 			"test-model": {ModelRatio: 5, CompletionRatio: 5, CacheRatio: 0.1, CreateCacheRatio: 1.25},
 		},
 	}
+}
+
+func newOfficialPriceCompareChannel() *model.Channel {
+	channel := newPriceCompareChannel()
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		UpstreamPricingSource: dto.UpstreamPricingSourceModelsDev,
+		ModelPrices: map[string]dto.ChannelModelPrice{
+			"test-model": {
+				Input:      channelPriceValue(9),
+				Output:     channelPriceValue(45),
+				CacheRead:  channelPriceValue(0.9),
+				CacheWrite: channelPriceValue(11.25),
+				Source:     dto.UpstreamPricingSourceModelsDev,
+				Provider:   "openai",
+			},
+		},
+	})
+	return channel
 }
 
 // 本地分组倍率 2.5，上游分组倍率 0.3，模型倍率两侧一致：
@@ -174,31 +193,128 @@ func TestBuildChannelPriceCompareRowUsesGroupRatioForFixedPrice(t *testing.T) {
 	assert.NotContains(t, channelRecommendations(row), "low_margin")
 }
 
-func TestBuildChannelPriceCompareRowShowsMatchingDetectedManualPrice(t *testing.T) {
+func TestBuildChannelPriceCompareRowManualPricePrecedesDetected(t *testing.T) {
 	setupPriceCompareRatios(t)
-	channel := newPriceCompareChannel()
-	channel.SetOtherSettings(dto.ChannelOtherSettings{
-		PACUpstreamGroup: "grp",
-		ModelPrices: map[string]dto.ChannelModelPrice{
-			"test-model": {
-				Input:      channelPriceValue(3),
-				Output:     channelPriceValue(15),
-				CacheRead:  channelPriceValue(0.3),
-				CacheWrite: channelPriceValue(3.75),
-			},
-		},
-	})
+	for _, source := range []string{"", "manual"} {
+		t.Run("source="+source, func(t *testing.T) {
+			channel := newPriceCompareChannel()
+			channel.SetOtherSettings(dto.ChannelOtherSettings{
+				UpstreamPricingSource: dto.UpstreamPricingSourceModelsDev,
+				ModelPrices: map[string]dto.ChannelModelPrice{
+					"test-model": {
+						Input:      channelPriceValue(3),
+						Output:     channelPriceValue(15),
+						CacheRead:  channelPriceValue(0.3),
+						CacheWrite: channelPriceValue(3.75),
+						Source:     source,
+					},
+				},
+			})
 
-	row := buildChannelPriceCompareRow(channel, "grp", "test-model", snapshotWithTestModel(), 2.5)
+			row := buildChannelPriceCompareRow(channel, "grp", "test-model", snapshotWithTestModel(), 2.5)
 
-	assert.Equal(t, "manual", row.PriceSource)
-	assert.True(t, row.DetectedAvailable)
-	assert.False(t, row.PriceChanged)
-	assert.InDelta(t, 3.0, row.DetectedInput, 1e-9)
-	assert.InDelta(t, 15.0, row.DetectedOutput, 1e-9)
+			assert.Equal(t, "manual", row.PriceSource)
+			assert.True(t, row.DetectedAvailable)
+			assert.False(t, row.PriceChanged)
+			assert.InDelta(t, 3.0, row.DetectedInput, 1e-9)
+			assert.InDelta(t, 15.0, row.DetectedOutput, 1e-9)
+		})
+	}
 }
 
-func TestBuildChannelPriceCompareRowAcceptsFreeUpstreamGroup(t *testing.T) {
+func TestBuildChannelPriceCompareRowUsesDetectedBeforeModelsDev(t *testing.T) {
+	setupPriceCompareRatios(t)
+	row := buildChannelPriceCompareRow(
+		newOfficialPriceCompareChannel(),
+		"grp",
+		"test-model",
+		snapshotWithTestModel(),
+		2.5,
+	)
+
+	assert.Equal(t, "ok", row.Status)
+	assert.Equal(t, "detected", row.PriceSource)
+	assert.True(t, row.DetectedAvailable)
+	require.NotNil(t, row.UsesOfficialPricing)
+	assert.True(t, *row.UsesOfficialPricing)
+	assert.InDelta(t, 3.0, row.UpstreamInput, 1e-9)
+	assert.InDelta(t, 15.0, row.UpstreamOutput, 1e-9)
+}
+
+func TestBuildChannelPriceCompareRowDoesNotTreatUnknownSourceAsManual(t *testing.T) {
+	setupPriceCompareRatios(t)
+	channel := newOfficialPriceCompareChannel()
+	settings := channel.GetOtherSettings()
+	storedPrice := settings.ModelPrices["test-model"]
+	storedPrice.Source = dto.UpstreamPricingSourceNewAPI
+	settings.ModelPrices["test-model"] = storedPrice
+	channel.SetOtherSettings(settings)
+
+	row := buildChannelPriceCompareRow(
+		channel, "grp", "test-model", snapshotWithTestModel(), 2.5,
+	)
+
+	assert.Equal(t, "detected", row.PriceSource)
+	assert.InDelta(t, 3.0, row.UpstreamInput, 1e-9)
+}
+
+func TestBuildChannelPriceCompareRowFallsBackToModelsDevForInvalidDetection(t *testing.T) {
+	setupPriceCompareRatios(t)
+	zeroInput := snapshotWithTestModel()
+	zeroInput.GroupRatios["grp"] = 0
+	overflow := snapshotWithTestModel()
+	overflow.QuotaPerUnit = 1_000_000
+	overflow.Models["test-model"] = upstreamPricingModel{
+		ModelRatio:       5,
+		CompletionRatio:  math.MaxFloat64,
+		CacheRatio:       0.1,
+		CreateCacheRatio: 1.25,
+	}
+
+	for name, snapshot := range map[string]upstreamPricingSnapshot{
+		"zero input": zeroInput,
+		"overflow":   overflow,
+	} {
+		t.Run(name, func(t *testing.T) {
+			row := buildChannelPriceCompareRow(
+				newOfficialPriceCompareChannel(), "grp", "test-model", snapshot, 2.5,
+			)
+
+			assert.Equal(t, "models_dev", row.PriceSource)
+			assert.False(t, row.DetectedAvailable)
+			assert.Zero(t, row.DetectedInput)
+			assert.Zero(t, row.DetectedOutput)
+			assert.Zero(t, row.DetectedCacheRead)
+			assert.Zero(t, row.DetectedCacheWrite)
+			assert.InDelta(t, 9.0, row.UpstreamInput, 1e-9)
+			assert.InDelta(t, 45.0, row.UpstreamOutput, 1e-9)
+			_, err := common.Marshal(row)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestBuildChannelPriceCompareRowUsesModelsDevWhenDetectionUnavailable(t *testing.T) {
+	setupPriceCompareRatios(t)
+
+	row := buildChannelPriceCompareRow(
+		newOfficialPriceCompareChannel(),
+		"",
+		"test-model",
+		upstreamPricingSnapshot{},
+		2.5,
+	)
+
+	assert.Equal(t, "ok", row.Status)
+	assert.Equal(t, "models_dev", row.PriceSource)
+	require.NotNil(t, row.UsesOfficialPricing)
+	assert.True(t, *row.UsesOfficialPricing)
+	assert.False(t, row.DetectedAvailable)
+	assert.InDelta(t, 9.0, row.UpstreamInput, 1e-9)
+	assert.InDelta(t, 45.0, row.UpstreamOutput, 1e-9)
+}
+
+func TestBuildChannelPriceCompareRowRejectsZeroInputDetectedBasis(t *testing.T) {
 	setupPriceCompareRatios(t)
 	snapshot := snapshotWithTestModel()
 	snapshot.GroupRatios["grp"] = 0
@@ -211,10 +327,9 @@ func TestBuildChannelPriceCompareRowAcceptsFreeUpstreamGroup(t *testing.T) {
 		2.5,
 	)
 
-	assert.Equal(t, "ok", row.Status)
-	assert.True(t, row.DetectedAvailable)
+	assert.Equal(t, "unknown", row.Status)
+	assert.False(t, row.DetectedAvailable)
 	assert.Zero(t, row.UpstreamInput)
-	assert.InDelta(t, 100.0, row.MarginInput, 1e-9)
 }
 
 func TestBuildChannelPriceCompareRowUnknownBranches(t *testing.T) {

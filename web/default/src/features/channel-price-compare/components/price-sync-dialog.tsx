@@ -38,21 +38,22 @@ import { formatPercent, formatUsd } from '../lib/formatters'
 import {
   buildOfficialSyncRequest,
   buildSyncRequest,
-  computeOfficialSyncPlan,
+  computeOfficialSyncPlanResult,
   computeSyncRatios,
-  defaultTargetMarkupPercent,
+  defaultTargetCostProfitRatePercent,
   grossMarginPercent,
   grossProfitUsd,
-  officialTokenPrices,
+  isGrok46UnifiedPricingModel,
+  officialSyncCost,
   parseCompletionRatioMeta,
-  parseTargetMarkup,
   parseNumberRecord,
+  parseTargetCostProfitRate,
   resolveSyncBasis,
   shouldUseOfficialPricing,
 } from '../lib/price-sync'
 import type { PriceCompareChannel } from '../types'
 
-const DEFAULT_MARKUP_INPUT = '30'
+const DEFAULT_COST_PROFIT_RATE_INPUT = '30'
 
 export function PriceSyncDialog(props: {
   open: boolean
@@ -63,25 +64,28 @@ export function PriceSyncDialog(props: {
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [markupInput, setMarkupInput] = useState(DEFAULT_MARKUP_INPUT)
-  // 目标加价率默认值：每个打开周期只在定价数据就绪后应用一次，
+  const [costProfitRateInput, setCostProfitRateInput] = useState(
+    DEFAULT_COST_PROFIT_RATE_INPUT
+  )
+  // 目标成本利润率默认值：每个打开周期只在定价数据就绪后应用一次，
   // 用户在数据加载完成前输入则不再覆盖。
-  const [markupUserEdited, setMarkupUserEdited] = useState(false)
-  const [markupDefaulted, setMarkupDefaulted] = useState(false)
+  const [costProfitRateUserEdited, setCostProfitRateUserEdited] =
+    useState(false)
+  const [costProfitRateDefaulted, setCostProfitRateDefaulted] = useState(false)
   const basis = props.channel ? resolveSyncBasis(props.channel) : null
   const usesOfficialPricing = props.channel
     ? shouldUseOfficialPricing(props.channel, basis)
     : false
   const upstreamMultiplier = props.channel?.upstream_price_multiplier ?? 1
 
-  const markupTargetKey = `${props.modelName}|${props.channel?.channel_id ?? 'none'}`
+  const costProfitRateTargetKey = `${props.modelName}|${props.channel?.channel_id ?? 'none'}`
 
   useEffect(() => {
     if (!props.open) return
-    setMarkupInput(DEFAULT_MARKUP_INPUT)
-    setMarkupUserEdited(false)
-    setMarkupDefaulted(false)
-  }, [props.open, markupTargetKey])
+    setCostProfitRateInput(DEFAULT_COST_PROFIT_RATE_INPUT)
+    setCostProfitRateUserEdited(false)
+    setCostProfitRateDefaulted(false)
+  }, [props.open, costProfitRateTargetKey])
 
   const officialModelQuery = useQuery({
     queryKey: [
@@ -128,59 +132,58 @@ export function PriceSyncDialog(props: {
     Number.isFinite(optionState.groupRatio) && optionState.groupRatio > 0
   const quotaPerUnitValid =
     Number.isFinite(optionState.quotaPerUnit) && optionState.quotaPerUnit > 0
-  const targetMarkup = parseTargetMarkup(markupInput)
+  const targetCostProfitRate = parseTargetCostProfitRate(costProfitRateInput)
   const ratioPlan =
     !usesOfficialPricing &&
     basis &&
     optionsQuery.isSuccess &&
     groupRatioValid &&
     quotaPerUnitValid &&
-    targetMarkup !== null
+    targetCostProfitRate !== null
       ? computeSyncRatios(
           basis,
-          targetMarkup,
+          targetCostProfitRate,
           optionState.groupRatio,
           completionMeta?.locked ? completionMeta.ratio : undefined,
           optionState.quotaPerUnit
         )
       : null
   const officialResolution = officialModelQuery.data ?? null
-  // Effective upstream cost comes from the Models.dev base price times the
-  // multiplier; it is independent of the target markup, so an invalid markup
-  // must never blank out the displayed official cost.
+  // Effective upstream cost comes from the selected Models.dev sync cost times
+  // the multiplier (the highest context tier for exact Grok 4.6, otherwise the
+  // base price). It is independent of the target rate, so invalid input must
+  // never blank out the displayed official cost.
   const officialCost = useMemo(() => {
     if (!officialResolution) return null
-    const pricing = officialResolution.model.models_dev_pricing
-    if (!pricing) return null
-    return officialTokenPrices(pricing.base, pricing.upstream_multiplier)
-  }, [officialResolution])
+    return officialSyncCost(officialResolution.model, props.modelName)
+  }, [officialResolution, props.modelName])
+  const usesUnifiedOfficialPricing = officialResolution
+    ? isGrok46UnifiedPricingModel(officialResolution.model, props.modelName)
+    : false
 
-  // 默认目标加价率取自当前加价率（售价-有效上游成本）/有效上游成本，
-  // 取输入/输出中较低者；只在数据就绪后应用一次，不覆盖用户编辑。
+  // 默认目标成本利润率取（售价-有效上游成本）/有效上游成本的输入/输出较低值；
+  // 只在数据就绪后应用一次，不覆盖用户编辑。
   useEffect(() => {
-    if (!props.open || markupUserEdited || markupDefaulted) return
+    if (!props.open || costProfitRateUserEdited || costProfitRateDefaulted) {
+      return
+    }
     const channel = props.channel
     if (!channel || channel.uses_fixed_price) return
-    const markupInputs = {
+    const currentPricingInputs = {
       sellingInput: channel.local_input,
       sellingOutput: channel.local_output,
     }
     let target: number | null = null
     if (usesOfficialPricing) {
-      const pricing = officialResolution?.model.models_dev_pricing
-      if (!pricing) return
-      const cost = officialTokenPrices(
-        pricing.base,
-        pricing.upstream_multiplier
-      )
-      target = defaultTargetMarkupPercent({
-        ...markupInputs,
-        costInput: cost.input,
-        costOutput: cost.output,
+      if (!officialCost) return
+      target = defaultTargetCostProfitRatePercent({
+        ...currentPricingInputs,
+        costInput: officialCost.input,
+        costOutput: officialCost.output,
       })
     } else if (basis) {
-      target = defaultTargetMarkupPercent({
-        ...markupInputs,
+      target = defaultTargetCostProfitRatePercent({
+        ...currentPricingInputs,
         costInput: basis.input,
         costOutput: basis.output,
       })
@@ -188,34 +191,62 @@ export function PriceSyncDialog(props: {
       return
     }
     if (target !== null) {
-      setMarkupInput(String(target))
-      setMarkupDefaulted(true)
+      setCostProfitRateInput(String(target))
+      setCostProfitRateDefaulted(true)
     }
   }, [
     props.open,
     props.channel,
-    markupUserEdited,
-    markupDefaulted,
+    costProfitRateUserEdited,
+    costProfitRateDefaulted,
     usesOfficialPricing,
     basis,
-    officialResolution,
+    officialCost,
   ])
-  const officialPlan =
+  const officialPlanResult =
     usesOfficialPricing &&
     officialResolution &&
     optionsQuery.isSuccess &&
-    groupRatioValid &&
-    targetMarkup !== null
-      ? computeOfficialSyncPlan(
+    groupRatioValid
+      ? computeOfficialSyncPlanResult(
           officialResolution.model,
-          targetMarkup,
-          optionState.groupRatio
+          targetCostProfitRate ?? Number.NaN,
+          optionState.groupRatio,
+          optionState.quotaPerUnit,
+          props.modelName
         )
       : null
+  const officialPlan =
+    officialPlanResult?.kind === 'ready' ? officialPlanResult.plan : null
   const previewPlan = officialPlan ?? ratioPlan
-  // Effective upstream cost the preview compares against: the official base
-  // tier for official pricing, the resolved upstream basis otherwise. Any
-  // existing preview plan guarantees a finite cost on its own path.
+  const missingPurchasePrice =
+    Boolean(props.channel) && !usesOfficialPricing && basis === null
+  const officialPriceUnavailable =
+    usesOfficialPricing &&
+    (officialModelQuery.isError ||
+      (officialModelQuery.isSuccess && officialResolution === null) ||
+      officialPlanResult?.kind === 'invalid-source')
+  const planPrerequisitesReady =
+    optionsQuery.isSuccess &&
+    groupRatioValid &&
+    (usesOfficialPricing
+      ? officialResolution !== null &&
+        (!usesUnifiedOfficialPricing || quotaPerUnitValid)
+      : basis !== null && quotaPerUnitValid)
+  const invalidCostProfitRate =
+    targetCostProfitRate === null &&
+    planPrerequisitesReady &&
+    !officialPriceUnavailable
+  const calculationOverflow =
+    targetCostProfitRate !== null &&
+    planPrerequisitesReady &&
+    !officialPriceUnavailable &&
+    (usesOfficialPricing
+      ? officialPlanResult?.kind === 'overflow'
+      : ratioPlan === null)
+  // Effective upstream cost the preview compares against: the selected
+  // official sync cost for official pricing, the resolved upstream basis
+  // otherwise. Any existing preview plan guarantees a finite cost on its path.
   const comparisonCost = usesOfficialPricing ? officialCost : basis
   // Current profit/margin are omitted for fixed per-request pricing because
   // the units are incomparable with per-1M-token costs.
@@ -268,7 +299,18 @@ export function PriceSyncDialog(props: {
         )
       }
       if (!ratioPlan && !officialPlan) {
-        throw new Error(t('Markup must be at least 0'))
+        if (missingPurchasePrice) {
+          throw new Error(
+            t('Complete purchase price is required before syncing')
+          )
+        }
+        if (officialPriceUnavailable) {
+          throw new Error(t('Official model price could not be loaded'))
+        }
+        if (invalidCostProfitRate) {
+          throw new Error(t('Cost profit rate must be at least 0'))
+        }
+        throw new Error(t('Selling price calculation overflowed'))
       }
       if (!props.channel) {
         throw new Error(t('Channel pricing is unavailable'))
@@ -284,7 +326,7 @@ export function PriceSyncDialog(props: {
       } else if (ratioPlan) {
         request = buildSyncRequest(props.modelName, ratioPlan)
       } else {
-        throw new Error(t('Markup must be at least 0'))
+        throw new Error(t('Selling price calculation overflowed'))
       }
       const res = await updatePricingOptions(request)
       if (!res.success) {
@@ -400,9 +442,7 @@ export function PriceSyncDialog(props: {
           </div>
         ) : null}
 
-        {usesOfficialPricing &&
-        officialModelQuery.isSuccess &&
-        !officialResolution ? (
+        {officialPriceUnavailable ? (
           <Alert variant='destructive'>
             <AlertTitle>
               {t('Official model price could not be loaded')}
@@ -415,37 +455,59 @@ export function PriceSyncDialog(props: {
           </Alert>
         ) : null}
 
+        {missingPurchasePrice ? (
+          <Alert variant='destructive'>
+            <AlertTitle>
+              {t('Complete purchase price is required before syncing')}
+            </AlertTitle>
+            <AlertDescription>
+              {t(
+                'Maintain complete input, output, cache read, and cache write purchase prices before syncing.'
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <div className='space-y-2'>
-          <Label htmlFor='price-sync-markup'>{t('Target markup (%)')}</Label>
+          <Label htmlFor='price-sync-cost-profit-rate'>
+            {t('Target cost profit rate (profit ÷ cost)')}
+          </Label>
           <Input
-            id='price-sync-markup'
+            id='price-sync-cost-profit-rate'
             type='number'
             min={0}
             step={0.01}
-            value={markupInput}
+            value={costProfitRateInput}
             onChange={(event) => {
-              setMarkupUserEdited(true)
-              setMarkupInput(event.target.value)
+              setCostProfitRateUserEdited(true)
+              setCostProfitRateInput(event.target.value)
             }}
           />
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              '100% means the selling price is 2× cost; 455.56% means about 5.56× cost.'
+            )}
+          </p>
           {!groupRatioValid && optionsQuery.isSuccess ? (
             <p className='text-destructive text-xs'>
               {t('Pricing group ratio must be greater than 0')}
             </p>
           ) : null}
-          {!usesOfficialPricing &&
+          {(!usesOfficialPricing || usesUnifiedOfficialPricing) &&
           !quotaPerUnitValid &&
           optionsQuery.isSuccess ? (
             <p className='text-destructive text-xs'>
               {t('Pricing quota scale must be greater than 0')}
             </p>
           ) : null}
-          {!previewPlan &&
-          (basis || officialResolution) &&
-          groupRatioValid &&
-          (usesOfficialPricing || quotaPerUnitValid) ? (
+          {invalidCostProfitRate ? (
             <p className='text-destructive text-xs'>
-              {t('Markup must be at least 0')}
+              {t('Cost profit rate must be at least 0')}
+            </p>
+          ) : null}
+          {calculationOverflow ? (
+            <p className='text-destructive text-xs'>
+              {t('Selling price calculation overflowed')}
             </p>
           ) : null}
         </div>
@@ -499,7 +561,8 @@ export function PriceSyncDialog(props: {
                 {formatPercent(afterMarginOutput ?? undefined)}
               </div>
             </div>
-            {officialPlan ? (
+            {officialPlan?.billingMode === 'tiered_expr' &&
+            officialPlan.tiers.length > 0 ? (
               <div className='text-muted-foreground space-y-2 border-t pt-2 text-xs'>
                 <div className='text-foreground font-medium'>
                   {t('Context pricing tiers')}

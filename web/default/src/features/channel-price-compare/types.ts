@@ -53,7 +53,7 @@ export interface PriceCompareChannel {
   routing_role: 'primary' | 'primary_pool' | 'backup'
   status: PriceCompareStatus
   status_reason: string
-  price_source: 'manual' | 'detected' | 'missing'
+  price_source: 'manual' | 'detected' | 'models_dev' | 'missing'
   price_changed: boolean
   detected_available: boolean
   uses_fixed_price: boolean

@@ -48,6 +48,17 @@ for (const key of domGlobals) {
   })
 }
 
+let modelsDevProviderCalls = 0
+const bunTestModule = await import(['bun', 'test'].join(':'))
+bunTestModule.mock.module('@opencode-ai/models', () => ({
+  Models: {
+    make: () => {
+      modelsDevProviderCalls += 1
+      return { providers: async () => ({}) }
+    },
+  },
+}))
+
 // React modules are loaded after happy-dom globals so they bind to this DOM.
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
@@ -55,7 +66,9 @@ const { onlineManager, QueryClient, QueryClientProvider } =
   await import('@tanstack/react-query')
 const { createInstance } = await import('i18next')
 const { I18nextProvider, initReactI18next } = await import('react-i18next')
+const { api } = await import('@/lib/api')
 const { PriceSyncDialog } = await import('../price-sync-dialog')
+const originalApiPut = api.put
 
 const i18n = createInstance()
 await i18n.use(initReactI18next).init({
@@ -149,12 +162,20 @@ function changeInputValue(input: HTMLInputElement, value: string) {
   )
 }
 
-function markupInputIn(container: HTMLElement): HTMLInputElement {
+function costProfitRateInputIn(container: HTMLElement): HTMLInputElement {
   const input = container.querySelector<HTMLInputElement>(
-    'input[id="price-sync-markup"]'
+    'input[id="price-sync-cost-profit-rate"]'
   )
   assert.ok(input)
   return input
+}
+
+function applyButtonIn(container: HTMLElement): HTMLButtonElement {
+  const button = [...container.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Apply selling price'
+  )
+  assert.ok(button)
+  return button
 }
 
 // Scoped accessors for the preview comparison card. Assertions must address
@@ -225,16 +246,149 @@ function tierRowValue(block: HTMLElement, rowLabel: string): string {
   return cell.textContent?.trim() ?? ''
 }
 
-describe('price sync dialog target markup default', () => {
+describe('price sync dialog target cost profit rate', () => {
   after(() => {
     domWindow.close()
   })
 
   afterEach(() => {
+    modelsDevProviderCalls = 0
+    api.put = originalApiPut
     onlineManager.setOnline(true)
   })
 
-  test('defaults the target markup from the current detected markup once', async () => {
+  test('uses manual purchase price before official pricing and explains the rate', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    })
+    const channel = detectedChannel({
+      uses_official_pricing: true,
+      price_source: 'manual',
+      upstream_input: 1.5,
+      upstream_output: 9,
+      upstream_cache_read: 0.15,
+      upstream_cache_write: 1.5,
+      local_input: 9,
+      local_output: 50,
+    })
+
+    await act(async () => {
+      queryClient.setQueryData(['system-options', 'gpt-5.6-sol'], {
+        data: [{ key: 'QuotaPerUnit', value: '500000' }],
+      })
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <I18nextProvider i18n={i18n}>
+            <PriceSyncDialog
+              open
+              onOpenChange={() => undefined}
+              modelName='gpt-5.6-sol'
+              channel={channel}
+              group='default'
+            />
+          </I18nextProvider>
+        </QueryClientProvider>
+      )
+    })
+
+    const bodyText = document.body.textContent ?? ''
+    assert.ok(bodyText.includes('Using manually maintained purchase price'))
+    assert.ok(bodyText.includes('Cost: $1.50 / $9.00'))
+    assert.ok(!bodyText.includes('Using official model price'))
+    assert.ok(!bodyText.includes('Context pricing tiers'))
+    assert.equal(modelsDevProviderCalls, 0)
+    assert.ok(bodyText.includes('Target cost profit rate (profit ÷ cost)'))
+    assert.ok(
+      bodyText.includes(
+        '100% means the selling price is 2× cost; 455.56% means about 5.56× cost.'
+      )
+    )
+    assert.ok(bodyText.includes('Gross margin'))
+    assert.equal(costProfitRateInputIn(document.body).value, '455.56')
+
+    await act(async () => root.unmount())
+    container.remove()
+    queryClient.clear()
+  })
+
+  test('submits manual purchase pricing as an explicit ratio request', async () => {
+    const submittedRequests: unknown[] = []
+    const putCalls: unknown[][] = []
+    api.put = (async (...args: unknown[]) => {
+      putCalls.push(args)
+      submittedRequests.push(args[1])
+      return { data: { success: true, message: '' } }
+    }) as typeof api.put
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    })
+    const channel = detectedChannel({
+      uses_official_pricing: true,
+      price_source: 'manual',
+      upstream_input: 1.5,
+      upstream_output: 9,
+      upstream_cache_read: 0.15,
+      upstream_cache_write: 1.5,
+      local_input: 9,
+      local_output: 50,
+    })
+
+    await act(async () => {
+      queryClient.setQueryData(['system-options', 'gpt-5.6-sol'], {
+        data: [{ key: 'QuotaPerUnit', value: '500000' }],
+      })
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <I18nextProvider i18n={i18n}>
+            <PriceSyncDialog
+              open
+              onOpenChange={() => undefined}
+              modelName='gpt-5.6-sol'
+              channel={channel}
+              group='default'
+            />
+          </I18nextProvider>
+        </QueryClientProvider>
+      )
+    })
+
+    assert.equal(costProfitRateInputIn(document.body).value, '455.56')
+    await act(async () => {
+      applyButtonIn(document.body).click()
+      await Promise.resolve()
+    })
+
+    assert.equal(putCalls.length, 1)
+    assert.equal(putCalls[0]?.[0], '/api/option/pricing')
+    assert.deepEqual(submittedRequests, [
+      {
+        model_name: 'gpt-5.6-sol',
+        billing_mode: 'ratio',
+        model_ratio: 4.166701,
+        completion_ratio: 6,
+        cache_ratio: 0.1,
+        create_cache_ratio: 1,
+      },
+    ])
+
+    await act(async () => root.unmount())
+    container.remove()
+    queryClient.clear()
+  })
+
+  test('defaults the target cost profit rate from detected cost once', async () => {
     const container = document.createElement('div')
     document.body.append(container)
     const root = createRoot(container)
@@ -261,8 +415,8 @@ describe('price sync dialog target markup default', () => {
       )
     })
 
-    const input = markupInputIn(document.body)
-    // detected cost 2/8 vs local selling 6/20 -> lower markup 150
+    const input = costProfitRateInputIn(document.body)
+    // detected cost 2/8 vs local selling 6/20 -> lower cost profit rate 150
     assert.equal(input.value, '150')
 
     await act(async () => root.unmount())
@@ -308,7 +462,7 @@ describe('price sync dialog target markup default', () => {
       )
     })
 
-    const input = markupInputIn(document.body)
+    const input = costProfitRateInputIn(document.body)
     await act(async () => {
       changeInputValue(input, '45')
     })
@@ -362,14 +516,14 @@ describe('price sync dialog target markup default', () => {
         </QueryClientProvider>
       )
     })
-    assert.equal(markupInputIn(document.body).value, '566.67')
+    assert.equal(costProfitRateInputIn(document.body).value, '566.67')
 
     await act(async () => root.unmount())
     container.remove()
     queryClient.clear()
   })
 
-  test('shows unbounded markup previews and keeps official cost visible when invalid', async () => {
+  test('shows unbounded cost profit rate previews and keeps official cost visible when invalid', async () => {
     onlineManager.setOnline(false)
     const container = document.createElement('div')
     document.body.append(container)
@@ -382,6 +536,9 @@ describe('price sync dialog target markup default', () => {
     })
     const channel = detectedChannel({
       uses_official_pricing: true,
+      status: 'unknown',
+      price_source: 'missing',
+      detected_available: false,
       local_input: 9,
       local_output: 50,
     })
@@ -433,7 +590,7 @@ describe('price sync dialog target markup default', () => {
       )
     })
 
-    const input = markupInputIn(document.body)
+    const input = costProfitRateInputIn(document.body)
     // official cost 5/30 at multiplier 0.25 vs selling 9/50 -> default 566.67
     assert.equal(input.value, '566.67')
     // no arbitrary HTML maximum/spinner cap; decimals step by 0.01
@@ -449,7 +606,7 @@ describe('price sync dialog target markup default', () => {
     assert.equal(applyButton()?.disabled, false)
 
     const tierLabel = 'Context at least 272,000 tokens'
-    // default markup 566.67: current sale 9/50 vs cost 1.25/7.50 ->
+    // default cost profit rate 566.67: current sale 9/50 vs cost 1.25/7.50 ->
     // profit 7.75/42.50, margin 86.1%/85.0%; the screenshot example lands at
     // sale 8.33/50.00, profit 7.08/42.50, margin 85.0%/85.0%
     const card = previewCard()
@@ -479,7 +636,7 @@ describe('price sync dialog target markup default', () => {
     assert.equal(tierRowValue(tier, 'Gross profit'), '$14.17 / $63.75')
     assert.equal(tierRowValue(tier, 'Gross margin'), '85.0% / 85.0%')
 
-    // markup 100 doubles the official cost 1.25/7.50 to a 2.50/15.00 preview
+    // rate 100 doubles the official cost 1.25/7.50 to a 2.50/15.00 preview
     await act(async () => {
       changeInputValue(input, '100')
     })
@@ -509,7 +666,7 @@ describe('price sync dialog target markup default', () => {
     assert.equal(tierRowValue(tier, 'Gross margin'), '50.0% / 50.0%')
     assert.equal(applyButton()?.disabled, false)
 
-    // markup 200 triples it; there is no business upper bound
+    // rate 200 triples it; there is no business upper bound
     await act(async () => {
       changeInputValue(input, '200')
     })
@@ -539,12 +696,14 @@ describe('price sync dialog target markup default', () => {
     assert.equal(tierRowValue(tier, 'Gross margin'), '66.7% / 66.7%')
     assert.equal(applyButton()?.disabled, false)
 
-    // a negative markup blanks the plan but never the official cost
+    // a negative rate blanks the plan but never the official cost
     await act(async () => {
       changeInputValue(input, '-5')
     })
     assert.equal(input.value, '-5')
-    assert.ok(document.body.textContent?.includes('Markup must be at least 0'))
+    assert.ok(
+      document.body.textContent?.includes('Cost profit rate must be at least 0')
+    )
     assert.ok(document.body.textContent?.includes('$1.25'))
     assert.ok(document.body.textContent?.includes('$7.50'))
     assert.equal(applyButton()?.disabled, true)

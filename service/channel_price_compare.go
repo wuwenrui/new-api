@@ -505,6 +505,21 @@ func channelOfficialPricingMarker(channelType int, settings *dto.ChannelOtherSet
 	return nil
 }
 
+func validDetectedCostBasis(row ChannelPriceCompareChannel) bool {
+	return row.DetectedInput > 0 &&
+		validUpstreamRatioValue(row.DetectedInput) &&
+		validUpstreamRatioValue(row.DetectedOutput) &&
+		validUpstreamRatioValue(row.DetectedCacheRead) &&
+		validUpstreamRatioValue(row.DetectedCacheWrite)
+}
+
+func clearDetectedCostBasis(row *ChannelPriceCompareChannel) {
+	row.DetectedInput = 0
+	row.DetectedOutput = 0
+	row.DetectedCacheRead = 0
+	row.DetectedCacheWrite = 0
+}
+
 func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, modelName string, snapshot upstreamPricingSnapshot, localGroupRatio float64) ChannelPriceCompareChannel {
 	upstreamModelName := modelName
 	if rawMapping := strings.TrimSpace(channel.GetModelMapping()); rawMapping != "" {
@@ -529,13 +544,12 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 		Recommendations:         []string{},
 	}
 
-	row.BillingMode = billing_setting.GetBillingMode(modelName)
-
 	pricing := ratio_setting.GetModelPricingSnapshot(modelName)
+	row.BillingMode = pricing.BillingMode
 	if row.BillingMode == billing_setting.BillingModeTieredExpr {
-		if expr, ok := billing_setting.GetBillingExpr(modelName); ok {
-			row.BillingExpr = expr
-			if prices, err := tieredSellingPrices(expr, localGroupRatio); err == nil {
+		if pricing.BillingExprFound {
+			row.BillingExpr = pricing.BillingExpr
+			if prices, err := tieredSellingPrices(pricing.BillingExpr, localGroupRatio); err == nil {
 				row.LocalInput = prices.Input
 				row.LocalOutput = prices.Output
 				row.LocalCacheRead = prices.CacheRead
@@ -563,22 +577,30 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 			row.DetectedOutput = pricePerMillionForQuota(upstreamModel.ModelRatio*upstreamModel.CompletionRatio, groupRatio, upstreamQuotaPerUnit)
 			row.DetectedCacheRead = pricePerMillionForQuota(upstreamModel.ModelRatio*upstreamModel.CacheRatio, groupRatio, upstreamQuotaPerUnit)
 			row.DetectedCacheWrite = pricePerMillionForQuota(upstreamModel.ModelRatio*upstreamModel.CreateCacheRatio, groupRatio, upstreamQuotaPerUnit)
-			detected = true
-			row.DetectedAvailable = true
+			detected = validDetectedCostBasis(row)
+			row.DetectedAvailable = detected
+			if !detected {
+				clearDetectedCostBasis(&row)
+			}
 		}
 	}
 
-	manualPrice, hasManualPrice := settings.ModelPrices[modelName]
-	manualPriceComplete := hasManualPrice &&
-		manualPrice.Input != nil &&
-		manualPrice.Output != nil &&
-		manualPrice.CacheRead != nil &&
-		manualPrice.CacheWrite != nil
+	storedPrice, hasStoredPrice := settings.ModelPrices[modelName]
+	storedPriceComplete := hasStoredPrice &&
+		storedPrice.Input != nil &&
+		storedPrice.Output != nil &&
+		storedPrice.CacheRead != nil &&
+		storedPrice.CacheWrite != nil
+	storedPriceSource := strings.TrimSpace(storedPrice.Source)
+	storedPriceIsOfficial := storedPriceComplete &&
+		storedPriceSource == dto.UpstreamPricingSourceModelsDev
+	manualPriceComplete := storedPriceComplete &&
+		(storedPriceSource == "" || storedPriceSource == "manual")
 	if manualPriceComplete {
-		row.UpstreamInput = *manualPrice.Input
-		row.UpstreamOutput = *manualPrice.Output
-		row.UpstreamCacheRead = *manualPrice.CacheRead
-		row.UpstreamCacheWrite = *manualPrice.CacheWrite
+		row.UpstreamInput = *storedPrice.Input
+		row.UpstreamOutput = *storedPrice.Output
+		row.UpstreamCacheRead = *storedPrice.CacheRead
+		row.UpstreamCacheWrite = *storedPrice.CacheWrite
 		row.PriceSource = "manual"
 		row.Status = "ok"
 		if detected {
@@ -590,6 +612,13 @@ func buildChannelPriceCompareRow(channel *model.Channel, upstreamGroup string, m
 		row.UpstreamCacheRead = row.DetectedCacheRead
 		row.UpstreamCacheWrite = row.DetectedCacheWrite
 		row.PriceSource = "detected"
+		row.Status = "ok"
+	} else if storedPriceIsOfficial {
+		row.UpstreamInput = *storedPrice.Input
+		row.UpstreamOutput = *storedPrice.Output
+		row.UpstreamCacheRead = *storedPrice.CacheRead
+		row.UpstreamCacheWrite = *storedPrice.CacheWrite
+		row.PriceSource = dto.UpstreamPricingSourceModelsDev
 		row.Status = "ok"
 	} else {
 		row.Status = "unknown"

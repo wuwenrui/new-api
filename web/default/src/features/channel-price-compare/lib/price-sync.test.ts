@@ -25,13 +25,16 @@ import {
   buildOfficialSyncRequest,
   buildSyncRequest,
   computeOfficialSyncPlan,
+  computeOfficialSyncPlanResult,
   computeSyncRatios,
+  currentCostProfitRatePercent,
   currentMarkupPercent,
   defaultTargetMarkupPercent,
   grossMarginPercent,
   grossProfitUsd,
   shouldUseOfficialPricing,
   parseCompletionRatioMeta,
+  parseTargetCostProfitRate,
   parseTargetMarkup,
   parseNumberRecord,
   resolveSyncBasis,
@@ -78,6 +81,37 @@ const officialModel = {
       },
     ],
     upstream_multiplier: 1,
+  },
+} satisfies NewAPIProbeModel
+
+const grok46OfficialModel = {
+  ...officialModel,
+  model_name: 'grok-4.6',
+  enable_groups: ['xai'],
+  models_dev_pricing: {
+    base: {
+      input: 2,
+      output: 10,
+      cache_read: 0.2,
+      cache_write: 2.5,
+    },
+    tiers: [
+      {
+        context_threshold: 200_000,
+        input: 4,
+        output: 20,
+        cache_read: 0.4,
+        cache_write: 5,
+      },
+      {
+        context_threshold: 1_000_000,
+        input: 6,
+        output: 30,
+        cache_read: 0.6,
+        cache_write: 7.5,
+      },
+    ],
+    upstream_multiplier: 0.25,
   },
 } satisfies NewAPIProbeModel
 
@@ -144,11 +178,20 @@ const channel = (
 })
 
 describe('resolveSyncBasis', () => {
-  test('prefers detected prices when available', () => {
+  test('prefers detected prices when the purchase price is not manual', () => {
     const result = resolveSyncBasis(channel({}))
     assert.equal(result?.source, 'detected')
     assert.equal(result?.input, 2)
     assert.equal(result?.output, 8)
+  })
+
+  test('prefers a manual purchase price even when detection is available', () => {
+    const result = resolveSyncBasis(
+      channel({ price_source: 'manual', detected_available: true })
+    )
+    assert.equal(result?.source, 'manual')
+    assert.equal(result?.input, 3)
+    assert.equal(result?.output, 9)
   })
 
   test('falls back to manual purchase price without detection', () => {
@@ -159,12 +202,35 @@ describe('resolveSyncBasis', () => {
     assert.equal(result?.input, 3)
   })
 
+  test('returns null when neither manual nor detected pricing is available', () => {
+    assert.equal(
+      resolveSyncBasis(
+        channel({ price_source: 'missing', detected_available: false })
+      ),
+      null
+    )
+  })
+
   test('returns null when price is not maintained', () => {
     assert.equal(resolveSyncBasis(channel({ status: 'unknown' })), null)
   })
 })
 
 describe('shouldUseOfficialPricing', () => {
+  test('keeps a manual purchase price ahead of the official source marker', () => {
+    const manualBasis = resolveSyncBasis(
+      channel({ price_source: 'manual', uses_official_pricing: true })
+    )
+    assert.equal(manualBasis?.source, 'manual')
+    assert.equal(
+      shouldUseOfficialPricing(
+        channel({ price_source: 'manual', uses_official_pricing: true }),
+        manualBasis
+      ),
+      false
+    )
+  })
+
   test('honors explicit source markers before legacy fallbacks', () => {
     const detectedBasis = resolveSyncBasis(channel({}))
     assert.equal(
@@ -190,11 +256,34 @@ describe('shouldUseOfficialPricing', () => {
         channel({ uses_official_pricing: true }),
         detectedBasis
       ),
-      true
+      false
     )
   })
 
-  test('preserves the previous routing only for unmarked legacy rows', () => {
+  test('uses official pricing when no manual or detected basis is available', () => {
+    const missingChannel = channel({
+      price_source: 'missing',
+      detected_available: false,
+      uses_official_pricing: true,
+    })
+    const missingBasis = resolveSyncBasis(missingChannel)
+    assert.equal(missingBasis, null)
+    assert.equal(shouldUseOfficialPricing(missingChannel, missingBasis), true)
+  })
+
+  test('requires an explicit official marker for a ratio channel without a basis', () => {
+    const missingChannel = channel({
+      price_source: 'missing',
+      detected_available: false,
+      uses_official_pricing: undefined,
+      billing_mode: 'ratio',
+    })
+    const missingBasis = resolveSyncBasis(missingChannel)
+    assert.equal(missingBasis, null)
+    assert.equal(shouldUseOfficialPricing(missingChannel, missingBasis), false)
+  })
+
+  test('does not infer official pricing from a legacy tiered billing mode', () => {
     assert.equal(
       shouldUseOfficialPricing(
         channel({
@@ -203,7 +292,7 @@ describe('shouldUseOfficialPricing', () => {
         }),
         resolveSyncBasis(channel({}))
       ),
-      true
+      false
     )
     assert.equal(
       shouldUseOfficialPricing(
@@ -214,6 +303,22 @@ describe('shouldUseOfficialPricing', () => {
         }),
         null
       ),
+      false
+    )
+  })
+
+  test('routes a persisted Models.dev source through the explicit official marker', () => {
+    const persistedOfficialChannel = channel({
+      price_source: 'models_dev',
+      detected_available: false,
+      uses_official_pricing: true,
+      billing_mode: 'tiered_expr',
+    })
+
+    const persistedBasis = resolveSyncBasis(persistedOfficialChannel)
+    assert.equal(persistedBasis, null)
+    assert.equal(
+      shouldUseOfficialPricing(persistedOfficialChannel, persistedBasis),
       true
     )
   })
@@ -340,9 +445,179 @@ describe('computeSyncRatios', () => {
 })
 
 describe('computeOfficialSyncPlan', () => {
+  test('collapses exact grok-4.6 to the highest context tier and a unified ratio request', () => {
+    const result = computeOfficialSyncPlanResult(
+      grok46OfficialModel,
+      5_000,
+      1,
+      500_000
+    )
+
+    assert.equal(result.kind, 'ready')
+    if (result.kind !== 'ready') return
+    assert.equal(result.plan.billingMode, 'ratio')
+    assert.equal(result.plan.input, 1.5)
+    assert.equal(result.plan.output, 7.5)
+    assert.equal(result.plan.cacheRead, 0.15)
+    assert.equal(result.plan.cacheWrite, 1.875)
+    assert.equal(result.plan.sellInput, 76.5)
+    assert.equal(result.plan.sellOutput, 382.5)
+    assert.deepEqual(result.plan.tiers, [])
+    assert.equal('billingExpression' in result.plan, false)
+
+    const request = buildOfficialSyncRequest('grok-4.6', 31, 'xai', result.plan)
+    assert.deepEqual(request, {
+      model_name: 'grok-4.6',
+      billing_mode: 'ratio',
+      model_ratio: 38.25,
+      completion_ratio: 5,
+      cache_ratio: 0.1,
+      create_cache_ratio: 1.25,
+      channel_id: 31,
+      purchase_price: {
+        input: 1.5,
+        output: 7.5,
+        cache_read: 0.15,
+        cache_write: 1.875,
+        source: 'manual',
+      },
+    })
+  })
+
+  test('keeps similarly named and other official models on tiered pricing', () => {
+    const similar = computeOfficialSyncPlan(
+      { ...grok46OfficialModel, model_name: 'grok-4.6-preview' },
+      30,
+      1
+    )
+    const other = computeOfficialSyncPlan(officialModel, 30, 1)
+
+    assert.ok(similar)
+    assert.equal(similar.billingMode, 'tiered_expr')
+    assert.equal(similar.tiers.length, 2)
+    assert.match(similar.billingExpression, /len < 200000/)
+    assert.ok(other)
+    assert.equal(other.billingMode, 'tiered_expr')
+    assert.equal(other.tiers.length, 1)
+  })
+
+  test('rejects grok-4.6 when Models.dev has no context tier to collapse', () => {
+    const result = computeOfficialSyncPlanResult(
+      {
+        ...grok46OfficialModel,
+        models_dev_pricing: {
+          ...grok46OfficialModel.models_dev_pricing,
+          tiers: [],
+        },
+      },
+      5_000,
+      1,
+      500_000
+    )
+
+    assert.equal(result.kind, 'invalid-source')
+  })
+
+  test('rejects grok-4.6 when every Models.dev tier is below 200K context', () => {
+    const result = computeOfficialSyncPlanResult(
+      {
+        ...grok46OfficialModel,
+        models_dev_pricing: {
+          ...grok46OfficialModel.models_dev_pricing,
+          tiers: [
+            {
+              context_threshold: 128_000,
+              input: 5,
+              output: 25,
+              cache_read: 0.5,
+              cache_write: 6.25,
+            },
+          ],
+        },
+      },
+      5_000,
+      1,
+      500_000
+    )
+
+    assert.equal(result.kind, 'invalid-source')
+  })
+
+  test('classifies invalid official costs separately from arithmetic overflow', () => {
+    const pricing = officialModel.models_dev_pricing
+    const zeroInput = computeOfficialSyncPlanResult(
+      {
+        ...officialModel,
+        models_dev_pricing: {
+          ...pricing,
+          base: { ...pricing.base, input: 0 },
+        },
+      },
+      30,
+      1
+    )
+    assert.equal(zeroInput.kind, 'invalid-source')
+
+    const invalidTier = computeOfficialSyncPlanResult(
+      {
+        ...officialModel,
+        models_dev_pricing: {
+          ...pricing,
+          tiers: [{ ...pricing.tiers[0], input: Number.NaN }],
+        },
+      },
+      30,
+      1
+    )
+    assert.equal(invalidTier.kind, 'invalid-source')
+
+    const overflow = computeOfficialSyncPlanResult(
+      {
+        ...officialModel,
+        models_dev_pricing: {
+          ...pricing,
+          base: { ...pricing.base, input: Number.MAX_VALUE },
+          upstream_multiplier: 0.25,
+        },
+      },
+      400,
+      1
+    )
+    assert.equal(overflow.kind, 'overflow')
+  })
+
+  test('classifies a non-finite billing coefficient from a tiny group ratio as overflow', () => {
+    const result = computeOfficialSyncPlanResult(
+      officialModel,
+      30,
+      Number.MIN_VALUE
+    )
+
+    assert.equal(result.kind, 'overflow')
+  })
+
+  test('classifies a non-finite official audio coefficient as overflow', () => {
+    const pricing = officialModel.models_dev_pricing
+    const result = computeOfficialSyncPlanResult(
+      {
+        ...officialModel,
+        models_dev_pricing: {
+          ...pricing,
+          base: { ...pricing.base, input_audio: Number.MAX_VALUE },
+          upstream_multiplier: 2,
+        },
+      },
+      30,
+      1
+    )
+
+    assert.equal(result.kind, 'overflow')
+  })
+
   test('prices every context tier at a 30 percent markup', () => {
     const plan = computeOfficialSyncPlan(officialModel, 30, 1)
     assert.ok(plan)
+    assert.equal(plan.billingMode, 'tiered_expr')
     assert.equal(plan.sellInput, 5 * 1.3)
     assert.equal(plan.sellOutput, 30 * 1.3)
     assert.equal(plan.sellCacheRead, 0.5 * 1.3)
@@ -449,6 +724,7 @@ describe('buildSyncRequest', () => {
     assert.ok(plan)
     assert.deepEqual(buildSyncRequest('m', plan), {
       model_name: 'm',
+      billing_mode: 'ratio',
       model_ratio: 2,
       completion_ratio: 4,
       cache_ratio: 0.1,
@@ -461,6 +737,7 @@ describe('buildSyncRequest', () => {
     assert.ok(plan)
     assert.deepEqual(buildSyncRequest('m', plan), {
       model_name: 'm',
+      billing_mode: 'ratio',
       model_ratio: 3,
       cache_ratio: 0.066667,
       create_cache_ratio: 0.666667,
@@ -490,7 +767,18 @@ describe('parseNumberRecord', () => {
   })
 })
 
-describe('currentMarkupPercent / defaultTargetMarkupPercent', () => {
+describe('cost-profit-rate helpers', () => {
+  test('calculates 0, 100, and 455.56 percent', () => {
+    assert.equal(currentCostProfitRatePercent(1, 1), 0)
+    assert.equal(currentCostProfitRatePercent(2, 1), 100)
+    assert.equal(currentCostProfitRatePercent(5.5556, 1), 455.56)
+  })
+
+  test('parses the cost-profit rate and rejects negatives', () => {
+    assert.equal(parseTargetCostProfitRate('455.56'), 455.56)
+    assert.equal(parseTargetCostProfitRate('-0.01'), null)
+  })
+
   test('official 5/30 at multiplier 0.25 against 9/50 selling defaults to 566.67', () => {
     assert.equal(
       defaultTargetMarkupPercent({

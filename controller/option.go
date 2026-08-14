@@ -170,6 +170,7 @@ func marshalPricingOptionMaps(optionMaps []pricingOptionMap) (map[string]string,
 }
 
 var errSharedFixedPrice = errors.New("共享固定价格规则不能按单模型同步")
+var errTieredLegacyRequiresExplicitRatio = errors.New("该模型使用分层计费表达式，不能同步倍率售价")
 
 func validateOfficialPurchasePrice(request PricingOptionsUpdateRequest) error {
 	price := request.PurchasePrice
@@ -214,31 +215,64 @@ func validateOfficialPurchasePrice(request PricingOptionsUpdateRequest) error {
 	return nil
 }
 
+func validateGrok46UnifiedPurchasePrice(request PricingOptionsUpdateRequest) error {
+	price := request.PurchasePrice
+	if strings.TrimSpace(request.ModelName) != "grok-4.6" || request.ChannelID <= 0 || price == nil {
+		return fmt.Errorf("Grok 4.6 统一采购价缺少模型或渠道")
+	}
+	if strings.TrimSpace(request.BillingExpr) != "" || strings.TrimSpace(request.UpstreamProvider) != "" {
+		return fmt.Errorf("Grok 4.6 统一采购价不能携带官方计费字段")
+	}
+	if strings.TrimSpace(price.Source) != "manual" || strings.TrimSpace(price.Provider) != "" {
+		return fmt.Errorf("Grok 4.6 统一采购价必须是人工来源")
+	}
+	if price.Tiers != nil {
+		return fmt.Errorf("Grok 4.6 统一采购价不能携带分层")
+	}
+	if price.Input == nil || !isFiniteNonNegative(*price.Input) || *price.Input == 0 {
+		return fmt.Errorf("Grok 4.6 统一采购价输入价格必须为正数")
+	}
+	for _, value := range []*float64{price.Output, price.CacheRead, price.CacheWrite} {
+		if value == nil || !isFiniteNonNegative(*value) {
+			return fmt.Errorf("Grok 4.6 统一采购价必须完整且非负")
+		}
+	}
+	return nil
+}
+
 func validatePricingOptionsRequest(request PricingOptionsUpdateRequest) error {
 	modelName := strings.TrimSpace(request.ModelName)
 	if modelName == "" {
 		return fmt.Errorf("模型名称不能为空")
 	}
 	if request.BillingMode != "" {
-		if request.BillingMode != billing_setting.BillingModeTieredExpr {
+		if request.BillingMode != billing_setting.BillingModeTieredExpr &&
+			request.BillingMode != billing_setting.BillingModeRatio {
 			return fmt.Errorf("不支持的计费模式")
 		}
-		request.BillingExpr = strings.TrimSpace(request.BillingExpr)
-		if request.BillingExpr == "" {
-			return fmt.Errorf("分层计费表达式不能为空")
+		if request.BillingMode == billing_setting.BillingModeTieredExpr {
+			request.BillingExpr = strings.TrimSpace(request.BillingExpr)
+			if request.BillingExpr == "" {
+				return fmt.Errorf("分层计费表达式不能为空")
+			}
+			if err := billing_setting.SmokeTestExpr(request.BillingExpr); err != nil {
+				return fmt.Errorf("分层计费表达式无效: %w", err)
+			}
+			return validateOfficialPurchasePrice(request)
 		}
-		if err := billing_setting.SmokeTestExpr(request.BillingExpr); err != nil {
-			return fmt.Errorf("分层计费表达式无效: %w", err)
+	}
+	if request.PurchasePrice != nil {
+		if request.BillingMode != billing_setting.BillingModeRatio {
+			return fmt.Errorf("统一采购价必须显式使用普通倍率计费")
 		}
-		return validateOfficialPurchasePrice(request)
+		if err := validateGrok46UnifiedPurchasePrice(request); err != nil {
+			return err
+		}
 	}
 	if !isFiniteNonNegative(request.ModelRatio) || request.ModelRatio == 0 ||
 		request.CacheRatio == nil || !isFiniteNonNegative(*request.CacheRatio) ||
 		request.CreateCacheRatio == nil || !isFiniteNonNegative(*request.CreateCacheRatio) {
 		return fmt.Errorf("模型名称或定价值无效")
-	}
-	if billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr {
-		return fmt.Errorf("该模型使用分层计费表达式，不能同步倍率售价")
 	}
 	if _, usesFixedPrice, fixedPriceKey := ratio_setting.GetModelPriceInfo(modelName, false); usesFixedPrice &&
 		fixedPriceKey == ratio_setting.CompactWildcardModelKey {
@@ -399,16 +433,8 @@ func buildPricingOptionValues(request PricingOptionsUpdateRequest) (map[string]s
 	return buildPricingOptionValuesFromCurrent(request, nil)
 }
 
-func buildPricingOptionValuesFromCurrent(request PricingOptionsUpdateRequest, current map[string]string) (map[string]string, []string, error) {
-	if err := validatePricingOptionsRequest(request); err != nil {
-		return nil, nil, err
-	}
-	modelName := strings.TrimSpace(request.ModelName)
+func buildRatioPricingOptionValues(request PricingOptionsUpdateRequest, current map[string]string, modelName string) (map[string]string, []string, error) {
 	pricingModelName := ratio_setting.FormatMatchingModelName(modelName)
-	if request.BillingMode == billing_setting.BillingModeTieredExpr {
-		return buildTieredPricingOptionValues(request, current)
-	}
-
 	modelRatios, err := pricingOptionMapValue(current, "ModelRatio", ratio_setting.GetModelRatioCopy())
 	if err != nil {
 		return nil, nil, err
@@ -448,7 +474,76 @@ func buildPricingOptionValuesFromCurrent(request PricingOptionsUpdateRequest, cu
 		delete(modelPrices, matchedKey)
 	}
 	optionMaps = append(optionMaps, pricingOptionMap{key: "ModelPrice", value: modelPrices})
-	return marshalPricingOptionMaps(optionMaps)
+	optionValues, keys, err := marshalPricingOptionMaps(optionMaps)
+	if err != nil || request.BillingMode != billing_setting.BillingModeRatio {
+		return optionValues, keys, err
+	}
+	return appendRatioBillingOptionValues(modelName, current, optionValues, keys)
+}
+
+func appendRatioBillingOptionValues(
+	modelName string,
+	current map[string]string,
+	optionValues map[string]string,
+	keys []string,
+) (map[string]string, []string, error) {
+	billingModes, err := pricingStringOptionMapValue(
+		current,
+		"billing_setting.billing_mode",
+		billing_setting.GetBillingModeCopy(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	billingExprs, err := pricingStringOptionMapValue(
+		current,
+		"billing_setting.billing_expr",
+		billing_setting.GetBillingExprCopy(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	delete(billingModes, modelName)
+	delete(billingExprs, modelName)
+	optionValues, keys, err = appendPricingStringOption(
+		optionValues,
+		keys,
+		"billing_setting.billing_mode",
+		billingModes,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return appendPricingStringOption(
+		optionValues,
+		keys,
+		"billing_setting.billing_expr",
+		billingExprs,
+	)
+}
+
+func buildPricingOptionValuesFromCurrent(request PricingOptionsUpdateRequest, current map[string]string) (map[string]string, []string, error) {
+	if err := validatePricingOptionsRequest(request); err != nil {
+		return nil, nil, err
+	}
+	modelName := strings.TrimSpace(request.ModelName)
+	if request.BillingMode == billing_setting.BillingModeTieredExpr {
+		return buildTieredPricingOptionValues(request, current)
+	}
+	if request.BillingMode == "" {
+		billingModes, err := pricingStringOptionMapValue(
+			current,
+			"billing_setting.billing_mode",
+			billing_setting.GetBillingModeCopy(),
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		if billingModes[modelName] == billing_setting.BillingModeTieredExpr {
+			return nil, nil, errTieredLegacyRequiresExplicitRatio
+		}
+	}
+	return buildRatioPricingOptionValues(request, current, modelName)
 }
 
 func isFiniteNonNegative(value float64) bool {
@@ -467,7 +562,8 @@ func UpdatePricingOptions(c *gin.Context) {
 	}
 	var updatedKeys []string
 	var channelPrice *model.ChannelModelPriceUpdate
-	if request.BillingMode == billing_setting.BillingModeTieredExpr {
+	if request.BillingMode == billing_setting.BillingModeTieredExpr ||
+		(request.BillingMode == billing_setting.BillingModeRatio && request.PurchasePrice != nil) {
 		channelPrice = &model.ChannelModelPriceUpdate{
 			ChannelID: request.ChannelID,
 			ModelName: strings.TrimSpace(request.ModelName),
@@ -499,7 +595,8 @@ func UpdatePricingOptions(c *gin.Context) {
 			})
 			return
 		}
-		if errors.Is(err, errSharedFixedPrice) {
+		if errors.Is(err, errSharedFixedPrice) ||
+			errors.Is(err, errTieredLegacyRequiresExplicitRatio) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 			return
 		}

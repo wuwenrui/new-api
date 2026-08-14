@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -179,6 +180,33 @@ func TestModelPriceHelperTieredRejectsPreConsumeOverflow(t *testing.T) {
 	require.ErrorAs(t, err, &clamp)
 	require.Equal(t, "QuotaRound", clamp.Op)
 	require.Equal(t, common.QuotaClampOverflow, clamp.Kind)
+}
+
+func TestTieredBillingConfigRequiresExpressionInCoherentSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
+	require.NoError(t, ratio_setting.WritePricingSnapshot(func() error {
+		return config.GlobalConfig.LoadFromDB(map[string]string{
+			"billing_setting.billing_mode": `{"missing-expr-model":"tiered_expr"}`,
+			"billing_setting.billing_expr": `{}`,
+		})
+	}))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "default")
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "missing-expr-model",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+	assert.False(t, HasModelBillingConfig("missing-expr-model"))
+	_, err := ModelPriceHelper(ctx, info, 100, &types.TokenCountMeta{})
+	require.ErrorContains(t, err, "has no billing expression")
 }
 
 func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T) {
