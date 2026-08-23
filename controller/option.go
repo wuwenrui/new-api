@@ -145,8 +145,6 @@ type PricingOptionsUpdateRequest struct {
 	CreateCacheRatio *float64               `json:"create_cache_ratio"`
 	BillingMode      string                 `json:"billing_mode"`
 	BillingExpr      string                 `json:"billing_expr"`
-	Free             bool                   `json:"free"`
-	CreateOnly       bool                   `json:"create_only"`
 	ChannelID        int                    `json:"channel_id"`
 	UpstreamProvider string                 `json:"upstream_provider"`
 	PurchasePrice    *dto.ChannelModelPrice `json:"purchase_price"`
@@ -173,7 +171,6 @@ func marshalPricingOptionMaps(optionMaps []pricingOptionMap) (map[string]string,
 
 var errSharedFixedPrice = errors.New("共享固定价格规则不能按单模型同步")
 var errTieredLegacyRequiresExplicitRatio = errors.New("该模型使用分层计费表达式，不能同步倍率售价")
-var errPricingAlreadyConfigured = errors.New("模型定价已存在，不能按仅新增模式覆盖")
 
 func validateOfficialPurchasePrice(request PricingOptionsUpdateRequest) error {
 	price := request.PurchasePrice
@@ -264,34 +261,18 @@ func validatePricingOptionsRequest(request PricingOptionsUpdateRequest) error {
 			return validateOfficialPurchasePrice(request)
 		}
 	}
-	if request.CreateOnly && !request.Free {
-		return fmt.Errorf("仅新增定价模式只允许用于显式免费模型")
+	if request.PurchasePrice != nil {
+		if request.BillingMode != billing_setting.BillingModeRatio {
+			return fmt.Errorf("统一采购价必须显式使用普通倍率计费")
+		}
+		if err := validateGrok46UnifiedPurchasePrice(request); err != nil {
+			return err
+		}
 	}
-	if request.Free {
-		if request.BillingMode != billing_setting.BillingModeRatio ||
-			strings.TrimSpace(request.BillingExpr) != "" ||
-			strings.TrimSpace(request.UpstreamProvider) != "" || request.PurchasePrice != nil {
-			return fmt.Errorf("免费模型必须显式使用普通倍率计费且不能携带采购价或计费表达式")
-		}
-		if request.ModelRatio != 0 || request.CompletionRatio == nil || *request.CompletionRatio != 0 ||
-			request.CacheRatio == nil || *request.CacheRatio != 0 ||
-			request.CreateCacheRatio == nil || *request.CreateCacheRatio != 0 {
-			return fmt.Errorf("免费模型必须将输入、输出、缓存读取和缓存写入倍率全部设为 0")
-		}
-	} else {
-		if request.PurchasePrice != nil {
-			if request.BillingMode != billing_setting.BillingModeRatio {
-				return fmt.Errorf("统一采购价必须显式使用普通倍率计费")
-			}
-			if err := validateGrok46UnifiedPurchasePrice(request); err != nil {
-				return err
-			}
-		}
-		if !isFiniteNonNegative(request.ModelRatio) || request.ModelRatio == 0 ||
-			request.CacheRatio == nil || !isFiniteNonNegative(*request.CacheRatio) ||
-			request.CreateCacheRatio == nil || !isFiniteNonNegative(*request.CreateCacheRatio) {
-			return fmt.Errorf("模型名称或定价值无效")
-		}
+	if !isFiniteNonNegative(request.ModelRatio) || request.ModelRatio == 0 ||
+		request.CacheRatio == nil || !isFiniteNonNegative(*request.CacheRatio) ||
+		request.CreateCacheRatio == nil || !isFiniteNonNegative(*request.CreateCacheRatio) {
+		return fmt.Errorf("模型名称或定价值无效")
 	}
 	if _, usesFixedPrice, fixedPriceKey := ratio_setting.GetModelPriceInfo(modelName, false); usesFixedPrice &&
 		fixedPriceKey == ratio_setting.CompactWildcardModelKey {
@@ -337,47 +318,6 @@ func pricingStringOptionMapValue(rawValues map[string]string, key string, fallba
 		return nil, fmt.Errorf("%s 定价配置必须是 JSON 对象", key)
 	}
 	return values, nil
-}
-
-func ensurePricingModelAbsent(current map[string]string, modelName string) error {
-	pricingModelName := ratio_setting.FormatMatchingModelName(modelName)
-	for _, item := range []struct {
-		key      string
-		fallback map[string]float64
-	}{
-		{key: "ModelRatio", fallback: ratio_setting.GetModelRatioCopy()},
-		{key: "CompletionRatio", fallback: ratio_setting.GetCompletionRatioCopy()},
-		{key: "CacheRatio", fallback: ratio_setting.GetCacheRatioCopy()},
-		{key: "CreateCacheRatio", fallback: ratio_setting.GetCreateCacheRatioCopy()},
-		{key: "ModelPrice", fallback: ratio_setting.GetModelPriceCopy()},
-	} {
-		values, err := pricingOptionMapValue(current, item.key, item.fallback)
-		if err != nil {
-			return err
-		}
-		if _, exists := values[modelName]; exists {
-			return errPricingAlreadyConfigured
-		}
-		if _, exists := values[pricingModelName]; exists {
-			return errPricingAlreadyConfigured
-		}
-	}
-	for _, item := range []struct {
-		key      string
-		fallback map[string]string
-	}{
-		{key: "billing_setting.billing_mode", fallback: billing_setting.GetBillingModeCopy()},
-		{key: "billing_setting.billing_expr", fallback: billing_setting.GetBillingExprCopy()},
-	} {
-		values, err := pricingStringOptionMapValue(current, item.key, item.fallback)
-		if err != nil {
-			return err
-		}
-		if _, exists := values[modelName]; exists {
-			return errPricingAlreadyConfigured
-		}
-	}
-	return nil
 }
 
 func appendPricingStringOption(
@@ -587,14 +527,6 @@ func buildPricingOptionValuesFromCurrent(request PricingOptionsUpdateRequest, cu
 		return nil, nil, err
 	}
 	modelName := strings.TrimSpace(request.ModelName)
-	if request.CreateOnly {
-		if !request.Free {
-			return nil, nil, fmt.Errorf("仅新增定价模式只允许用于显式免费模型")
-		}
-		if err := ensurePricingModelAbsent(current, modelName); err != nil {
-			return nil, nil, err
-		}
-	}
 	if request.BillingMode == billing_setting.BillingModeTieredExpr {
 		return buildTieredPricingOptionValues(request, current)
 	}
@@ -663,13 +595,6 @@ func UpdatePricingOptions(c *gin.Context) {
 			})
 			return
 		}
-		if errors.Is(err, errPricingAlreadyConfigured) {
-			c.JSON(http.StatusConflict, gin.H{
-				"success": false,
-				"message": err.Error(),
-			})
-			return
-		}
 		if errors.Is(err, errSharedFixedPrice) ||
 			errors.Is(err, errTieredLegacyRequiresExplicitRatio) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
@@ -681,7 +606,6 @@ func UpdatePricingOptions(c *gin.Context) {
 	auditParams := map[string]interface{}{
 		"model": strings.TrimSpace(request.ModelName),
 		"keys":  updatedKeys,
-		"free":  request.Free,
 	}
 	if channelPrice != nil {
 		auditParams["channel_id"] = channelPrice.ChannelID
