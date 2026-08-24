@@ -35,6 +35,7 @@ const HHMM_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
 
 export type PeakRatioDefaults = {
   'peak_ratio_setting.enabled': boolean
+  'peak_ratio_setting.weekend_enabled': boolean
   'peak_ratio_setting.multiplier': number
   'peak_ratio_setting.timezone': string
   'peak_ratio_setting.models': string
@@ -105,6 +106,9 @@ export function PeakRatioCard(props: Props) {
   const [enabled, setEnabled] = useState(
     props.defaultValues['peak_ratio_setting.enabled']
   )
+  const [weekendEnabled, setWeekendEnabled] = useState(
+    props.defaultValues['peak_ratio_setting.weekend_enabled']
+  )
   const [multiplier, setMultiplier] = useState(
     String(props.defaultValues['peak_ratio_setting.multiplier'])
   )
@@ -120,6 +124,7 @@ export function PeakRatioCard(props: Props) {
 
   useEffect(() => {
     setEnabled(props.defaultValues['peak_ratio_setting.enabled'])
+    setWeekendEnabled(props.defaultValues['peak_ratio_setting.weekend_enabled'])
     setMultiplier(String(props.defaultValues['peak_ratio_setting.multiplier']))
     setTimezone(props.defaultValues['peak_ratio_setting.timezone'])
     setModels(buildModelRows(props.defaultValues['peak_ratio_setting.models']))
@@ -168,7 +173,18 @@ export function PeakRatioCard(props: Props) {
     if (enabled !== props.defaultValues['peak_ratio_setting.enabled']) {
       updates.push({ key: 'peak_ratio_setting.enabled', value: enabled })
     }
-    if (parsedMultiplier !== props.defaultValues['peak_ratio_setting.multiplier']) {
+    if (
+      weekendEnabled !==
+      props.defaultValues['peak_ratio_setting.weekend_enabled']
+    ) {
+      updates.push({
+        key: 'peak_ratio_setting.weekend_enabled',
+        value: weekendEnabled,
+      })
+    }
+    if (
+      parsedMultiplier !== props.defaultValues['peak_ratio_setting.multiplier']
+    ) {
       updates.push({
         key: 'peak_ratio_setting.multiplier',
         value: parsedMultiplier,
@@ -222,6 +238,15 @@ export function PeakRatioCard(props: Props) {
         label={t('Enable peak pricing')}
         description={t(
           'When enabled, matched models are charged at an increased rate during peak hours.'
+        )}
+      />
+
+      <SettingsSwitchField
+        checked={weekendEnabled}
+        onCheckedChange={setWeekendEnabled}
+        label={t('Apply peak pricing on weekends')}
+        description={t(
+          'When disabled, peak pricing does not apply on Saturdays or Sundays.'
         )}
       />
 

@@ -174,15 +174,15 @@ const MODELS_SECTIONS = [
     build: (settings: ModelSettings) => (
       <PeakRatioCard
         defaultValues={{
-          'peak_ratio_setting.enabled':
-            settings['peak_ratio_setting.enabled'],
+          'peak_ratio_setting.enabled': settings['peak_ratio_setting.enabled'],
+          'peak_ratio_setting.weekend_enabled':
+            settings['peak_ratio_setting.weekend_enabled'],
           'peak_ratio_setting.multiplier':
             settings['peak_ratio_setting.multiplier'],
           'peak_ratio_setting.timezone':
             settings['peak_ratio_setting.timezone'],
           'peak_ratio_setting.models': settings['peak_ratio_setting.models'],
-          'peak_ratio_setting.windows':
-            settings['peak_ratio_setting.windows'],
+          'peak_ratio_setting.windows': settings['peak_ratio_setting.windows'],
         }}
       />
     ),

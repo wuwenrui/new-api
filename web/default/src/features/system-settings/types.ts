@@ -299,6 +299,7 @@ export type ModelSettings = {
   'channel_affinity_setting.default_ttl_seconds': number
   'channel_affinity_setting.rules': string
   'peak_ratio_setting.enabled': boolean
+  'peak_ratio_setting.weekend_enabled': boolean
   'peak_ratio_setting.multiplier': number
   'peak_ratio_setting.timezone': string
   'peak_ratio_setting.models': string

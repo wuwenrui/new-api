@@ -82,6 +82,7 @@ const defaultModelSettings: ModelSettings = {
   'channel_affinity_setting.default_ttl_seconds': 3600,
   'channel_affinity_setting.rules': '[]',
   'peak_ratio_setting.enabled': false,
+  'peak_ratio_setting.weekend_enabled': true,
   'peak_ratio_setting.multiplier': 2,
   'peak_ratio_setting.timezone': 'Asia/Shanghai',
   'peak_ratio_setting.models': '["deepseek"]',
