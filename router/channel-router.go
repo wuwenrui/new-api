@@ -28,6 +28,13 @@ func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 		controller.GetChannelKey,
 	)
 
+	// The pricing workbench exposes purchase prices, margins and profit
+	// figures; it is restricted to the super admin.
+	channelRoute.GET("/price_compare",
+		middleware.RootAuth(),
+		controller.GetChannelPriceCompare,
+	)
+
 	for _, route := range channelPermissionRoutes {
 		channelRoute.Handle(route.method, route.path,
 			middleware.RequirePermission(route.permission),
@@ -61,7 +68,6 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodGet, path: "/fetch_models/:id", permission: authz.ChannelOperate, handler: controller.FetchUpstreamModels},
 	{method: http.MethodPost, path: "/fetch_models", permission: authz.ChannelSensitiveWrite, handler: controller.FetchModels},
 	{method: http.MethodPost, path: "/probe_newapi", permission: authz.ChannelSensitiveWrite, handler: controller.ProbeNewAPIUpstream},
-	{method: http.MethodGet, path: "/price_compare", permission: authz.ChannelRead, handler: controller.GetChannelPriceCompare},
 	{method: http.MethodGet, path: "/business_report", permission: authz.ChannelRead, handler: controller.GetChannelBusinessReport},
 	{method: http.MethodPost, path: "/:id/codex/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshCodexChannelCredential},
 	{method: http.MethodGet, path: "/:id/codex/usage", permission: authz.ChannelRead, handler: controller.GetCodexChannelUsage},

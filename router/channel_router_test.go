@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-contrib/sessions"
@@ -30,8 +31,47 @@ func TestChannelDeleteRoutesUseSensitiveWritePermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodPost, "/batch/tag", authz.ChannelWrite, controller.BatchSetChannelTag)
 }
 
-func TestChannelPriceCompareRouteUsesReadPermission(t *testing.T) {
-	assertChannelRoutePermission(t, http.MethodGet, "/price_compare", authz.ChannelRead, controller.GetChannelPriceCompare)
+func TestChannelPriceCompareRouteIsSuperAdminOnly(t *testing.T) {
+	// The pricing workbench (costs, margins, profit) must not be reachable
+	// through the shared permission list — it is registered with RootAuth.
+	for _, route := range channelPermissionRoutes {
+		require.NotEqual(t, "/price_compare", route.path)
+	}
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(sessions.Sessions("session", cookie.NewStore([]byte("channel-route-test"))))
+	engine.GET("/set-admin-session", func(c *gin.Context) {
+		session := sessions.Default(c)
+		session.Set("username", "admin")
+		session.Set("role", common.RoleAdminUser)
+		session.Set("id", 2)
+		session.Set("status", 1)
+		require.NoError(t, session.Save())
+		c.Status(http.StatusNoContent)
+	})
+	registerChannelRoutes(engine.Group("/api"))
+
+	login := httptest.NewRecorder()
+	engine.ServeHTTP(login, httptest.NewRequest(http.MethodGet, "/set-admin-session", nil))
+	cookies := login.Result().Cookies()
+	require.NotEmpty(t, cookies)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/channel/price_compare", nil)
+	request.Header.Set("New-Api-User", "2")
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
+	engine.ServeHTTP(response, request)
+
+	// Regular admins are rejected before the handler runs (the auth helper
+	// answers 200 with success:false on insufficient privilege).
+	assert.Contains(t, response.Body.String(), `"success":false`)
+}
+
+func TestChannelBusinessReportRouteUsesReadPermission(t *testing.T) {
+	assertChannelRoutePermission(t, http.MethodGet, "/business_report", authz.ChannelRead, controller.GetChannelBusinessReport)
 }
 
 func TestChannelPriceCompareRouteRejectsUnauthenticatedRequests(t *testing.T) {

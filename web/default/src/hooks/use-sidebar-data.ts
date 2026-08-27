@@ -58,6 +58,7 @@ export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const { auth } = useAuthStore()
   const canSeeFinanceReport = canAccessFinanceReport(auth?.user?.role)
+  const isSuperAdmin = (auth?.user?.role ?? 0) >= ROLE.SUPER_ADMIN
 
   return {
     navGroups: [
@@ -145,11 +146,15 @@ export function useSidebarData(): SidebarData {
             url: '/channels',
             icon: Radio,
           },
-          {
-            title: t('Channel Operations'),
-            url: '/channel-price-compare',
-            icon: Scale,
-          },
+          ...(isSuperAdmin
+            ? [
+                {
+                  title: t('Channel Operations'),
+                  url: '/channel-price-compare',
+                  icon: Scale,
+                },
+              ]
+            : []),
           {
             title: t('Models'),
             url: '/models/metadata',

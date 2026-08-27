@@ -45,8 +45,19 @@ import {
 } from '@/components/ui/tooltip'
 
 import { formatPercent, formatUsd } from '../lib/formatters'
+import {
+  isRowDirty,
+  type RowEdit,
+  type WorkbenchRow,
+  workbenchRowFromChannel,
+} from '../lib/workbench'
 import type { PriceCompareChannel, PriceCompareModel } from '../types'
 import { PriceSyncDialog } from './price-sync-dialog'
+import {
+  WorkbenchCostFillCell,
+  WorkbenchSaleCell,
+  WorkbenchTargetCell,
+} from './workbench-cells'
 
 const RECOMMENDATION_KEYS: Record<string, string> = {
   missing_price: 'Add purchase price',
@@ -145,22 +156,27 @@ function PriceCell(props: { channel: PriceCompareChannel }) {
 
 function ChannelRow(props: {
   channel: PriceCompareChannel
+  workbenchRow: WorkbenchRow
+  edit: RowEdit | undefined
   modelName: string
   onSyncPrice: (channel: PriceCompareChannel) => void
   canSyncPrice: boolean
+  onEdit: (patch: Partial<RowEdit>) => void
+  onClearCost: () => void
 }) {
+  const dirty = isRowDirty(props.workbenchRow, props.edit)
+  let rowClassName: string | undefined
+  if (dirty) {
+    rowClassName = 'bg-primary/5 ring-1 ring-primary/40 ring-inset'
+  } else if (props.channel.recommendations.length > 0) {
+    rowClassName = 'bg-amber-50/50 dark:bg-amber-950/10'
+  }
   const { t } = useTranslation()
   const attempts =
     props.channel.quality_24h.successes + props.channel.quality_24h.errors
 
   return (
-    <TableRow
-      className={
-        props.channel.recommendations.length > 0
-          ? 'bg-amber-50/50 dark:bg-amber-950/10'
-          : undefined
-      }
-    >
+    <TableRow className={rowClassName}>
       <TableCell>
         <div className='flex items-center gap-2'>
           {routingBadge(props.channel)}
@@ -184,37 +200,65 @@ function ChannelRow(props: {
         ) : null}
       </TableCell>
       <TableCell>
-        <PriceCell channel={props.channel} />
-      </TableCell>
-      <TableCell className='text-right tabular-nums'>
-        {props.channel.uses_fixed_price ? (
-          <>
-            <div>{formatUsd(props.channel.fixed_price)}</div>
-            <div className='text-muted-foreground text-xs'>
-              {t('Fixed price')} · {t('per request')}
-            </div>
-          </>
+        {props.canSyncPrice && props.channel.price_source === 'missing' ? (
+          <WorkbenchCostFillCell
+            channel={props.channel}
+            edit={props.edit}
+            onEdit={props.onEdit}
+            onClearCost={props.onClearCost}
+          />
         ) : (
-          <>
-            <div>
-              {formatUsd(props.channel.local_input)} /{' '}
-              {formatUsd(props.channel.local_output)}
-            </div>
-            <div className='text-muted-foreground text-xs'>
-              {props.channel.billing_mode === 'tiered_expr'
-                ? t('Tiered by context')
-                : formatPercent(
-                    props.channel.price_source === 'missing'
-                      ? undefined
-                      : Math.min(
-                          props.channel.margin_input,
-                          props.channel.margin_output
-                        )
-                  )}
-            </div>
-          </>
+          <PriceCell channel={props.channel} />
         )}
       </TableCell>
+      {props.canSyncPrice && !props.channel.uses_fixed_price ? (
+        <>
+          <TableCell>
+            <WorkbenchSaleCell
+              row={props.workbenchRow}
+              edit={props.edit}
+              onEdit={props.onEdit}
+            />
+          </TableCell>
+          <TableCell>
+            <WorkbenchTargetCell
+              row={props.workbenchRow}
+              edit={props.edit}
+              onEdit={props.onEdit}
+            />
+          </TableCell>
+        </>
+      ) : (
+        <TableCell className='text-right tabular-nums'>
+          {props.channel.uses_fixed_price ? (
+            <>
+              <div>{formatUsd(props.channel.fixed_price)}</div>
+              <div className='text-muted-foreground text-xs'>
+                {t('Fixed price')} · {t('per request')}
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                {formatUsd(props.channel.local_input)} /{' '}
+                {formatUsd(props.channel.local_output)}
+              </div>
+              <div className='text-muted-foreground text-xs'>
+                {props.channel.billing_mode === 'tiered_expr'
+                  ? t('Tiered by context')
+                  : formatPercent(
+                      props.channel.price_source === 'missing'
+                        ? undefined
+                        : Math.min(
+                            props.channel.margin_input,
+                            props.channel.margin_output
+                          )
+                    )}
+              </div>
+            </>
+          )}
+        </TableCell>
+      )}
       <TableCell className='text-right tabular-nums'>
         <div>{formatUsd(props.channel.today.revenue)}</div>
         <div className='text-muted-foreground text-xs'>
@@ -374,13 +418,16 @@ export function PriceCompareTable(props: {
   model: PriceCompareModel
   group: string
   canSyncPrice: boolean
+  edits: Record<string, RowEdit>
+  onEdit: (key: string, patch: Partial<RowEdit>) => void
+  onClearCost: (key: string) => void
 }) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(true)
   const [syncTarget, setSyncTarget] = useState<PriceCompareChannel | null>(null)
 
   return (
-    <Card>
+    <Card id={`model-${props.model.model_name}`}>
       <CardHeader className='border-b p-0'>
         <CardTitle>
           <Button
@@ -419,6 +466,11 @@ export function PriceCompareTable(props: {
                   <TableHead className='text-right'>
                     {t('Selling price / margin')}
                   </TableHead>
+                  {props.canSyncPrice ? (
+                    <TableHead className='text-right'>
+                      {t('Target margin / suggestion')}
+                    </TableHead>
+                  ) : null}
                   <TableHead className='text-right'>
                     {t('Today sales')}
                   </TableHead>
@@ -434,15 +486,25 @@ export function PriceCompareTable(props: {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {props.model.channels.map((channel) => (
-                  <ChannelRow
-                    key={channel.channel_id}
-                    channel={channel}
-                    modelName={props.model.model_name}
-                    canSyncPrice={props.canSyncPrice}
-                    onSyncPrice={setSyncTarget}
-                  />
-                ))}
+                {props.model.channels.map((channel) => {
+                  const workbenchRow = workbenchRowFromChannel(
+                    props.model,
+                    channel
+                  )
+                  return (
+                    <ChannelRow
+                      key={channel.channel_id}
+                      channel={channel}
+                      workbenchRow={workbenchRow}
+                      edit={props.edits[workbenchRow.key]}
+                      modelName={props.model.model_name}
+                      canSyncPrice={props.canSyncPrice}
+                      onSyncPrice={setSyncTarget}
+                      onEdit={(patch) => props.onEdit(workbenchRow.key, patch)}
+                      onClearCost={() => props.onClearCost(workbenchRow.key)}
+                    />
+                  )
+                })}
               </TableBody>
             </Table>
           </div>

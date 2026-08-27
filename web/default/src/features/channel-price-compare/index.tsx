@@ -33,6 +33,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Spinner } from '@/components/ui/spinner'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
@@ -40,6 +41,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { getChannelPriceCompare } from './api'
 import { ChannelSummaryTable } from './components/channel-summary-table'
 import { PriceCompareTable } from './components/price-compare-table'
+import { WorkbenchPlanDialog } from './components/workbench-plan-dialog'
 import {
   filterPriceCompareModels,
   formatPercent,
@@ -48,6 +50,24 @@ import {
   summarizePriceCompareModels,
   type ChannelRiskFilter,
 } from './lib/formatters'
+import {
+  type AutotuneScope,
+  autotuneRows,
+  flattenWorkbenchRows,
+  isRowDirty,
+  type RowEdit,
+  workbenchRowFromChannel,
+} from './lib/workbench'
+
+const TARGET_MARGIN_STORAGE_KEY = 'pricing-workbench:target-margin'
+
+const REC_LABEL_KEYS: Record<string, string> = {
+  missing_price: 'Add purchase price',
+  price_changed: 'Check upstream price change',
+  negative_margin: 'Adjust price or stop after review',
+  low_margin: 'Review selling price or supplier',
+  low_success_rate: 'Lower priority or stop after review',
+}
 
 function MetricCard(props: {
   title: string
@@ -95,6 +115,19 @@ export function ChannelPriceCompare() {
   const [modelFilter, setModelFilter] = useState('')
   const [channelFilter, setChannelFilter] = useState('')
   const [riskFilter, setRiskFilter] = useState<ChannelRiskFilter>('all')
+  // ---- pricing workbench state (super admin only) ----
+  const [edits, setEdits] = useState<Record<string, RowEdit>>({})
+  const [planOpen, setPlanOpen] = useState(false)
+  const [sortBy, setSortBy] = useState<'margin-asc' | 'profit-desc' | 'name'>(
+    'margin-asc'
+  )
+  const [targetMargin, setTargetMargin] = useState(
+    () => localStorage.getItem(TARGET_MARGIN_STORAGE_KEY) ?? '30'
+  )
+  const [autotuneOpen, setAutotuneOpen] = useState(false)
+  const [autotuneScope, setAutotuneScope] = useState<AutotuneScope>('below')
+  const [autotuneStep, setAutotuneStep] = useState('0.1')
+  const [autotuneMsg, setAutotuneMsg] = useState('')
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['channel-price-compare', group],
@@ -113,6 +146,74 @@ export function ChannelPriceCompare() {
     [channelFilter, data?.models, modelFilter, riskFilter]
   )
   const channels = useMemo(() => summarizePriceCompareModels(models), [models])
+  const workbenchRows = useMemo(() => flattenWorkbenchRows(models), [models])
+  const dirtyRows = useMemo(
+    () => workbenchRows.filter((row) => isRowDirty(row, edits[row.key])),
+    [workbenchRows, edits]
+  )
+  const riskRows = useMemo(
+    () => workbenchRows.filter((row) => row.risk),
+    [workbenchRows]
+  )
+  const sortedModels = useMemo(() => {
+    if (sortBy === 'name') {
+      return [...models].sort((a, b) =>
+        a.model_name.localeCompare(b.model_name)
+      )
+    }
+    const keyOf = (model: (typeof models)[number]) => {
+      const rows = model.channels.map((channel) =>
+        workbenchRowFromChannel(model, channel)
+      )
+      if (sortBy === 'profit-desc') {
+        return -rows.reduce((acc, row) => acc + row.todayProfit, 0)
+      }
+      const margins = rows
+        .map((row) => row.margin)
+        .filter((margin): margin is number => margin !== null)
+      return margins.length > 0 ? Math.min(...margins) : Number.MAX_VALUE
+    }
+    return [...models].sort((a, b) => keyOf(a) - keyOf(b))
+  }, [models, sortBy])
+
+  const handleEdit = (key: string, patch: Partial<RowEdit>) => {
+    setEdits((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+  }
+  const handleClearCost = (key: string) => {
+    setEdits((prev) => {
+      const edit = { ...prev[key] }
+      delete edit.cost
+      return { ...prev, [key]: edit }
+    })
+  }
+  const handleAutotune = () => {
+    const target = Number(targetMargin)
+    const result = autotuneRows(
+      workbenchRows,
+      edits,
+      autotuneScope,
+      target,
+      Number(autotuneStep)
+    )
+    setEdits((prev) => ({ ...prev, ...result.changes }))
+    setAutotuneMsg(
+      t(
+        'Staged {{tuned}} rows ({{already}} already on target, {{skipped}} skipped)',
+        {
+          tuned: result.tuned,
+          already: result.already,
+          skipped: result.skipped,
+        }
+      )
+    )
+  }
+  const handleExecuted = (keys: string[]) => {
+    setEdits((prev) => {
+      const next = { ...prev }
+      for (const key of keys) delete next[key]
+      return next
+    })
+  }
   const visibleSummary = useMemo(
     () => summarizeChannelRows(channels),
     [channels]
@@ -156,6 +257,131 @@ export function ChannelPriceCompare() {
         </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
+        {canSyncPrice ? (
+          <div className='mb-4 space-y-2'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <span className='text-muted-foreground text-sm'>
+                {t('Default target margin')}
+              </span>
+              <Input
+                type='number'
+                min={0}
+                max={95}
+                value={targetMargin}
+                onChange={(event) => {
+                  setTargetMargin(event.target.value)
+                  localStorage.setItem(
+                    TARGET_MARGIN_STORAGE_KEY,
+                    event.target.value
+                  )
+                }}
+                className='h-8 w-20 text-right tabular-nums'
+                aria-label={t('Default target margin')}
+              />
+              <span className='text-muted-foreground text-sm'>%</span>
+              <Button
+                size='sm'
+                onClick={() => setAutotuneOpen((open) => !open)}
+              >
+                {t('Auto-adjust by target margin')}
+              </Button>
+              <NativeSelect
+                value={sortBy}
+                onChange={(event) =>
+                  setSortBy(event.target.value as typeof sortBy)
+                }
+                className='ml-auto w-44'
+                aria-label={t('Sort models')}
+              >
+                <NativeSelectOption value='margin-asc'>
+                  {t('Sort by margin asc')}
+                </NativeSelectOption>
+                <NativeSelectOption value='profit-desc'>
+                  {t('Sort by today profit')}
+                </NativeSelectOption>
+                <NativeSelectOption value='name'>
+                  {t('Sort by name')}
+                </NativeSelectOption>
+              </NativeSelect>
+            </div>
+            {autotuneOpen ? (
+              <div className='bg-primary/5 border-primary/20 flex flex-wrap items-center gap-2 rounded-lg border p-3'>
+                <span className='text-muted-foreground text-sm'>
+                  {t('Scope')}
+                </span>
+                <NativeSelect
+                  value={autotuneScope}
+                  onChange={(event) =>
+                    setAutotuneScope(event.target.value as AutotuneScope)
+                  }
+                  aria-label={t('Scope')}
+                >
+                  <NativeSelectOption value='below'>
+                    {t('Only rows below target margin')}
+                  </NativeSelectOption>
+                  <NativeSelectOption value='all'>
+                    {t('All rows with known cost')}
+                  </NativeSelectOption>
+                  <NativeSelectOption value='risk'>
+                    {t('Risk rows only')}
+                  </NativeSelectOption>
+                </NativeSelect>
+                <span className='text-muted-foreground text-sm'>
+                  {t('Rounding')}
+                </span>
+                <NativeSelect
+                  value={autotuneStep}
+                  onChange={(event) => setAutotuneStep(event.target.value)}
+                  aria-label={t('Rounding')}
+                >
+                  <NativeSelectOption value='0.1'>
+                    {t('Round up to $0.1')}
+                  </NativeSelectOption>
+                  <NativeSelectOption value='0.25'>
+                    {t('Round up to $0.25')}
+                  </NativeSelectOption>
+                  <NativeSelectOption value='0'>
+                    {t('No rounding')}
+                  </NativeSelectOption>
+                </NativeSelect>
+                <Button size='sm' onClick={handleAutotune}>
+                  {t('Generate adjustments')}
+                </Button>
+                {autotuneMsg ? (
+                  <span className='text-muted-foreground text-xs'>
+                    {autotuneMsg}
+                  </span>
+                ) : null}
+                <span className='text-muted-foreground text-xs'>
+                  {t(
+                    'Staged only — review below, then execute from the plan bar'
+                  )}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className='mb-4 flex justify-end'>
+            <NativeSelect
+              value={sortBy}
+              onChange={(event) =>
+                setSortBy(event.target.value as typeof sortBy)
+              }
+              className='w-44'
+              aria-label={t('Sort models')}
+            >
+              <NativeSelectOption value='margin-asc'>
+                {t('Sort by margin asc')}
+              </NativeSelectOption>
+              <NativeSelectOption value='profit-desc'>
+                {t('Sort by today profit')}
+              </NativeSelectOption>
+              <NativeSelectOption value='name'>
+                {t('Sort by name')}
+              </NativeSelectOption>
+            </NativeSelect>
+          </div>
+        )}
         {isLoading && (
           <div className='flex items-center justify-center py-16'>
             <Spinner className='size-6' />
@@ -197,6 +423,44 @@ export function ChannelPriceCompare() {
                 </span>
               </div>
             </div>
+
+            {riskRows.length > 0 ? (
+              <div className='border-destructive/30 bg-destructive/5 rounded-lg border p-3'>
+                <div className='text-destructive mb-2 text-sm font-medium'>
+                  {t('Needs attention')}
+                </div>
+                <div className='flex flex-wrap gap-2'>
+                  {riskRows.map((row) => {
+                    const channel = models
+                      .find((model) => model.model_name === row.modelName)
+                      ?.channels.find(
+                        (candidate) => candidate.channel_id === row.channelId
+                      )
+                    const firstRec = channel?.recommendations[0]
+                    return (
+                      <button
+                        key={row.key}
+                        type='button'
+                        className='bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-full px-3 py-1 text-xs'
+                        onClick={() =>
+                          document
+                            .getElementById(`model-${row.modelName}`)
+                            ?.scrollIntoView({
+                              block: 'start',
+                              behavior: 'smooth',
+                            })
+                        }
+                      >
+                        {row.modelName} · {row.channelName} ·{' '}
+                        {firstRec
+                          ? t(REC_LABEL_KEYS[firstRec] || firstRec)
+                          : t('Review selling price or supplier')}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             {data ? (
               <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-5'>
@@ -369,17 +633,49 @@ export function ChannelPriceCompare() {
                 {t('No models to compare')}
               </div>
             ) : (
-              models.map((model) => (
+              sortedModels.map((model) => (
                 <PriceCompareTable
                   key={model.model_name}
                   model={model}
                   group={group}
                   canSyncPrice={canSyncPrice}
+                  edits={edits}
+                  onEdit={handleEdit}
+                  onClearCost={handleClearCost}
                 />
               ))
             )}
           </div>
         )}
+        {canSyncPrice && dirtyRows.length > 0 ? (
+          <div className='bg-background/95 fixed inset-x-0 bottom-0 z-20 border-t py-3 shadow-lg backdrop-blur'>
+            <div className='mx-auto flex max-w-7xl items-center justify-between px-6'>
+              <span className='text-sm'>
+                {t('{{count}} rows staged', { count: dirtyRows.length })}
+              </span>
+              <div className='flex gap-2'>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => setEdits({})}
+                >
+                  {t('Discard changes')}
+                </Button>
+                <Button size='sm' onClick={() => setPlanOpen(true)}>
+                  {t('Review plan & execute')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <WorkbenchPlanDialog
+          open={planOpen}
+          onOpenChange={setPlanOpen}
+          rows={workbenchRows}
+          edits={edits}
+          group={group}
+          onExecuted={handleExecuted}
+        />
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )
