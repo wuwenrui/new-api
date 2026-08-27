@@ -5575,6 +5575,10 @@
     "Review plan & execute": "Review plan & execute",
     "Target margin / suggestion": "Target margin / suggestion",
     "Purchase price write failed": "Purchase price write failed",
-    "Purchase price updated": "Purchase price updated"
+    "Purchase price updated": "Purchase price updated",
+    "Fill all purchase prices ({{fillable}} detected / {{missing}} missing)": "Fill all purchase prices ({{fillable}} detected / {{missing}} missing)",
+    "All purchase prices known": "All purchase prices known",
+    "{{filled}} detected prices staged, {{manual}} rows need manual entry": "{{filled}} detected prices staged, {{manual}} rows need manual entry",
+    "Missing purchase price only": "Missing purchase price only"
   }
 }

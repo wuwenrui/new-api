@@ -25,6 +25,7 @@ import {
   buildRatioSyncRequest,
   ceilToStep,
   effectiveCost,
+  fillDetectedCosts,
   isPriceDirty,
   isRowDirty,
   mergeModelPriceIntoSettings,
@@ -115,6 +116,7 @@ function makeRow(overrides: Partial<WorkbenchRow> = {}): WorkbenchRow {
     localOutput: 16,
     costInput: 2,
     costOutput: 8,
+    detected: null,
     margin: 50,
     risk: false,
     todayProfit: 0,
@@ -406,6 +408,59 @@ describe('buildRatioSyncRequest', () => {
       reason: 'locked-completion-conflict',
       detail: '4',
     })
+  })
+})
+
+describe('fillDetectedCosts', () => {
+  const detected = {
+    input: 1,
+    output: 4,
+    cacheRead: 0.1,
+    cacheWrite: 0,
+    via: 'detected' as const,
+  }
+  const missingWithDetected = makeRow({
+    key: 'a|1',
+    channelId: 1,
+    costInput: null,
+    costOutput: null,
+    margin: null,
+    detected,
+  })
+  const missingNoDetected = makeRow({
+    key: 'b|2',
+    channelId: 2,
+    costInput: null,
+    costOutput: null,
+    margin: null,
+  })
+  const knownCost = makeRow({ key: 'c|3', channelId: 3 })
+
+  test('stages detected prices and counts rows needing manual entry', () => {
+    const result = fillDetectedCosts(
+      [missingWithDetected, missingNoDetected, knownCost],
+      {}
+    )
+    assert.equal(result.filled, 1)
+    assert.equal(result.manualOnly, 1)
+    assert.deepEqual(result.changes['a|1'].cost, detected)
+    assert.equal(result.changes['b|2'], undefined)
+    assert.equal(result.changes['c|3'], undefined)
+  })
+
+  test('does not overwrite a cost staged by hand', () => {
+    const manual = {
+      cost: {
+        input: 9,
+        output: 9,
+        cacheRead: 0,
+        cacheWrite: 0,
+        via: 'manual' as const,
+      },
+    }
+    const result = fillDetectedCosts([missingWithDetected], { 'a|1': manual })
+    assert.equal(result.filled, 0)
+    assert.deepEqual(result.changes, {})
   })
 })
 

@@ -37,7 +37,7 @@ export type ChannelSummarySort =
 
 export type SortDirection = 'asc' | 'desc'
 
-export type ChannelRiskFilter = 'all' | 'risk' | 'normal'
+export type ChannelRiskFilter = 'all' | 'risk' | 'normal' | 'missing'
 
 export function filterPriceCompareModels(
   models: PriceCompareModel[],
@@ -65,6 +65,7 @@ export function filterPriceCompareModels(
         const hasRisk = channel.recommendations.length > 0
         if (riskFilter === 'risk') return hasRisk
         if (riskFilter === 'normal') return !hasRisk
+        if (riskFilter === 'missing') return channel.price_source === 'missing'
         return true
       }),
     }))

@@ -5613,6 +5613,10 @@
     "Review plan & execute": "生成调价计划",
     "Target margin / suggestion": "目标毛利率 / 建议售价",
     "Purchase price write failed": "采购价写入失败",
-    "Purchase price updated": "采购价已更新"
+    "Purchase price updated": "采购价已更新",
+    "Fill all purchase prices ({{fillable}} detected / {{missing}} missing)": "一键补进价（{{fillable}} 可探测 / {{missing}} 缺失）",
+    "All purchase prices known": "进价已齐全",
+    "{{filled}} detected prices staged, {{manual}} rows need manual entry": "已暂存 {{filled}} 行探测进价，{{manual}} 行需手工录入",
+    "Missing purchase price only": "仅缺进价"
   }
 }

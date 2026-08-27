@@ -57,6 +57,7 @@ export type WorkbenchRow = {
   localOutput: number
   costInput: number | null
   costOutput: number | null
+  detected: StagedCost | null
   margin: number | null
   risk: boolean
   todayProfit: number
@@ -87,6 +88,16 @@ export function workbenchRowFromChannel(
     localOutput: channel.local_output,
     costInput: basis?.input ?? null,
     costOutput: basis?.output ?? null,
+    detected:
+      channel.detected_available && channel.detected_input > 0
+        ? {
+            input: channel.detected_input,
+            output: channel.detected_output,
+            cacheRead: channel.detected_cache_read,
+            cacheWrite: channel.detected_cache_write,
+            via: 'detected',
+          }
+        : null,
     margin,
     risk:
       channel.recommendations.length > 0 || (margin !== null && margin < 15),
@@ -100,6 +111,34 @@ export function flattenWorkbenchRows(
   return models.flatMap((model) =>
     model.channels.map((channel) => workbenchRowFromChannel(model, channel))
   )
+}
+
+// Stage every detected upstream price for rows whose cost is unknown.
+// Rows without a usable detected price keep their missing state and are
+// reported so the admin knows they still need manual entry.
+export type FillDetectedResult = {
+  changes: Record<string, RowEdit>
+  filled: number
+  manualOnly: number
+}
+
+export function fillDetectedCosts(
+  rows: WorkbenchRow[],
+  edits: Record<string, RowEdit>
+): FillDetectedResult {
+  const changes: Record<string, RowEdit> = {}
+  let filled = 0
+  let manualOnly = 0
+  for (const row of rows) {
+    if (effectiveCost(row, edits[row.key]) !== null) continue
+    if (row.detected) {
+      changes[row.key] = { ...edits[row.key], cost: row.detected }
+      filled++
+    } else {
+      manualOnly++
+    }
+  }
+  return { changes, filled, manualOnly }
 }
 
 export function parseEditNumber(raw: string | undefined): number | null {

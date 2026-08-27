@@ -53,6 +53,8 @@ import {
 import {
   type AutotuneScope,
   autotuneRows,
+  effectiveCost,
+  fillDetectedCosts,
   flattenWorkbenchRows,
   isRowDirty,
   type RowEdit,
@@ -128,6 +130,7 @@ export function ChannelPriceCompare() {
   const [autotuneScope, setAutotuneScope] = useState<AutotuneScope>('below')
   const [autotuneStep, setAutotuneStep] = useState('0.1')
   const [autotuneMsg, setAutotuneMsg] = useState('')
+  const [fillCostsMsg, setFillCostsMsg] = useState('')
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['channel-price-compare', group],
@@ -154,6 +157,18 @@ export function ChannelPriceCompare() {
   const riskRows = useMemo(
     () => workbenchRows.filter((row) => row.risk),
     [workbenchRows]
+  )
+  const missingCostRows = useMemo(
+    () =>
+      workbenchRows.filter(
+        (row) => effectiveCost(row, edits[row.key]) === null
+      ),
+    [workbenchRows, edits]
+  )
+  const missingCostCount = missingCostRows.length
+  const fillableCount = useMemo(
+    () => missingCostRows.filter((row) => row.detected !== null).length,
+    [missingCostRows]
   )
   const sortedModels = useMemo(() => {
     if (sortBy === 'name') {
@@ -185,6 +200,21 @@ export function ChannelPriceCompare() {
       delete edit.cost
       return { ...prev, [key]: edit }
     })
+  }
+  const handleFillCosts = () => {
+    const result = fillDetectedCosts(workbenchRows, edits)
+    setEdits((prev) => ({ ...prev, ...result.changes }))
+    setFillCostsMsg(
+      result.filled > 0
+        ? t(
+            '{{filled}} detected prices staged, {{manual}} rows need manual entry',
+            {
+              filled: result.filled,
+              manual: result.manualOnly,
+            }
+          )
+        : t('No detected price for this upstream')
+    )
   }
   const handleAutotune = () => {
     const target = Number(targetMargin)
@@ -279,6 +309,27 @@ export function ChannelPriceCompare() {
                 aria-label={t('Default target margin')}
               />
               <span className='text-muted-foreground text-sm'>%</span>
+              <Button
+                size='sm'
+                variant='outline'
+                disabled={fillableCount === 0}
+                onClick={handleFillCosts}
+              >
+                {missingCostCount > 0
+                  ? t(
+                      'Fill all purchase prices ({{fillable}} detected / {{missing}} missing)',
+                      {
+                        fillable: fillableCount,
+                        missing: missingCostCount,
+                      }
+                    )
+                  : t('All purchase prices known')}
+              </Button>
+              {fillCostsMsg ? (
+                <span className='text-muted-foreground text-xs'>
+                  {fillCostsMsg}
+                </span>
+              ) : null}
               <Button
                 size='sm'
                 onClick={() => setAutotuneOpen((open) => !open)}
@@ -623,6 +674,15 @@ export function ChannelPriceCompare() {
                     onClick={() => setRiskFilter('normal')}
                   >
                     {t('Normal only')}
+                  </Button>
+                  <Button
+                    type='button'
+                    aria-pressed={riskFilter === 'missing'}
+                    size='sm'
+                    variant={riskFilter === 'missing' ? 'default' : 'outline'}
+                    onClick={() => setRiskFilter('missing')}
+                  >
+                    {t('Missing purchase price only')}
                   </Button>
                 </div>
               </div>
