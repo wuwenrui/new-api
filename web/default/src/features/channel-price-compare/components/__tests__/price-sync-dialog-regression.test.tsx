@@ -16,46 +16,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { after, afterEach, describe, test } from 'node:test'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
+import { createInstance } from 'i18next'
+import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { afterEach, assert, describe, expect, test, vi } from 'vitest'
 
-import { Window } from 'happy-dom'
-
+import { api } from '@/lib/api'
 import type { PriceCompareChannel } from '../../types'
+import { PriceSyncDialog } from '../price-sync-dialog'
 
-const domWindow = new Window()
-for (const key of [
-  'window',
-  'document',
-  'navigator',
-  'HTMLElement',
-  'HTMLInputElement',
-  'SVGElement',
-  'Node',
-  'Element',
-  'Event',
-  'CustomEvent',
-  'MutationObserver',
-  'requestAnimationFrame',
-  'cancelAnimationFrame',
-  'getComputedStyle',
-] as const) {
-  Object.defineProperty(globalThis, key, {
-    configurable: true,
-    value: domWindow[key],
-  })
-}
+const modelsDevMock = vi.hoisted(() => ({
+  providerCalls: 0,
+  providerError: null as Error | null,
+}))
 
-let providerCalls = 0
-let providerError: Error | null = null
-const bunTestModule = await import(['bun', 'test'].join(':'))
-bunTestModule.mock.module('@opencode-ai/models', () => ({
+vi.mock('@opencode-ai/models', () => ({
   Models: {
     make: () => {
-      providerCalls += 1
+      modelsDevMock.providerCalls += 1
       return {
         providers: async () => {
-          if (providerError) throw providerError
+          if (modelsDevMock.providerError) throw modelsDevMock.providerError
           return {}
         },
       }
@@ -63,14 +45,6 @@ bunTestModule.mock.module('@opencode-ai/models', () => ({
   },
 }))
 
-const { act } = await import('react')
-const { createRoot } = await import('react-dom/client')
-const { QueryClient, QueryClientProvider } =
-  await import('@tanstack/react-query')
-const { createInstance } = await import('i18next')
-const { I18nextProvider, initReactI18next } = await import('react-i18next')
-const { api } = await import('@/lib/api')
-const { PriceSyncDialog } = await import('../price-sync-dialog')
 const originalApiPut = api.put
 
 const i18n = createInstance()
@@ -78,11 +52,6 @@ await i18n.use(initReactI18next).init({
   lng: 'en',
   resources: { en: { translation: {} } },
 })
-
-const reactTestGlobals = globalThis as typeof globalThis & {
-  IS_REACT_ACT_ENVIRONMENT?: boolean
-}
-reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true
 
 const baseChannel: PriceCompareChannel = {
   channel_id: 1,
@@ -196,9 +165,6 @@ const grok46OfficialResolution = {
 }
 
 function createHarness(modelName = 'gpt-5.6-sol') {
-  const container = document.createElement('div')
-  document.body.append(container)
-  const root = createRoot(container)
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
@@ -206,29 +172,24 @@ function createHarness(modelName = 'gpt-5.6-sol') {
     },
   })
   queryClient.setQueryData(['system-options', modelName], { data: [] })
-  const render = async (value: PriceCompareChannel) => {
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <I18nextProvider i18n={i18n}>
-            <PriceSyncDialog
-              open
-              onOpenChange={() => undefined}
-              modelName={modelName}
-              channel={value}
-              group='default'
-            />
-          </I18nextProvider>
-        </QueryClientProvider>
-      )
-    })
+  const renderDialog = async (value: PriceCompareChannel) => {
+    const utils = render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18n}>
+          <PriceSyncDialog
+            open
+            onOpenChange={() => undefined}
+            modelName={modelName}
+            channel={value}
+            group='default'
+          />
+        </I18nextProvider>
+      </QueryClientProvider>
+    )
+    await act(async () => {})
+    return utils
   }
-  const cleanup = async () => {
-    await act(async () => root.unmount())
-    container.remove()
-    queryClient.clear()
-  }
-  return { queryClient, render, cleanup }
+  return { queryClient, render: renderDialog }
 }
 
 function applyButton(): HTMLButtonElement {
@@ -244,55 +205,41 @@ function changeCostProfitRate(value: string) {
     'input[id="price-sync-cost-profit-rate"]'
   )
   assert.ok(input)
-  const valueSetter = Object.getOwnPropertyDescriptor(
-    domWindow.HTMLInputElement.prototype,
-    'value'
-  )?.set
-  assert.ok(valueSetter)
-  valueSetter.call(input, value)
-  input.dispatchEvent(
-    new domWindow.Event('input', { bubbles: true }) as unknown as Event
-  )
+  fireEvent.input(input, { target: { value } })
 }
 
 function assertOfficialUnavailableOnly() {
   const bodyText = document.body.textContent ?? ''
-  assert.ok(bodyText.includes('Official model price could not be loaded'))
-  assert.ok(
-    bodyText.includes(
-      'Official pricing is unavailable for this model and provider.'
-    )
+  expect(bodyText).toContain('Official model price could not be loaded')
+  expect(bodyText).toContain(
+    'Official pricing is unavailable for this model and provider.'
   )
-  assert.ok(
-    !bodyText.includes('Complete purchase price is required before syncing')
+  expect(bodyText).not.toContain(
+    'Complete purchase price is required before syncing'
   )
-  assert.ok(!bodyText.includes('Cost profit rate must be at least 0'))
-  assert.ok(!bodyText.includes('Selling price calculation overflowed'))
+  expect(bodyText).not.toContain('Cost profit rate must be at least 0')
+  expect(bodyText).not.toContain('Selling price calculation overflowed')
 }
 
 function assertPurchasePriceMaintenanceOnly() {
   const bodyText = document.body.textContent ?? ''
-  assert.ok(
-    bodyText.includes('Complete purchase price is required before syncing')
+  expect(bodyText).toContain(
+    'Complete purchase price is required before syncing'
   )
-  assert.ok(
-    bodyText.includes(
-      'Maintain complete input, output, cache read, and cache write purchase prices before syncing.'
-    )
+  expect(bodyText).toContain(
+    'Maintain complete input, output, cache read, and cache write purchase prices before syncing.'
   )
-  assert.ok(!bodyText.includes('Official model price could not be loaded'))
-  assert.ok(!bodyText.includes('Cost profit rate must be at least 0'))
-  assert.ok(!bodyText.includes('Selling price calculation overflowed'))
-  assert.equal(applyButton().disabled, true)
+  expect(bodyText).not.toContain('Official model price could not be loaded')
+  expect(bodyText).not.toContain('Cost profit rate must be at least 0')
+  expect(bodyText).not.toContain('Selling price calculation overflowed')
+  expect(applyButton().disabled).toBe(true)
 }
 
 describe('price sync dialog regressions', () => {
-  after(() => domWindow.close())
   afterEach(() => {
-    providerCalls = 0
-    providerError = null
+    modelsDevMock.providerCalls = 0
+    modelsDevMock.providerError = null
     api.put = originalApiPut
-    document.body.replaceChildren()
   })
 
   test('reopens persisted Models.dev pricing and submits tiered source intact', async () => {
@@ -315,17 +262,14 @@ describe('price sync dialog regressions', () => {
       })
     )
 
-    assert.ok(document.body.textContent?.includes('Context pricing tiers'))
-    await act(async () => {
-      applyButton().click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    expect(document.body.textContent).toContain('Context pricing tiers')
+    fireEvent.click(applyButton())
+    await waitFor(() => expect(submitted.length).toBe(1))
     const request = submitted[0] as Record<string, unknown>
-    assert.equal(request.billing_mode, 'tiered_expr')
+    expect(request.billing_mode).toBe('tiered_expr')
     const purchasePrice = request.purchase_price as Record<string, unknown>
-    assert.equal(purchasePrice.source, 'models_dev')
-    assert.equal((purchasePrice.tiers as unknown[]).length, 1)
-    await harness.cleanup()
+    expect(purchasePrice.source).toBe('models_dev')
+    expect((purchasePrice.tiers as unknown[]).length).toBe(1)
   })
 
   test('uses the grok-4.6 highest tier as one manual purchase price and reopens at 5000 percent', async () => {
@@ -356,33 +300,29 @@ describe('price sync dialog regressions', () => {
     )
 
     const bodyText = document.body.textContent ?? ''
-    assert.ok(bodyText.includes('Cost: $1.50 / $7.50'))
-    assert.ok(!bodyText.includes('Context pricing tiers'))
+    expect(bodyText).toContain('Cost: $1.50 / $7.50')
+    expect(bodyText).not.toContain('Context pricing tiers')
     const input = document.querySelector<HTMLInputElement>(
       'input[id="price-sync-cost-profit-rate"]'
     )
-    assert.equal(input?.value, '5000')
-    await act(async () => {
-      applyButton().click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    assert.equal(submitted.length, 1)
+    expect(input?.value).toBe('5000')
+    fireEvent.click(applyButton())
+    await waitFor(() => expect(submitted.length).toBe(1))
     const request = submitted[0] as Record<string, unknown>
-    assert.equal(request.billing_mode, 'ratio')
-    assert.equal(request.channel_id, 1)
-    assert.equal('billing_expr' in request, false)
-    assert.equal('upstream_provider' in request, false)
+    expect(request.billing_mode).toBe('ratio')
+    expect(request.channel_id).toBe(1)
+    expect('billing_expr' in request).toBe(false)
+    expect('upstream_provider' in request).toBe(false)
     const purchasePrice = request.purchase_price as Record<string, unknown>
-    assert.deepEqual(purchasePrice, {
+    expect(purchasePrice).toEqual({
       input: 1.5,
       output: 7.5,
       cache_read: 0.15,
       cache_write: 1.875,
       source: 'manual',
     })
-    await harness.cleanup()
 
-    providerCalls = 0
+    modelsDevMock.providerCalls = 0
     const reopened = createHarness('grok-4.6')
     reopened.queryClient.setQueryData(['system-options', 'grok-4.6'], {
       data: [{ key: 'QuotaPerUnit', value: '500000' }],
@@ -407,15 +347,12 @@ describe('price sync dialog regressions', () => {
     const reopenedInput = document.querySelector<HTMLInputElement>(
       'input[id="price-sync-cost-profit-rate"]'
     )
-    assert.equal(reopenedInput?.value, '5000')
-    assert.ok(
-      document.body.textContent?.includes(
-        'Using manually maintained purchase price'
-      )
+    expect(reopenedInput?.value).toBe('5000')
+    expect(document.body.textContent).toContain(
+      'Using manually maintained purchase price'
     )
-    assert.ok(!document.body.textContent?.includes('Context pricing tiers'))
-    assert.equal(providerCalls, 0)
-    await reopened.cleanup()
+    expect(document.body.textContent).not.toContain('Context pricing tiers')
+    expect(modelsDevMock.providerCalls).toBe(0)
   })
 
   test('does not submit grok-4.6 as ratio plus manual price when every tier is below 200K', async () => {
@@ -460,18 +397,15 @@ describe('price sync dialog regressions', () => {
       })
     )
 
-    assert.ok(
-      document.body.textContent?.includes(
-        'Official model price could not be loaded'
-      )
+    expect(document.body.textContent).toContain(
+      'Official model price could not be loaded'
     )
-    assert.equal(applyButton().disabled, true)
+    expect(applyButton().disabled).toBe(true)
     await act(async () => {
-      applyButton().click()
+      fireEvent.click(applyButton())
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    assert.equal(submitted.length, 0)
-    await harness.cleanup()
+    expect(submitted.length).toBe(0)
   })
 
   test('uses detected ratio pricing before a persisted Models.dev fallback', async () => {
@@ -494,17 +428,14 @@ describe('price sync dialog regressions', () => {
     )
 
     const bodyText = document.body.textContent ?? ''
-    assert.ok(bodyText.includes('Using detected upstream price'))
-    assert.ok(!bodyText.includes('Context pricing tiers'))
-    assert.equal(providerCalls, 0)
-    await act(async () => {
-      applyButton().click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    expect(bodyText).toContain('Using detected upstream price')
+    expect(bodyText).not.toContain('Context pricing tiers')
+    expect(modelsDevMock.providerCalls).toBe(0)
+    fireEvent.click(applyButton())
+    await waitFor(() => expect(submitted.length).toBe(1))
     const request = submitted[0] as Record<string, unknown>
-    assert.equal(request.billing_mode, 'ratio')
-    assert.equal('purchase_price' in request, false)
-    await harness.cleanup()
+    expect(request.billing_mode).toBe('ratio')
+    expect('purchase_price' in request).toBe(false)
   })
 
   test('shows missing purchase pricing without an explicit marker', async () => {
@@ -517,18 +448,15 @@ describe('price sync dialog regressions', () => {
         uses_official_pricing: undefined,
       })
     )
-    assert.ok(
-      document.body.textContent?.includes(
-        'Complete purchase price is required before syncing'
-      )
+    expect(document.body.textContent).toContain(
+      'Complete purchase price is required before syncing'
     )
-    assert.equal(providerCalls, 0)
-    assert.equal(applyButton().disabled, true)
-    await harness.cleanup()
+    expect(modelsDevMock.providerCalls).toBe(0)
+    expect(applyButton().disabled).toBe(true)
   })
 
   test('shows official loading failure separately from missing pricing', async () => {
-    providerError = new Error('models.dev unavailable')
+    modelsDevMock.providerError = new Error('models.dev unavailable')
     const harness = createHarness()
     await harness.render(
       channel({
@@ -538,11 +466,12 @@ describe('price sync dialog regressions', () => {
         uses_official_pricing: true,
       })
     )
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(
+        'Official model price could not be loaded'
+      )
+    )
     assertOfficialUnavailableOnly()
-    await harness.cleanup()
   })
 
   test('shows a zero official input cost as unavailable instead of overflow', async () => {
@@ -570,8 +499,7 @@ describe('price sync dialog regressions', () => {
       })
     )
     assertOfficialUnavailableOnly()
-    assert.equal(applyButton().disabled, true)
-    await harness.cleanup()
+    expect(applyButton().disabled).toBe(true)
   })
 
   test('shows an invalid official tier as unavailable instead of overflow', async () => {
@@ -599,8 +527,7 @@ describe('price sync dialog regressions', () => {
       })
     )
     assertOfficialUnavailableOnly()
-    assert.equal(applyButton().disabled, true)
-    await harness.cleanup()
+    expect(applyButton().disabled).toBe(true)
   })
 
   test('shows overflow only when valid official prices overflow the markup multiplication', async () => {
@@ -629,10 +556,9 @@ describe('price sync dialog regressions', () => {
     )
     await act(async () => changeCostProfitRate('400'))
     const bodyText = document.body.textContent ?? ''
-    assert.ok(bodyText.includes('Selling price calculation overflowed'))
-    assert.ok(!bodyText.includes('Official model price could not be loaded'))
-    assert.equal(applyButton().disabled, true)
-    await harness.cleanup()
+    expect(bodyText).toContain('Selling price calculation overflowed')
+    expect(bodyText).not.toContain('Official model price could not be loaded')
+    expect(applyButton().disabled).toBe(true)
   })
 
   test('shows finite calculation overflow separately from invalid input', async () => {
@@ -648,18 +574,13 @@ describe('price sync dialog regressions', () => {
         upstream_output: 1,
       })
     )
-    assert.ok(
-      document.body.textContent?.includes(
-        'Selling price calculation overflowed'
-      )
+    expect(document.body.textContent).toContain(
+      'Selling price calculation overflowed'
     )
-    assert.ok(
-      !document.body.textContent?.includes(
-        'Cost profit rate must be at least 0'
-      )
+    expect(document.body.textContent).not.toContain(
+      'Cost profit rate must be at least 0'
     )
-    assert.equal(applyButton().disabled, true)
-    await harness.cleanup()
+    expect(applyButton().disabled).toBe(true)
   })
 
   test('shows a zero manual input cost as purchase pricing to maintain', async () => {
@@ -677,8 +598,7 @@ describe('price sync dialog regressions', () => {
     )
 
     assertPurchasePriceMaintenanceOnly()
-    assert.equal(providerCalls, 0)
-    await harness.cleanup()
+    expect(modelsDevMock.providerCalls).toBe(0)
   })
 
   test('falls back to official pricing for a zero detected input cost', async () => {
@@ -691,13 +611,10 @@ describe('price sync dialog regressions', () => {
       channel({ detected_input: 0, uses_official_pricing: true })
     )
 
-    assert.ok(document.body.textContent?.includes('Context pricing tiers'))
-    assert.ok(
-      !document.body.textContent?.includes(
-        'Complete purchase price is required before syncing'
-      )
+    expect(document.body.textContent).toContain('Context pricing tiers')
+    expect(document.body.textContent).not.toContain(
+      'Complete purchase price is required before syncing'
     )
-    assert.equal(providerCalls, 0)
-    await harness.cleanup()
+    expect(modelsDevMock.providerCalls).toBe(0)
   })
 })

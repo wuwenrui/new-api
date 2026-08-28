@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 import {
   canViewInternalBillingDetails,
   getVisibleGroupRatioText,
@@ -7,22 +6,22 @@ import {
 
 describe('internal billing visibility', () => {
   test('allows only admins to view internal billing details', () => {
-    assert.equal(canViewInternalBillingDetails(undefined), false)
-    assert.equal(canViewInternalBillingDetails(1), false)
-    assert.equal(canViewInternalBillingDetails(10), true)
-    assert.equal(canViewInternalBillingDetails(100), true)
+    expect(canViewInternalBillingDetails(undefined)).toBe(false)
+    expect(canViewInternalBillingDetails(1)).toBe(false)
+    expect(canViewInternalBillingDetails(10)).toBe(true)
+    expect(canViewInternalBillingDetails(100)).toBe(true)
   })
 
   test('hides group ratio text from non-admin users', () => {
     const other = { group_ratio: 2, user_group_ratio: -1 }
 
-    assert.equal(getVisibleGroupRatioText(other, false), null)
-    assert.equal(getVisibleGroupRatioText(other, true), '2x')
+    expect(getVisibleGroupRatioText(other, false)).toBeNull()
+    expect(getVisibleGroupRatioText(other, true)).toBe('2x')
   })
 
   test('prefers user exclusive ratio for admins', () => {
     const other = { group_ratio: 2, user_group_ratio: 1.5 }
 
-    assert.equal(getVisibleGroupRatioText(other, true), '1.5x')
+    expect(getVisibleGroupRatioText(other, true)).toBe('1.5x')
   })
 })

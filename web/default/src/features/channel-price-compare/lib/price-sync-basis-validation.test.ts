@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import type { PriceCompareChannel } from '../types'
 import {
@@ -99,13 +98,13 @@ describe('resolveSyncBasis validation', () => {
       })
     )
 
-    assert.equal(result, null)
+    expect(result).toBeNull()
   })
 
   test('rejects a zero detected input cost before planning', () => {
     const result = resolveSyncBasis(channel({ detected_input: 0 }))
 
-    assert.equal(result, null)
+    expect(result).toBeNull()
   })
 
   test('does not fall back to official pricing for invalid manual pricing', () => {
@@ -115,7 +114,7 @@ describe('resolveSyncBasis validation', () => {
       uses_official_pricing: true,
     })
 
-    assert.equal(shouldUseOfficialPricing(manual, null), false)
+    expect(shouldUseOfficialPricing(manual, null)).toBe(false)
   })
 
   test('falls back to official pricing when detected pricing is invalid', () => {
@@ -125,8 +124,8 @@ describe('resolveSyncBasis validation', () => {
     })
     const result = resolveSyncBasis(detected)
 
-    assert.equal(result, null)
-    assert.equal(shouldUseOfficialPricing(detected, result), true)
+    expect(result).toBeNull()
+    expect(shouldUseOfficialPricing(detected, result)).toBe(true)
   })
 
   test('uses valid detected pricing before a persisted official source', () => {
@@ -137,23 +136,21 @@ describe('resolveSyncBasis validation', () => {
     })
     const result = resolveSyncBasis(persistedOfficial)
 
-    assert.equal(result?.source, 'detected')
-    assert.equal(result?.input, 2)
-    assert.equal(shouldUseOfficialPricing(persistedOfficial, result), false)
+    expect(result?.source).toBe('detected')
+    expect(result?.input).toBe(2)
+    expect(shouldUseOfficialPricing(persistedOfficial, result)).toBe(false)
   })
 
   test('rejects non-finite or negative output and cache costs', () => {
-    assert.equal(resolveSyncBasis(channel({ detected_output: -1 })), null)
-    assert.equal(
-      resolveSyncBasis(channel({ detected_cache_read: Number.NaN })),
-      null
-    )
-    assert.equal(
+    expect(resolveSyncBasis(channel({ detected_output: -1 }))).toBeNull()
+    expect(
+      resolveSyncBasis(channel({ detected_cache_read: Number.NaN }))
+    ).toBeNull()
+    expect(
       resolveSyncBasis(
         channel({ detected_cache_write: Number.POSITIVE_INFINITY })
-      ),
-      null
-    )
+      )
+    ).toBeNull()
   })
 
   test('allows free output and cache costs', () => {
@@ -165,7 +162,10 @@ describe('resolveSyncBasis validation', () => {
       })
     )
 
-    assert.ok(result)
-    assert.ok(computeSyncRatios(result, 30, 1))
+    expect(result).toBeTruthy()
+    if (!result) {
+      throw new Error('expected a sync basis for free output and cache costs')
+    }
+    expect(computeSyncRatios(result, 30, 1)).toBeTruthy()
   })
 })

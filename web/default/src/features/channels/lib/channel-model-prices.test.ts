@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import { channelSchema } from '../types'
 import {
@@ -54,9 +53,9 @@ describe('channel model purchase prices', () => {
     })
 
     const form = transformChannelToFormDefaults(channel)
-    assert.equal(form.upstream_group, 'premium')
-    assert.ok(form.model_prices)
-    assert.deepEqual(JSON.parse(form.model_prices), {
+    expect(form.upstream_group).toBe('premium')
+    expect(form.model_prices).toBeTruthy()
+    expect(JSON.parse(String(form.model_prices))).toEqual({
       'gpt-primary': {
         input: 2,
         output: 8,
@@ -68,8 +67,8 @@ describe('channel model purchase prices', () => {
 
     const payload = transformFormDataToUpdatePayload(form, channel.id)
     const settings = JSON.parse(String(payload.settings))
-    assert.equal(settings.pac_upstream_group, 'premium')
-    assert.deepEqual(settings.model_prices, {
+    expect(settings.pac_upstream_group).toBe('premium')
+    expect(settings.model_prices).toEqual({
       'gpt-primary': {
         input: 2,
         output: 8,
@@ -84,7 +83,7 @@ describe('channel model purchase prices', () => {
         'gpt-primary': { input: 2, output: 8, cache_read: 0.2 },
       }),
     })
-    assert.equal(incomplete.success, false)
+    expect(incomplete.success).toBe(false)
 
     const zeroPrices = channelFormSchema.safeParse({
       ...form,
@@ -97,6 +96,6 @@ describe('channel model purchase prices', () => {
         },
       }),
     })
-    assert.equal(zeroPrices.success, true)
+    expect(zeroPrices.success).toBe(true)
   })
 })

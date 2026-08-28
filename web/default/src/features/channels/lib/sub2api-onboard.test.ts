@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import type { ProviderMap } from '@opencode-ai/models'
 
@@ -102,7 +101,7 @@ const resolutionProviders = {
 
 describe('Sub2API models.dev onboarding', () => {
   test('lists only providers with token-priced text models', () => {
-    assert.deepEqual(listSub2APIProviders(providers), [
+    expect(listSub2APIProviders(providers)).toEqual([
       { id: 'openai', name: 'OpenAI', modelCount: 1 },
     ])
   })
@@ -115,17 +114,16 @@ describe('Sub2API models.dev onboarding', () => {
       upstreamMultiplier: 0.25,
     })
 
-    assert.equal(result.base_url, 'https://www.lxddai.com')
-    assert.deepEqual(result.group_ratio, { openai: 0.25 })
-    assert.equal(result.models.length, 1)
-    assert.equal(result.models[0].model_ratio, 1)
-    assert.equal(result.models[0].completion_ratio, 4)
-    assert.equal(
-      result.models[0].models_dev_pricing?.tiers[0].context_threshold,
-      200_000
-    )
-    assert.equal(upstreamCostInUSD(result.models[0], 0.25), 0.5)
-    assert.equal(upstreamCostOutUSD(result.models[0], 0.25), 2)
+    expect(result.base_url).toBe('https://www.lxddai.com')
+    expect(result.group_ratio).toEqual({ openai: 0.25 })
+    expect(result.models.length).toBe(1)
+    expect(result.models[0].model_ratio).toBe(1)
+    expect(result.models[0].completion_ratio).toBe(4)
+    expect(
+      result.models[0].models_dev_pricing?.tiers[0].context_threshold
+    ).toBe(200_000)
+    expect(upstreamCostInUSD(result.models[0], 0.25)).toBe(0.5)
+    expect(upstreamCostOutUSD(result.models[0], 0.25)).toBe(2)
   })
 
   test('resolves official models only from canonical providers', () => {
@@ -134,18 +132,17 @@ describe('Sub2API models.dev onboarding', () => {
       'gpt-5.6-sol',
       ''
     )
-    assert.equal(gpt?.providerId, 'openai')
-    assert.equal(gpt?.model.models_dev_pricing?.base.input, 5)
+    expect(gpt?.providerId).toBe('openai')
+    expect(gpt?.model.models_dev_pricing?.base.input).toBe(5)
 
     const grok = resolveModelsDevProbeModel(resolutionProviders, 'grok-4.5', '')
-    assert.equal(grok?.providerId, 'xai')
-    assert.equal(grok?.model.models_dev_pricing?.base.output, 6)
+    expect(grok?.providerId).toBe('xai')
+    expect(grok?.model.models_dev_pricing?.base.output).toBe(6)
 
-    assert.equal(
+    expect(
       resolveModelsDevProbeModel(resolutionProviders, 'gpt-5.6-sol', 'reseller')
-        ?.providerId,
-      'openai'
-    )
+        ?.providerId
+    ).toBe('openai')
   })
 
   test('applies the channel upstream multiplier to resolved official prices', () => {
@@ -155,11 +152,11 @@ describe('Sub2API models.dev onboarding', () => {
       '',
       0.25
     )
-    assert.equal(gpt?.providerId, 'openai')
-    assert.equal(gpt?.model.models_dev_pricing?.upstream_multiplier, 0.25)
+    expect(gpt?.providerId).toBe('openai')
+    expect(gpt?.model.models_dev_pricing?.upstream_multiplier).toBe(0.25)
     // Models.dev base prices stay canonical USD
-    assert.equal(gpt?.model.models_dev_pricing?.base.input, 5)
-    assert.equal(gpt?.model.models_dev_pricing?.base.output, 30)
+    expect(gpt?.model.models_dev_pricing?.base.input).toBe(5)
+    expect(gpt?.model.models_dev_pricing?.base.output).toBe(30)
 
     // legacy callers omit the multiplier and keep 1
     const legacy = resolveModelsDevProbeModel(
@@ -167,42 +164,38 @@ describe('Sub2API models.dev onboarding', () => {
       'gpt-5.6-sol',
       ''
     )
-    assert.equal(legacy?.model.models_dev_pricing?.upstream_multiplier, 1)
+    expect(legacy?.model.models_dev_pricing?.upstream_multiplier).toBe(1)
   })
 
   test('persists source and multiplier in channel creation settings', () => {
-    assert.deepEqual(buildUpstreamChannelSettings('sub2api', 'openai', 0.25), {
+    expect(buildUpstreamChannelSettings('sub2api', 'openai', 0.25)).toEqual({
       pac_upstream_group: 'openai',
       upstream_pricing_source: 'models_dev',
       upstream_price_multiplier: 0.25,
     })
-    assert.deepEqual(buildUpstreamChannelSettings('newapi', 'vip', 0.25), {
+    expect(buildUpstreamChannelSettings('newapi', 'vip', 0.25)).toEqual({
       pac_upstream_group: 'vip',
       upstream_pricing_source: 'newapi',
     })
   })
 
   test('rejects invalid multipliers and unknown providers', () => {
-    assert.throws(
-      () =>
-        buildSub2APIProbeResult({
-          providers,
-          providerId: 'openai',
-          baseUrl: 'https://www.lxddai.com',
-          upstreamMultiplier: 0,
-        }),
-      /greater than 0/
-    )
-    assert.throws(
-      () =>
-        buildSub2APIProbeResult({
-          providers,
-          providerId: 'missing',
-          baseUrl: 'https://www.lxddai.com',
-          upstreamMultiplier: 0.25,
-        }),
-      /select a model provider/
-    )
+    expect(() =>
+      buildSub2APIProbeResult({
+        providers,
+        providerId: 'openai',
+        baseUrl: 'https://www.lxddai.com',
+        upstreamMultiplier: 0,
+      })
+    ).toThrow(/greater than 0/)
+    expect(() =>
+      buildSub2APIProbeResult({
+        providers,
+        providerId: 'missing',
+        baseUrl: 'https://www.lxddai.com',
+        upstreamMultiplier: 0.25,
+      })
+    ).toThrow(/select a model provider/)
   })
 
   test('preserves context and cache pricing in the billing expression', () => {
@@ -213,8 +206,7 @@ describe('Sub2API models.dev onboarding', () => {
       upstreamMultiplier: 0.25,
     }).models
 
-    assert.equal(
-      buildModelsDevBillingExpression(model, 1.25, 5, 2.5),
+    expect(buildModelsDevBillingExpression(model, 1.25, 5, 2.5)).toBe(
       'len < 200000 ? tier("base", p * 0.25 + c * 1 + cr * 0.025) : tier("context_200000", p * 0.5 + c * 1.5 + cr * 0.05)'
     )
   })
@@ -231,21 +223,18 @@ describe('Sub2API models.dev onboarding', () => {
     ])
     const updated = applyModelPricing(model, 2.5, 10, 2.5, maps)
 
-    assert.equal(updated.ModelRatio['gpt-priced'], undefined)
-    assert.equal(
-      updated['billing_setting.billing_mode']['gpt-priced'],
+    expect(updated.ModelRatio['gpt-priced']).toBeUndefined()
+    expect(updated['billing_setting.billing_mode']['gpt-priced']).toBe(
       'tiered_expr'
     )
-    assert.equal(
-      updated['billing_setting.billing_expr']['gpt-priced'],
+    expect(updated['billing_setting.billing_expr']['gpt-priced']).toBe(
       'len < 200000 ? tier("base", p * 0.5 + c * 2 + cr * 0.05) : tier("context_200000", p * 1 + c * 3 + cr * 0.1)'
     )
   })
 
   test('writes billing expressions before enabling expression mode', () => {
-    assert.ok(
-      RATIO_OPTION_KEYS.indexOf('billing_setting.billing_expr') <
-        RATIO_OPTION_KEYS.indexOf('billing_setting.billing_mode')
-    )
+    expect(
+      RATIO_OPTION_KEYS.indexOf('billing_setting.billing_expr')
+    ).toBeLessThan(RATIO_OPTION_KEYS.indexOf('billing_setting.billing_mode'))
   })
 })

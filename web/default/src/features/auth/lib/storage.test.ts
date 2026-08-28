@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import { getUserId, removeUserId, saveUserId } from './storage'
 
@@ -79,8 +78,8 @@ describe('auth storage uid backup and recovery', () => {
 
     saveUserId(1)
 
-    assert.equal(storage.getItem('uid'), '1')
-    assert.match(jar.cookie, /(?:^|; )napi_uid=1(?:;|$)/)
+    expect(storage.getItem('uid')).toBe('1')
+    expect(jar.cookie).toMatch(/(?:^|; )napi_uid=1(?:;|$)/)
   })
 
   test('getUserId prefers the localStorage value over backups', () => {
@@ -88,7 +87,7 @@ describe('auth storage uid backup and recovery', () => {
     storage.setItem('uid', '7')
     jar.cookie = 'napi_uid=9; path=/; max-age=60'
 
-    assert.equal(getUserId(), '7')
+    expect(getUserId()).toBe('7')
   })
 
   test('getUserId recovers from the uid cookie after a full wipe and heals localStorage', () => {
@@ -97,17 +96,17 @@ describe('auth storage uid backup and recovery', () => {
 
     storage.clear()
 
-    assert.equal(getUserId(), '1')
-    assert.equal(storage.getItem('uid'), '1')
+    expect(getUserId()).toBe('1')
+    expect(storage.getItem('uid')).toBe('1')
   })
 
   test('getUserId recovers from the persisted user payload after a partial wipe', () => {
     const { storage, jar } = setup()
     storage.setItem('user', JSON.stringify({ id: 42, username: 'u' }))
 
-    assert.equal(getUserId(), '42')
-    assert.equal(storage.getItem('uid'), '42')
-    assert.match(jar.cookie, /(?:^|; )napi_uid=42(?:;|$)/)
+    expect(getUserId()).toBe('42')
+    expect(storage.getItem('uid')).toBe('42')
+    expect(jar.cookie).toMatch(/(?:^|; )napi_uid=42(?:;|$)/)
   })
 
   test('getUserId falls back to the cookie when the user payload is corrupt', () => {
@@ -115,14 +114,14 @@ describe('auth storage uid backup and recovery', () => {
     storage.setItem('user', '{not json')
     jar.cookie = 'napi_uid=5; path=/; max-age=60'
 
-    assert.equal(getUserId(), '5')
-    assert.equal(storage.getItem('uid'), '5')
+    expect(getUserId()).toBe('5')
+    expect(storage.getItem('uid')).toBe('5')
   })
 
   test('getUserId returns null when no backup exists', () => {
     setup()
 
-    assert.equal(getUserId(), null)
+    expect(getUserId()).toBeNull()
   })
 
   test('removeUserId clears both localStorage and the uid cookie', () => {
@@ -131,8 +130,8 @@ describe('auth storage uid backup and recovery', () => {
 
     removeUserId()
 
-    assert.equal(storage.getItem('uid'), null)
-    assert.doesNotMatch(jar.cookie, /napi_uid=/)
-    assert.equal(getUserId(), null)
+    expect(storage.getItem('uid')).toBeNull()
+    expect(jar.cookie).not.toMatch(/napi_uid=/)
+    expect(getUserId()).toBeNull()
   })
 })

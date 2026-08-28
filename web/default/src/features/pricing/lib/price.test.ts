@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import type { PricingModel } from '../types'
 import {
@@ -29,28 +28,28 @@ describe('pricing discount labels', () => {
       group_ratio: { default: 2.5 },
     })
 
-    assert.equal(formatPrice(model, 'input', 'M', false, 1, 1, 'default'), '$25')
-    assert.equal(formatPrice(model, 'output', 'M', false, 1, 1, 'default'), '$125')
-    assert.equal(
+    expect(formatPrice(model, 'input', 'M', false, 1, 1, 'default')).toBe('$25')
+    expect(formatPrice(model, 'output', 'M', false, 1, 1, 'default')).toBe(
+      '$125'
+    )
+    expect(
       formatDisplayDiscountLabel(model, 'default', {
         showRechargePrice: false,
         priceRate: 1,
         usdExchangeRate: 1,
-      }),
-      '3.6折'
-    )
+      })
+    ).toBe('3.6折')
   })
 
   test('formats configured original price as a discount label', () => {
-    assert.equal(
+    expect(
       formatGroupDiscountLabel(tokenModel(), 'default', {
         groupRatio: { default: 1 },
         showRechargePrice: true,
         priceRate: 5,
         usdExchangeRate: 7,
-      }),
-      '3.6折'
-    )
+      })
+    ).toBe('3.6折')
   })
 
   test('formats configured model discounts for the default group', () => {
@@ -65,7 +64,7 @@ describe('pricing discount labels', () => {
     ]
 
     for (const item of cases) {
-      assert.equal(
+      expect(
         formatDisplayDiscountLabel(
           tokenModel({
             model_ratio: item.modelRatio,
@@ -79,14 +78,13 @@ describe('pricing discount labels', () => {
             priceRate: 1,
             usdExchangeRate: 1,
           }
-        ),
-        item.expected
-      )
+        )
+      ).toBe(item.expected)
     }
   })
 
   test('hides discount when original price is missing', () => {
-    assert.equal(
+    expect(
       formatGroupDiscountLabel(
         tokenModel({ original_price: undefined }),
         'default',
@@ -96,10 +94,9 @@ describe('pricing discount labels', () => {
           priceRate: 5,
           usdExchangeRate: 7,
         }
-      ),
-      null
-    )
-    assert.equal(
+      )
+    ).toBeNull()
+    expect(
       formatDisplayDiscountLabel(
         tokenModel({ original_price: undefined }),
         'default',
@@ -108,8 +105,7 @@ describe('pricing discount labels', () => {
           priceRate: 1,
           usdExchangeRate: 1,
         }
-      ),
-      null
-    )
+      )
+    ).toBeNull()
   })
 })

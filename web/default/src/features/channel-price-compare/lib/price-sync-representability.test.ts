@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { assert, describe, expect, test } from 'vitest'
 
 import type { NewAPIProbeModel } from '../../channels/types'
 import { computeOfficialSyncPlanResult } from './price-sync'
@@ -53,25 +52,25 @@ describe('official billing expression representability', () => {
       Number.MAX_VALUE
     )
 
-    assert.equal(result.kind, 'overflow')
+    expect(result.kind).toBe('overflow')
   })
 
   test('rejects a positive source coefficient that formats to zero', () => {
     const result = computeOfficialSyncPlanResult(officialModel(1e-10), 0, 0.5)
 
-    assert.equal(result.kind, 'overflow')
+    expect(result.kind).toBe('overflow')
   })
 
   test('keeps the smallest represented positive coefficient and ordinary pricing', () => {
     const tiny = computeOfficialSyncPlanResult(officialModel(1e-9), 0, 0.5)
     const ordinary = computeOfficialSyncPlanResult(officialModel(1), 30, 1)
 
-    assert.equal(tiny.kind, 'ready')
-    assert.equal(ordinary.kind, 'ready')
+    expect(tiny.kind).toBe('ready')
+    expect(ordinary.kind).toBe('ready')
     if (tiny.kind === 'ready') {
-      assert.equal(tiny.plan.billingMode, 'tiered_expr')
+      expect(tiny.plan.billingMode).toBe('tiered_expr')
       if (tiny.plan.billingMode === 'tiered_expr') {
-        assert.match(tiny.plan.billingExpression, /p \* 1e-9(?:\D|$)/)
+        expect(tiny.plan.billingExpression).toMatch(/p \* 1e-9(?:\D|$)/)
       }
     }
   })
@@ -99,13 +98,13 @@ describe('official billing expression representability', () => {
       1
     )
 
-    assert.equal(result.kind, 'ready')
+    expect(result.kind).toBe('ready')
     if (result.kind === 'ready') {
-      assert.equal(result.plan.billingMode, 'tiered_expr')
+      expect(result.plan.billingMode).toBe('tiered_expr')
       if (result.plan.billingMode === 'tiered_expr') {
-        assert.equal(result.plan.tiers[0].sellOutput, 8)
-        assert.match(result.plan.billingExpression, /c \* 4(?:\D|$)/)
-        assert.match(result.plan.billingExpression, /ao \* 8(?:\D|$)/)
+        expect(result.plan.tiers[0].sellOutput).toBe(8)
+        expect(result.plan.billingExpression).toMatch(/c \* 4(?:\D|$)/)
+        expect(result.plan.billingExpression).toMatch(/ao \* 8(?:\D|$)/)
       }
     }
   })

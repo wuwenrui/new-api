@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import type {
   ChannelSummary,
@@ -93,21 +92,17 @@ const priceModel = (
 
 describe('channel operations formatters', () => {
   test('formats USD and percentages without hiding small values', () => {
-    assert.equal(formatUsd(0.0042), '$0.0042')
-    assert.equal(formatUsd(12.3456), '$12.35')
-    assert.equal(formatPercent(-12.34), '-12.3%')
+    expect(formatUsd(0.0042)).toBe('$0.0042')
+    expect(formatUsd(12.3456)).toBe('$12.35')
+    expect(formatPercent(-12.34)).toBe('-12.3%')
   })
 
   test('sorts risky channels first and then by today cost', () => {
     const rows = [summary(1, 0, 9), summary(2, 2, 2), summary(3, 2, 8)]
-    assert.deepEqual(
-      sortChannelSummaries(rows).map((row) => row.channel_id),
-      [3, 2, 1]
-    )
-    assert.deepEqual(
-      rows.map((row) => row.channel_id),
-      [1, 2, 3]
-    )
+    expect(sortChannelSummaries(rows).map((row) => row.channel_id)).toEqual([
+      3, 2, 1,
+    ])
+    expect(rows.map((row) => row.channel_id)).toEqual([1, 2, 3])
   })
 
   test('sorts channel metrics in either direction without mutating input', () => {
@@ -119,28 +114,22 @@ describe('channel operations formatters', () => {
     rows[1].today.requests = 10
     rows[2].today.requests = 20
 
-    assert.deepEqual(
+    expect(
       sortChannelSummaries(rows, 'today_revenue', 'desc').map(
         (row) => row.channel_id
-      ),
-      [2, 3, 1]
-    )
-    assert.deepEqual(
+      )
+    ).toEqual([2, 3, 1])
+    expect(
       sortChannelSummaries(rows, 'today_requests', 'asc').map(
         (row) => row.channel_id
-      ),
-      [2, 3, 1]
-    )
-    assert.deepEqual(
+      )
+    ).toEqual([2, 3, 1])
+    expect(
       sortChannelSummaries(rows, 'total_profit', 'desc').map(
         (row) => row.channel_id
-      ),
-      [2, 3, 1]
-    )
-    assert.deepEqual(
-      rows.map((row) => row.channel_id),
-      [1, 2, 3]
-    )
+      )
+    ).toEqual([2, 3, 1])
+    expect(rows.map((row) => row.channel_id)).toEqual([1, 2, 3])
   })
 
   test('filters model routes by model, channel, and risk without mutating input', () => {
@@ -153,20 +142,18 @@ describe('channel operations formatters', () => {
     ]
 
     const result = filterPriceCompareModels(models, 'gpt', 'premium', 'risk')
-    assert.deepEqual(
+    expect(
       result.map((model) => ({
         name: model.model_name,
         channels: model.channels.map((channel) => channel.channel_id),
-      })),
-      [{ name: 'gpt-5', channels: [1] }]
-    )
-    assert.equal(models[0].channels.length, 2)
-    assert.deepEqual(
+      }))
+    ).toEqual([{ name: 'gpt-5', channels: [1] }])
+    expect(models[0].channels.length).toBe(2)
+    expect(
       filterPriceCompareModels(models, '', '', 'normal').map(
         (model) => model.model_name
-      ),
-      ['gpt-5', 'claude-opus']
-    )
+      )
+    ).toEqual(['gpt-5', 'claude-opus'])
   })
   test('recomputes channel summaries from the visible model routes', () => {
     const models = [
@@ -182,16 +169,16 @@ describe('channel operations formatters', () => {
       filterPriceCompareModels(models, 'gpt', '', 'all')
     )
 
-    assert.equal(allRows.find((row) => row.channel_id === 1)?.model_count, 2)
-    assert.equal(allRows.find((row) => row.channel_id === 1)?.total.revenue, 40)
-    assert.equal(gptRows.length, 1)
-    assert.equal(gptRows[0].model_count, 1)
-    assert.equal(gptRows[0].risk_count, 1)
-    assert.equal(gptRows[0].total.revenue, 20)
-    assert.equal(gptRows[0].total.profit, 12)
+    expect(allRows.find((row) => row.channel_id === 1)?.model_count).toBe(2)
+    expect(allRows.find((row) => row.channel_id === 1)?.total.revenue).toBe(40)
+    expect(gptRows.length).toBe(1)
+    expect(gptRows[0].model_count).toBe(1)
+    expect(gptRows[0].risk_count).toBe(1)
+    expect(gptRows[0].total.revenue).toBe(20)
+    expect(gptRows[0].total.profit).toBe(12)
     const pageSummary = summarizeChannelRows(gptRows)
-    assert.equal(pageSummary.today.revenue, 10)
-    assert.equal(pageSummary.total.profit, 12)
-    assert.equal(pageSummary.risk_channels, 1)
+    expect(pageSummary.today.revenue).toBe(10)
+    expect(pageSummary.total.profit).toBe(12)
+    expect(pageSummary.risk_channels).toBe(1)
   })
 })

@@ -52,7 +52,7 @@ func ListFinanceOrders(params FinanceOrderListParams) ([]FinanceOrderRow, int64,
 
 	buildQuery := func() *gorm.DB {
 		query := model.DB.Table(params.Table).
-			Joins("LEFT JOIN users ON users.id = " + params.Table + ".user_id").
+			Joins("LEFT JOIN users ON users.id = "+params.Table+".user_id").
 			Where("users.username IS NULL OR users.username <> ?", financeReportExcludedUsername)
 		if status != "all" {
 			query = query.Where(params.Table+".status = ?", status)

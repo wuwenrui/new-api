@@ -185,7 +185,8 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider) {
 			return
 		}
 	} else {
-		// 只更新绑定列，避免完整用户快照覆盖并发的封禁、降权或分组变更。
+		// Built-in provider: 只更新绑定列。完整快照的 user.Update 会把读取时刻的
+		// role/status/group 一并写回，覆盖并发发生的封禁、降权或分组变更。
 		err = model.UpdateUserBindColumn(userId, provider.ProviderUserIDColumn(), oauthUser.ProviderUserID)
 		if err != nil {
 			common.ApiError(c, err)

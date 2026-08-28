@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, test } from "node:test";
+import { describe, expect, test } from "vitest";
 import { watermarkedFilename } from "./archive";
 import { singlePlacement, tilePlacements } from "./geometry";
 import {
@@ -25,38 +24,37 @@ describe("watermark geometry", () => {
     } as const;
 
     for (const [position, placement] of Object.entries(expected)) {
-      assert.deepEqual(
+      expect(
         singlePlacement(1200, 800, 240, 80, position as keyof typeof expected, 32),
-        placement,
-      );
+      ).toEqual(placement);
     }
   });
 
   test("clamps negative margins and gaps while always terminating", () => {
-    assert.deepEqual(singlePlacement(500, 300, 100, 40, "top-left", -20), {
+    expect(singlePlacement(500, 300, 100, 40, "top-left", -20)).toEqual({
       x: 0,
       y: 0,
     });
     const points = tilePlacements(100, 80, 30, 20, -100, -100);
-    assert.ok(points.length > 0);
-    assert.ok(points.length < 500);
+    expect(points.length).toBeGreaterThan(0);
+    expect(points.length).toBeLessThan(500);
   });
 
   test("tiles beyond all canvas edges in row-major order", () => {
     const points = tilePlacements(1000, 700, 180, 60, 80, 60);
-    assert.ok(Math.min(...points.map((point) => point.x)) < 0);
-    assert.ok(Math.max(...points.map((point) => point.x)) > 1000);
-    assert.ok(Math.min(...points.map((point) => point.y)) < 0);
-    assert.ok(Math.max(...points.map((point) => point.y)) > 700);
-    assert.equal(points[1]?.y, points[0]?.y);
+    expect(Math.min(...points.map((point) => point.x))).toBeLessThan(0);
+    expect(Math.max(...points.map((point) => point.x))).toBeGreaterThan(1000);
+    expect(Math.min(...points.map((point) => point.y))).toBeLessThan(0);
+    expect(Math.max(...points.map((point) => point.y))).toBeGreaterThan(700);
+    expect(points[1]?.y).toBe(points[0]?.y);
   });
 });
 
 describe("watermark archive names", () => {
   test("keeps extensions and resolves case-insensitive duplicates", () => {
     const used = new Set<string>();
-    assert.equal(watermarkedFilename("evidence.PNG", used), "evidence-watermarked.PNG");
-    assert.equal(watermarkedFilename("Evidence.png", used), "Evidence-watermarked-2.png");
+    expect(watermarkedFilename("evidence.PNG", used)).toBe("evidence-watermarked.PNG");
+    expect(watermarkedFilename("Evidence.png", used)).toBe("Evidence-watermarked-2.png");
   });
 });
 
@@ -85,17 +83,17 @@ function syntheticImage(width: number, height: number, seed = 7): PixelImage {
 
 describe("invisible fingerprint", () => {
   test("encodes text to bits and rejects empty text", () => {
-    assert.ok(textToBits("仅供资料使用").length > 0);
-    assert.deepEqual(textToBits("   "), []);
+    expect(textToBits("仅供资料使用").length).toBeGreaterThan(0);
+    expect(textToBits("   ")).toEqual([]);
   });
 
   test("roundtrips a chinese fingerprint through embed and extract", () => {
     const image = syntheticImage(320, 256);
-    assert.equal(embedInvisibleMark(image, "仅供资料使用"), true);
+    expect(embedInvisibleMark(image, "仅供资料使用")).toBe(true);
     const result = extractInvisibleMark(image);
-    assert.equal(result.found, true);
-    assert.equal(result.text, "仅供资料使用");
-    assert.ok(result.confidence > 0.5);
+    expect(result.found).toBe(true);
+    expect(result.text).toBe("仅供资料使用");
+    expect(result.confidence).toBeGreaterThan(0.5);
   });
 
   test("survives uniform pixel noise", () => {
@@ -109,8 +107,8 @@ describe("invisible fingerprint", () => {
       image.data[i + 2] = image.data[i + 2] + noise;
     }
     const result = extractInvisibleMark(image);
-    assert.equal(result.found, true);
-    assert.equal(result.text, "张三律师");
+    expect(result.found).toBe(true);
+    expect(result.text).toBe("张三律师");
   });
 
   test("survives erasing a third of the image blocks", () => {
@@ -133,23 +131,23 @@ describe("invisible fingerprint", () => {
       }
     }
     const result = extractInvisibleMark(image);
-    assert.equal(result.found, true);
-    assert.equal(result.text, "合同原件");
+    expect(result.found).toBe(true);
+    expect(result.text).toBe("合同原件");
   });
 
   test("finds nothing in a clean image", () => {
     const result = extractInvisibleMark(syntheticImage(320, 256));
-    assert.equal(result.found, false);
+    expect(result.found).toBe(false);
   });
 
   test("refuses images too small to hold the fingerprint", () => {
-    assert.equal(embedInvisibleMark(syntheticImage(16, 16), "仅供资料使用"), false);
+    expect(embedInvisibleMark(syntheticImage(16, 16), "仅供资料使用")).toBe(false);
   });
 
   test("truncates long fingerprints on utf-8 boundaries", () => {
     const long = "这是一条非常非常非常长的水印指纹文字";
     const truncated = fingerprintTextFor(long, "兜底");
-    assert.ok(new TextEncoder().encode(truncated).length <= 24);
-    assert.equal(fingerprintTextFor("  ", "兜底"), "兜底");
+    expect(new TextEncoder().encode(truncated).length).toBeLessThanOrEqual(24);
+    expect(fingerprintTextFor("  ", "兜底")).toBe("兜底");
   });
 });

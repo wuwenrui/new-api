@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { assert, describe, expect, test } from 'vitest'
 
 import type { NewAPIProbeModel } from '../../channels/types'
 import type { PriceCompareChannel } from '../types'
@@ -180,39 +179,38 @@ const channel = (
 describe('resolveSyncBasis', () => {
   test('prefers detected prices when the purchase price is not manual', () => {
     const result = resolveSyncBasis(channel({}))
-    assert.equal(result?.source, 'detected')
-    assert.equal(result?.input, 2)
-    assert.equal(result?.output, 8)
+    expect(result?.source).toBe('detected')
+    expect(result?.input).toBe(2)
+    expect(result?.output).toBe(8)
   })
 
   test('prefers a manual purchase price even when detection is available', () => {
     const result = resolveSyncBasis(
       channel({ price_source: 'manual', detected_available: true })
     )
-    assert.equal(result?.source, 'manual')
-    assert.equal(result?.input, 3)
-    assert.equal(result?.output, 9)
+    expect(result?.source).toBe('manual')
+    expect(result?.input).toBe(3)
+    expect(result?.output).toBe(9)
   })
 
   test('falls back to manual purchase price without detection', () => {
     const result = resolveSyncBasis(
       channel({ detected_available: false, price_source: 'manual' })
     )
-    assert.equal(result?.source, 'manual')
-    assert.equal(result?.input, 3)
+    expect(result?.source).toBe('manual')
+    expect(result?.input).toBe(3)
   })
 
   test('returns null when neither manual nor detected pricing is available', () => {
-    assert.equal(
+    expect(
       resolveSyncBasis(
         channel({ price_source: 'missing', detected_available: false })
-      ),
-      null
-    )
+      )
+    ).toBeNull()
   })
 
   test('returns null when price is not maintained', () => {
-    assert.equal(resolveSyncBasis(channel({ status: 'unknown' })), null)
+    expect(resolveSyncBasis(channel({ status: 'unknown' }))).toBeNull()
   })
 })
 
@@ -221,26 +219,24 @@ describe('shouldUseOfficialPricing', () => {
     const manualBasis = resolveSyncBasis(
       channel({ price_source: 'manual', uses_official_pricing: true })
     )
-    assert.equal(manualBasis?.source, 'manual')
-    assert.equal(
+    expect(manualBasis?.source).toBe('manual')
+    expect(
       shouldUseOfficialPricing(
         channel({ price_source: 'manual', uses_official_pricing: true }),
         manualBasis
-      ),
-      false
-    )
+      )
+    ).toBe(false)
   })
 
   test('honors explicit source markers before legacy fallbacks', () => {
     const detectedBasis = resolveSyncBasis(channel({}))
-    assert.equal(
+    expect(
       shouldUseOfficialPricing(
         channel({ uses_official_pricing: false, billing_mode: 'tiered_expr' }),
         detectedBasis
-      ),
-      false
-    )
-    assert.equal(
+      )
+    ).toBe(false)
+    expect(
       shouldUseOfficialPricing(
         channel({
           uses_official_pricing: false,
@@ -248,16 +244,14 @@ describe('shouldUseOfficialPricing', () => {
           detected_available: false,
         }),
         null
-      ),
-      false
-    )
-    assert.equal(
+      )
+    ).toBe(false)
+    expect(
       shouldUseOfficialPricing(
         channel({ uses_official_pricing: true }),
         detectedBasis
-      ),
-      false
-    )
+      )
+    ).toBe(false)
   })
 
   test('uses official pricing when no manual or detected basis is available', () => {
@@ -267,8 +261,8 @@ describe('shouldUseOfficialPricing', () => {
       uses_official_pricing: true,
     })
     const missingBasis = resolveSyncBasis(missingChannel)
-    assert.equal(missingBasis, null)
-    assert.equal(shouldUseOfficialPricing(missingChannel, missingBasis), true)
+    expect(missingBasis).toBeNull()
+    expect(shouldUseOfficialPricing(missingChannel, missingBasis)).toBe(true)
   })
 
   test('requires an explicit official marker for a ratio channel without a basis', () => {
@@ -279,22 +273,21 @@ describe('shouldUseOfficialPricing', () => {
       billing_mode: 'ratio',
     })
     const missingBasis = resolveSyncBasis(missingChannel)
-    assert.equal(missingBasis, null)
-    assert.equal(shouldUseOfficialPricing(missingChannel, missingBasis), false)
+    expect(missingBasis).toBeNull()
+    expect(shouldUseOfficialPricing(missingChannel, missingBasis)).toBe(false)
   })
 
   test('does not infer official pricing from a legacy tiered billing mode', () => {
-    assert.equal(
+    expect(
       shouldUseOfficialPricing(
         channel({
           uses_official_pricing: undefined,
           billing_mode: 'tiered_expr',
         }),
         resolveSyncBasis(channel({}))
-      ),
-      false
-    )
-    assert.equal(
+      )
+    ).toBe(false)
+    expect(
       shouldUseOfficialPricing(
         channel({
           uses_official_pricing: undefined,
@@ -302,9 +295,8 @@ describe('shouldUseOfficialPricing', () => {
           detected_available: false,
         }),
         null
-      ),
-      false
-    )
+      )
+    ).toBe(false)
   })
 
   test('routes a persisted Models.dev source through the explicit official marker', () => {
@@ -316,11 +308,10 @@ describe('shouldUseOfficialPricing', () => {
     })
 
     const persistedBasis = resolveSyncBasis(persistedOfficialChannel)
-    assert.equal(persistedBasis, null)
-    assert.equal(
-      shouldUseOfficialPricing(persistedOfficialChannel, persistedBasis),
-      true
-    )
+    expect(persistedBasis).toBeNull()
+    expect(
+      shouldUseOfficialPricing(persistedOfficialChannel, persistedBasis)
+    ).toBe(true)
   })
 })
 
@@ -329,66 +320,66 @@ describe('computeSyncRatios', () => {
     // cost in 2 / out 8, markup 100% -> sell 4 / 16; group 1 -> modelRatio 2
     const plan = computeSyncRatios(basis({}), 100, 1)
     assert.ok(plan)
-    assert.equal(plan.modelRatio, 2)
-    assert.equal(plan.completionRatio, 4)
-    assert.equal(plan.cacheRatio, 0.1)
-    assert.equal(plan.createCacheRatio, 1)
-    assert.equal(plan.sellInput, 4)
-    assert.equal(plan.sellOutput, 16)
+    expect(plan.modelRatio).toBe(2)
+    expect(plan.completionRatio).toBe(4)
+    expect(plan.cacheRatio).toBe(0.1)
+    expect(plan.createCacheRatio).toBe(1)
+    expect(plan.sellInput).toBe(4)
+    expect(plan.sellOutput).toBe(16)
   })
 
   test('divides the group ratio out of the model ratio', () => {
     const plan = computeSyncRatios(basis({}), 100, 2)
     assert.ok(plan)
-    assert.equal(plan.modelRatio, 1)
+    expect(plan.modelRatio).toBe(1)
     // relative ratios do not depend on markup or group ratio
-    assert.equal(plan.completionRatio, 4)
+    expect(plan.completionRatio).toBe(4)
   })
 
   test('uses the configured quota scale when deriving the model ratio', () => {
     const plan = computeSyncRatios(basis({}), 100, 1, undefined, 1_000_000)
     assert.ok(plan)
-    assert.equal(plan.modelRatio, 4)
-    assert.equal(plan.sellInput, 4)
+    expect(plan.modelRatio).toBe(4)
+    expect(plan.sellInput).toBe(4)
   })
 
   test('zero markup prices at cost', () => {
     const plan = computeSyncRatios(basis({}), 0, 1)
     assert.ok(plan)
-    assert.equal(plan.modelRatio, 1)
-    assert.equal(plan.sellInput, 2)
+    expect(plan.modelRatio).toBe(1)
+    expect(plan.sellInput).toBe(2)
   })
 
   test('marks up 0, 100 and 200 to cost, double and triple', () => {
     const atCost = computeSyncRatios(basis({}), 0, 1)
     assert.ok(atCost)
-    assert.equal(atCost.sellInput, 2)
+    expect(atCost.sellInput).toBe(2)
     const doubled = computeSyncRatios(basis({}), 100, 1)
     assert.ok(doubled)
-    assert.equal(doubled.sellInput, 4)
+    expect(doubled.sellInput).toBe(4)
     const tripled = computeSyncRatios(basis({}), 200, 1)
     assert.ok(tripled)
-    assert.equal(tripled.sellInput, 6)
+    expect(tripled.sellInput).toBe(6)
     const decimal = computeSyncRatios(basis({}), 99.99, 1)
     assert.ok(decimal)
-    assert.ok(Number.isFinite(decimal.sellInput))
-    assert.ok(Number.isFinite(decimal.sellOutput))
-    assert.ok(decimal.sellInput > atCost.sellInput)
+    expect(Number.isFinite(decimal.sellInput)).toBe(true)
+    expect(Number.isFinite(decimal.sellOutput)).toBe(true)
+    expect(decimal.sellInput > atCost.sellInput).toBe(true)
   })
 
   test('treats an empty target markup as invalid instead of zero', () => {
-    assert.equal(parseTargetMarkup(''), null)
-    assert.equal(parseTargetMarkup('   '), null)
-    assert.equal(parseTargetMarkup('0'), 0)
+    expect(parseTargetMarkup('')).toBeNull()
+    expect(parseTargetMarkup('   ')).toBeNull()
+    expect(parseTargetMarkup('0')).toBe(0)
   })
 
   test('accepts any finite non-negative markup and rejects negatives and NaN', () => {
-    assert.equal(parseTargetMarkup('99'), 99)
-    assert.equal(parseTargetMarkup('99.99'), 99.99)
-    assert.equal(parseTargetMarkup('100'), 100)
-    assert.equal(parseTargetMarkup('200'), 200)
-    assert.equal(parseTargetMarkup('-1'), null)
-    assert.equal(parseTargetMarkup('abc'), null)
+    expect(parseTargetMarkup('99')).toBe(99)
+    expect(parseTargetMarkup('99.99')).toBe(99.99)
+    expect(parseTargetMarkup('100')).toBe(100)
+    expect(parseTargetMarkup('200')).toBe(200)
+    expect(parseTargetMarkup('-1')).toBeNull()
+    expect(parseTargetMarkup('abc')).toBeNull()
   })
 
   test('writes zero ratios when the upstream does not charge', () => {
@@ -398,49 +389,47 @@ describe('computeSyncRatios', () => {
       1
     )
     assert.ok(plan)
-    assert.equal(plan.completionRatio, 0)
-    assert.equal(plan.cacheRatio, 0)
-    assert.equal(plan.createCacheRatio, 0)
+    expect(plan.completionRatio).toBe(0)
+    expect(plan.cacheRatio).toBe(0)
+    expect(plan.createCacheRatio).toBe(0)
   })
 
   test('rejects invalid markup and non-positive cost', () => {
-    assert.equal(computeSyncRatios(basis({}), -1, 1), null)
-    assert.equal(computeSyncRatios(basis({}), Number.NaN, 1), null)
-    assert.equal(computeSyncRatios(basis({ input: 0 }), 100, 1), null)
+    expect(computeSyncRatios(basis({}), -1, 1)).toBeNull()
+    expect(computeSyncRatios(basis({}), Number.NaN, 1)).toBeNull()
+    expect(computeSyncRatios(basis({ input: 0 }), 100, 1)).toBeNull()
   })
 
   test('rejects a non-positive or invalid group ratio', () => {
-    assert.equal(computeSyncRatios(basis({}), 100, 0), null)
-    assert.equal(computeSyncRatios(basis({}), 100, -1), null)
-    assert.equal(computeSyncRatios(basis({}), 100, Number.NaN), null)
+    expect(computeSyncRatios(basis({}), 100, 0)).toBeNull()
+    expect(computeSyncRatios(basis({}), 100, -1)).toBeNull()
+    expect(computeSyncRatios(basis({}), 100, Number.NaN)).toBeNull()
   })
 
   test('rejects a non-positive or invalid quota scale', () => {
-    assert.equal(computeSyncRatios(basis({}), 100, 1, undefined, 0), null)
-    assert.equal(computeSyncRatios(basis({}), 100, 1, undefined, -1), null)
-    assert.equal(
-      computeSyncRatios(basis({}), 100, 1, undefined, Number.NaN),
-      null
-    )
+    expect(computeSyncRatios(basis({}), 100, 1, undefined, 0)).toBeNull()
+    expect(computeSyncRatios(basis({}), 100, 1, undefined, -1)).toBeNull()
+    expect(
+      computeSyncRatios(basis({}), 100, 1, undefined, Number.NaN)
+    ).toBeNull()
   })
 
   test('rejects calculations that overflow finite pricing ratios', () => {
-    assert.equal(
-      computeSyncRatios(basis({ input: Number.MAX_VALUE }), 100, 1e-300),
-      null
-    )
+    expect(
+      computeSyncRatios(basis({ input: Number.MAX_VALUE }), 100, 1e-300)
+    ).toBeNull()
   })
 
   test('honors a locked completion ratio without dropping below target markup', () => {
     const plan = computeSyncRatios(basis({ output: 12 }), 100, 1, 4)
     assert.ok(plan)
-    assert.equal(plan.completionRatioLocked, true)
-    assert.equal(plan.modelRatio, 3)
-    assert.equal(plan.completionRatio, 4)
-    assert.equal(plan.sellInput, 6)
-    assert.equal(plan.sellOutput, 24)
-    assert.equal(plan.cacheRatio, 0.066667)
-    assert.equal(plan.createCacheRatio, 0.666667)
+    expect(plan.completionRatioLocked).toBe(true)
+    expect(plan.modelRatio).toBe(3)
+    expect(plan.completionRatio).toBe(4)
+    expect(plan.sellInput).toBe(6)
+    expect(plan.sellOutput).toBe(24)
+    expect(plan.cacheRatio).toBe(0.066667)
+    expect(plan.createCacheRatio).toBe(0.666667)
   })
 })
 
@@ -453,20 +442,20 @@ describe('computeOfficialSyncPlan', () => {
       500_000
     )
 
-    assert.equal(result.kind, 'ready')
+    expect(result.kind).toBe('ready')
     if (result.kind !== 'ready') return
-    assert.equal(result.plan.billingMode, 'ratio')
-    assert.equal(result.plan.input, 1.5)
-    assert.equal(result.plan.output, 7.5)
-    assert.equal(result.plan.cacheRead, 0.15)
-    assert.equal(result.plan.cacheWrite, 1.875)
-    assert.equal(result.plan.sellInput, 76.5)
-    assert.equal(result.plan.sellOutput, 382.5)
-    assert.deepEqual(result.plan.tiers, [])
-    assert.equal('billingExpression' in result.plan, false)
+    expect(result.plan.billingMode).toBe('ratio')
+    expect(result.plan.input).toBe(1.5)
+    expect(result.plan.output).toBe(7.5)
+    expect(result.plan.cacheRead).toBe(0.15)
+    expect(result.plan.cacheWrite).toBe(1.875)
+    expect(result.plan.sellInput).toBe(76.5)
+    expect(result.plan.sellOutput).toBe(382.5)
+    expect(result.plan.tiers).toEqual([])
+    expect('billingExpression' in result.plan).toBe(false)
 
     const request = buildOfficialSyncRequest('grok-4.6', 31, 'xai', result.plan)
-    assert.deepEqual(request, {
+    expect(request).toEqual({
       model_name: 'grok-4.6',
       billing_mode: 'ratio',
       model_ratio: 38.25,
@@ -493,12 +482,16 @@ describe('computeOfficialSyncPlan', () => {
     const other = computeOfficialSyncPlan(officialModel, 30, 1)
 
     assert.ok(similar)
-    assert.equal(similar.billingMode, 'tiered_expr')
-    assert.equal(similar.tiers.length, 2)
-    assert.match(similar.billingExpression, /len < 200000/)
+    expect(similar.billingMode).toBe('tiered_expr')
+    if (similar.billingMode === 'tiered_expr') {
+      expect(similar.tiers.length).toBe(2)
+      expect(similar.billingExpression).toMatch(/len < 200000/)
+    }
     assert.ok(other)
-    assert.equal(other.billingMode, 'tiered_expr')
-    assert.equal(other.tiers.length, 1)
+    expect(other.billingMode).toBe('tiered_expr')
+    if (other.billingMode === 'tiered_expr') {
+      expect(other.tiers.length).toBe(1)
+    }
   })
 
   test('rejects grok-4.6 when Models.dev has no context tier to collapse', () => {
@@ -515,7 +508,7 @@ describe('computeOfficialSyncPlan', () => {
       500_000
     )
 
-    assert.equal(result.kind, 'invalid-source')
+    expect(result.kind).toBe('invalid-source')
   })
 
   test('rejects grok-4.6 when every Models.dev tier is below 200K context', () => {
@@ -540,7 +533,7 @@ describe('computeOfficialSyncPlan', () => {
       500_000
     )
 
-    assert.equal(result.kind, 'invalid-source')
+    expect(result.kind).toBe('invalid-source')
   })
 
   test('classifies invalid official costs separately from arithmetic overflow', () => {
@@ -556,7 +549,7 @@ describe('computeOfficialSyncPlan', () => {
       30,
       1
     )
-    assert.equal(zeroInput.kind, 'invalid-source')
+    expect(zeroInput.kind).toBe('invalid-source')
 
     const invalidTier = computeOfficialSyncPlanResult(
       {
@@ -569,7 +562,7 @@ describe('computeOfficialSyncPlan', () => {
       30,
       1
     )
-    assert.equal(invalidTier.kind, 'invalid-source')
+    expect(invalidTier.kind).toBe('invalid-source')
 
     const overflow = computeOfficialSyncPlanResult(
       {
@@ -583,7 +576,7 @@ describe('computeOfficialSyncPlan', () => {
       400,
       1
     )
-    assert.equal(overflow.kind, 'overflow')
+    expect(overflow.kind).toBe('overflow')
   })
 
   test('classifies a non-finite billing coefficient from a tiny group ratio as overflow', () => {
@@ -593,7 +586,7 @@ describe('computeOfficialSyncPlan', () => {
       Number.MIN_VALUE
     )
 
-    assert.equal(result.kind, 'overflow')
+    expect(result.kind).toBe('overflow')
   })
 
   test('classifies a non-finite official audio coefficient as overflow', () => {
@@ -611,42 +604,46 @@ describe('computeOfficialSyncPlan', () => {
       1
     )
 
-    assert.equal(result.kind, 'overflow')
+    expect(result.kind).toBe('overflow')
   })
 
   test('prices every context tier at a 30 percent markup', () => {
     const plan = computeOfficialSyncPlan(officialModel, 30, 1)
     assert.ok(plan)
-    assert.equal(plan.billingMode, 'tiered_expr')
-    assert.equal(plan.sellInput, 5 * 1.3)
-    assert.equal(plan.sellOutput, 30 * 1.3)
-    assert.equal(plan.sellCacheRead, 0.5 * 1.3)
-    assert.equal(plan.sellCacheWrite, 6.25 * 1.3)
-    assert.equal(plan.tiers[0].name, 'context_272000')
-    assert.equal(plan.tiers[0].sellInput, 10 * 1.3)
-    assert.equal(plan.tiers[0].sellOutput, 45 * 1.3)
-    assert.match(plan.billingExpression, /len < 272000/)
-    assert.ok(plan.billingExpression.includes('p * 3.25'))
-    assert.ok(plan.billingExpression.includes('tier("context_272000"'))
+    expect(plan.billingMode).toBe('tiered_expr')
+    expect(plan.sellInput).toBe(5 * 1.3)
+    expect(plan.sellOutput).toBe(30 * 1.3)
+    expect(plan.sellCacheRead).toBe(0.5 * 1.3)
+    expect(plan.sellCacheWrite).toBe(6.25 * 1.3)
+    expect(plan.tiers[0].name).toBe('context_272000')
+    expect(plan.tiers[0].sellInput).toBe(10 * 1.3)
+    expect(plan.tiers[0].sellOutput).toBe(45 * 1.3)
+    if (plan.billingMode === 'tiered_expr') {
+      expect(plan.billingExpression).toMatch(/len < 272000/)
+      expect(plan.billingExpression.includes('p * 3.25')).toBe(true)
+      expect(plan.billingExpression.includes('tier("context_272000"')).toBe(
+        true
+      )
+    }
   })
 
   test('marks up 0, 100 and 200 to cost, double and triple official prices', () => {
     const atCost = computeOfficialSyncPlan(officialModel, 0, 1)
     assert.ok(atCost)
-    assert.equal(atCost.sellInput, 5)
-    assert.equal(atCost.sellOutput, 30)
+    expect(atCost.sellInput).toBe(5)
+    expect(atCost.sellOutput).toBe(30)
     const doubled = computeOfficialSyncPlan(officialModel, 100, 1)
     assert.ok(doubled)
-    assert.equal(doubled.sellInput, 10)
-    assert.equal(doubled.sellOutput, 60)
+    expect(doubled.sellInput).toBe(10)
+    expect(doubled.sellOutput).toBe(60)
     const tripled = computeOfficialSyncPlan(officialModel, 200, 1)
     assert.ok(tripled)
-    assert.equal(tripled.sellInput, 15)
-    assert.equal(tripled.sellOutput, 90)
+    expect(tripled.sellInput).toBe(15)
+    expect(tripled.sellOutput).toBe(90)
     const decimal = computeOfficialSyncPlan(officialModel, 99.99, 1)
     assert.ok(decimal)
-    assert.ok(Number.isFinite(decimal.sellInput))
-    assert.ok(Number.isFinite(decimal.sellOutput))
+    expect(Number.isFinite(decimal.sellInput)).toBe(true)
+    expect(Number.isFinite(decimal.sellOutput)).toBe(true)
   })
 
   test('builds an atomic official-price update request', () => {
@@ -655,35 +652,36 @@ describe('computeOfficialSyncPlan', () => {
 
     const request = buildOfficialSyncRequest('gpt-5.6-sol', 31, 'openai', plan)
 
-    assert.equal(request.billing_mode, 'tiered_expr')
-    assert.equal(request.channel_id, 31)
-    assert.equal(request.upstream_provider, 'openai')
-    assert.equal(request.purchase_price.source, 'models_dev')
-    assert.equal(request.purchase_price.input, 5)
-    assert.deepEqual(request.purchase_price.tiers, [
-      {
-        name: 'context_272000',
-        context_threshold: 272_000,
-        input: 10,
-        output: 45,
-        cache_read: 1,
-        cache_write: 12.5,
-      },
-    ])
+    expect(request.billing_mode).toBe('tiered_expr')
+    expect(request.channel_id).toBe(31)
+    if (request.billing_mode === 'tiered_expr') {
+      expect(request.upstream_provider).toBe('openai')
+      expect(request.purchase_price.source).toBe('models_dev')
+      expect(request.purchase_price.input).toBe(5)
+      expect(request.purchase_price.tiers).toEqual([
+        {
+          name: 'context_272000',
+          context_threshold: 272_000,
+          input: 10,
+          output: 45,
+          cache_read: 1,
+          cache_write: 12.5,
+        },
+      ])
+    }
   })
 
   test('rejects invalid markup, group ratio, and missing official pricing', () => {
-    assert.equal(computeOfficialSyncPlan(officialModel, -1, 1), null)
-    assert.equal(computeOfficialSyncPlan(officialModel, Number.NaN, 1), null)
-    assert.equal(computeOfficialSyncPlan(officialModel, 30, 0), null)
-    assert.equal(
+    expect(computeOfficialSyncPlan(officialModel, -1, 1)).toBeNull()
+    expect(computeOfficialSyncPlan(officialModel, Number.NaN, 1)).toBeNull()
+    expect(computeOfficialSyncPlan(officialModel, 30, 0)).toBeNull()
+    expect(
       computeOfficialSyncPlan(
         { ...officialModel, models_dev_pricing: undefined },
         30,
         1
-      ),
-      null
-    )
+      )
+    ).toBeNull()
   })
 
   test('rejects official plans when cache or tier selling prices overflow', () => {
@@ -701,7 +699,7 @@ describe('computeOfficialSyncPlan', () => {
       30,
       1
     )
-    assert.equal(overflowCache, null)
+    expect(overflowCache).toBeNull()
 
     const overflowTier = computeOfficialSyncPlan(
       {
@@ -714,7 +712,7 @@ describe('computeOfficialSyncPlan', () => {
       30,
       1
     )
-    assert.equal(overflowTier, null)
+    expect(overflowTier).toBeNull()
   })
 })
 
@@ -722,7 +720,7 @@ describe('buildSyncRequest', () => {
   test('builds a model-level pricing update', () => {
     const plan = computeSyncRatios(basis({}), 100, 1)
     assert.ok(plan)
-    assert.deepEqual(buildSyncRequest('m', plan), {
+    expect(buildSyncRequest('m', plan)).toEqual({
       model_name: 'm',
       billing_mode: 'ratio',
       model_ratio: 2,
@@ -735,7 +733,7 @@ describe('buildSyncRequest', () => {
   test('omits an ignored completion ratio when it is locked', () => {
     const plan = computeSyncRatios(basis({ output: 12 }), 100, 1, 4)
     assert.ok(plan)
-    assert.deepEqual(buildSyncRequest('m', plan), {
+    expect(buildSyncRequest('m', plan)).toEqual({
       model_name: 'm',
       billing_mode: 'ratio',
       model_ratio: 3,
@@ -747,192 +745,182 @@ describe('buildSyncRequest', () => {
 
 describe('parseCompletionRatioMeta', () => {
   test('keeps only valid completion ratio constraints', () => {
-    assert.deepEqual(
+    expect(
       parseCompletionRatioMeta(
         '{"m":{"ratio":4,"locked":true},"bad":{"ratio":"x","locked":true}}'
-      ),
-      { m: { ratio: 4, locked: true } }
-    )
-    assert.deepEqual(parseCompletionRatioMeta(undefined), {})
-    assert.deepEqual(parseCompletionRatioMeta('[1,2]'), {})
+      )
+    ).toEqual({ m: { ratio: 4, locked: true } })
+    expect(parseCompletionRatioMeta(undefined)).toEqual({})
+    expect(parseCompletionRatioMeta('[1,2]')).toEqual({})
   })
 })
 
 describe('parseNumberRecord', () => {
   test('parses JSON maps and tolerates invalid input', () => {
-    assert.deepEqual(parseNumberRecord('{"a":1}'), { a: 1 })
-    assert.deepEqual(parseNumberRecord(undefined), {})
-    assert.deepEqual(parseNumberRecord('not json'), {})
-    assert.deepEqual(parseNumberRecord('[1,2]'), {})
+    expect(parseNumberRecord('{"a":1}')).toEqual({ a: 1 })
+    expect(parseNumberRecord(undefined)).toEqual({})
+    expect(parseNumberRecord('not json')).toEqual({})
+    expect(parseNumberRecord('[1,2]')).toEqual({})
   })
 })
 
 describe('cost-profit-rate helpers', () => {
   test('calculates 0, 100, and 455.56 percent', () => {
-    assert.equal(currentCostProfitRatePercent(1, 1), 0)
-    assert.equal(currentCostProfitRatePercent(2, 1), 100)
-    assert.equal(currentCostProfitRatePercent(5.5556, 1), 455.56)
+    expect(currentCostProfitRatePercent(1, 1)).toBe(0)
+    expect(currentCostProfitRatePercent(2, 1)).toBe(100)
+    expect(currentCostProfitRatePercent(5.5556, 1)).toBe(455.56)
   })
 
   test('parses the cost-profit rate and rejects negatives', () => {
-    assert.equal(parseTargetCostProfitRate('455.56'), 455.56)
-    assert.equal(parseTargetCostProfitRate('-0.01'), null)
+    expect(parseTargetCostProfitRate('455.56')).toBe(455.56)
+    expect(parseTargetCostProfitRate('-0.01')).toBeNull()
   })
 
   test('official 5/30 at multiplier 0.25 against 9/50 selling defaults to 566.67', () => {
-    assert.equal(
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 9,
         sellingOutput: 50,
         costInput: 5 * 0.25,
         costOutput: 30 * 0.25,
-      }),
-      566.67
-    )
+      })
+    ).toBe(566.67)
   })
 
   test('detected 2/8 against 6/20 selling defaults to 150', () => {
-    assert.equal(
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 6,
         sellingOutput: 20,
         costInput: 2,
         costOutput: 8,
-      }),
-      150
-    )
+      })
+    ).toBe(150)
   })
 
   test('rounds the lower markup to at most two decimals', () => {
     // input markup 566.66... is the lower one and rounds to 566.67
-    assert.equal(
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 20,
         sellingOutput: 100,
         costInput: 3,
         costOutput: 5,
-      }),
-      566.67
-    )
+      })
+    ).toBe(566.67)
   })
 
   test('uses a current markup of 99 as the dialog default', () => {
-    assert.equal(currentMarkupPercent(199, 100), 99)
-    assert.equal(
+    expect(currentMarkupPercent(199, 100)).toBe(99)
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 199,
         sellingOutput: 199,
         costInput: 100,
         costOutput: 100,
-      }),
-      99
-    )
+      })
+    ).toBe(99)
   })
 
   test('keeps markups of 100 and above as dialog defaults', () => {
-    assert.equal(
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 200,
         sellingOutput: 200,
         costInput: 100,
         costOutput: 100,
-      }),
-      100
-    )
-    assert.equal(
+      })
+    ).toBe(100)
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 300,
         sellingOutput: 300,
         costInput: 100,
         costOutput: 100,
-      }),
-      200
-    )
+      })
+    ).toBe(200)
   })
 
   test('returns null when the current markup is negative', () => {
-    assert.equal(currentMarkupPercent(1, 2), -50)
+    expect(currentMarkupPercent(1, 2)).toBe(-50)
     // the lower class controls: a negative input markup must not be discarded
-    assert.equal(
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 1,
         sellingOutput: 10,
         costInput: 2,
         costOutput: 4,
-      }),
-      null
-    )
+      })
+    ).toBeNull()
   })
 
   test('returns null when the markup overflows finite numbers', () => {
-    assert.equal(currentMarkupPercent(Number.MAX_VALUE, 1), null)
+    expect(currentMarkupPercent(Number.MAX_VALUE, 1)).toBeNull()
   })
 
   test('returns null when the markup cannot be computed', () => {
-    assert.equal(currentMarkupPercent(Number.NaN, 2), null)
-    assert.equal(currentMarkupPercent(2, 0), null)
-    assert.equal(currentMarkupPercent(2, -1), null)
-    assert.equal(currentMarkupPercent(-1, 2), null)
+    expect(currentMarkupPercent(Number.NaN, 2)).toBeNull()
+    expect(currentMarkupPercent(2, 0)).toBeNull()
+    expect(currentMarkupPercent(2, -1)).toBeNull()
+    expect(currentMarkupPercent(-1, 2)).toBeNull()
     // both input and output are required to establish the lower markup
-    assert.equal(
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 0,
         sellingOutput: 20,
         costInput: 2,
         costOutput: 8,
-      }),
-      null
-    )
+      })
+    ).toBeNull()
 
     // a non-positive output cost cannot anchor a markup
-    assert.equal(
+    expect(
       defaultTargetMarkupPercent({
         sellingInput: 20,
         sellingOutput: 20,
         costInput: 8,
         costOutput: 0,
-      }),
-      null
-    )
+      })
+    ).toBeNull()
   })
 })
 
 describe('grossProfitUsd / grossMarginPercent', () => {
   test('screenshot example: cost 1.25/7.50, sale 8.333375/50.00025 -> profit 7.083375/42.50025, margin 85.0%', () => {
-    assert.equal(grossProfitUsd(8.333375, 1.25), 7.083375)
-    assert.equal(grossProfitUsd(50.00025, 7.5), 42.50025)
-    assert.equal(grossMarginPercent(8.333375, 1.25), 85.000074999625)
-    assert.equal(grossMarginPercent(50.00025, 7.5), 85.000074999625)
+    expect(grossProfitUsd(8.333375, 1.25)).toBe(7.083375)
+    expect(grossProfitUsd(50.00025, 7.5)).toBe(42.50025)
+    expect(grossMarginPercent(8.333375, 1.25)).toBe(85.000074999625)
+    expect(grossMarginPercent(50.00025, 7.5)).toBe(85.000074999625)
   })
 
   test('keeps negative profit and negative margin when price is below cost', () => {
-    assert.equal(grossProfitUsd(1, 2), -1)
-    assert.equal(grossProfitUsd(0, 2), -2)
-    assert.equal(grossMarginPercent(1, 2), -100)
+    expect(grossProfitUsd(1, 2)).toBe(-1)
+    expect(grossProfitUsd(0, 2)).toBe(-2)
+    expect(grossMarginPercent(1, 2)).toBe(-100)
   })
 
   test('has no margin on a zero or negative selling price', () => {
-    assert.equal(grossMarginPercent(0, 2), null)
-    assert.equal(grossMarginPercent(-1, 2), null)
+    expect(grossMarginPercent(0, 2)).toBeNull()
+    expect(grossMarginPercent(-1, 2)).toBeNull()
     // a zero sale price still yields a finite loss as gross profit
-    assert.equal(grossProfitUsd(0, 2), -2)
+    expect(grossProfitUsd(0, 2)).toBe(-2)
   })
 
   test('returns null for non-finite inputs', () => {
-    assert.equal(grossProfitUsd(Number.NaN, 1), null)
-    assert.equal(grossProfitUsd(1, Number.NaN), null)
-    assert.equal(grossProfitUsd(Number.POSITIVE_INFINITY, 1), null)
-    assert.equal(grossMarginPercent(Number.NaN, 1), null)
-    assert.equal(grossMarginPercent(1, Number.NaN), null)
-    assert.equal(grossMarginPercent(Number.POSITIVE_INFINITY, 1), null)
+    expect(grossProfitUsd(Number.NaN, 1)).toBeNull()
+    expect(grossProfitUsd(1, Number.NaN)).toBeNull()
+    expect(grossProfitUsd(Number.POSITIVE_INFINITY, 1)).toBeNull()
+    expect(grossMarginPercent(Number.NaN, 1)).toBeNull()
+    expect(grossMarginPercent(1, Number.NaN)).toBeNull()
+    expect(grossMarginPercent(Number.POSITIVE_INFINITY, 1)).toBeNull()
   })
 
   test('free upstream cost still yields profit and a full margin', () => {
-    assert.equal(grossProfitUsd(2, 0), 2)
-    assert.equal(grossMarginPercent(2, 0), 100)
+    expect(grossProfitUsd(2, 0)).toBe(2)
+    expect(grossMarginPercent(2, 0)).toBe(100)
   })
 
   test('returns null when the margin overflows finite numbers', () => {
-    assert.equal(grossMarginPercent(1e-323, Number.MAX_VALUE), null)
+    expect(grossMarginPercent(1e-323, Number.MAX_VALUE)).toBeNull()
   })
 })

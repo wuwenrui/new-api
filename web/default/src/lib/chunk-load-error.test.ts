@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import { isChunkLoadError, markChunkErrorReload } from './chunk-load-error'
 
@@ -35,7 +34,7 @@ describe('isChunkLoadError', () => {
   test('matches rspack/webpack ChunkLoadError by name', () => {
     const error = new Error('Loading chunk 7766 failed.')
     error.name = 'ChunkLoadError'
-    assert.equal(isChunkLoadError(error), true)
+    expect(isChunkLoadError(error)).toBe(true)
   })
 
   test('matches chunk failure messages regardless of name', () => {
@@ -46,25 +45,25 @@ describe('isChunkLoadError', () => {
       'error loading dynamically imported module',
       'Importing a module script failed.',
     ]) {
-      assert.equal(isChunkLoadError(new Error(message)), true, message)
+      expect(isChunkLoadError(new Error(message)), message).toBe(true)
     }
   })
 
   test('rejects unrelated errors and non-error values', () => {
-    assert.equal(isChunkLoadError(new Error('Request failed with 500')), false)
-    assert.equal(isChunkLoadError(new TypeError('x is not a function')), false)
-    assert.equal(isChunkLoadError(null), false)
-    assert.equal(isChunkLoadError('Loading chunk 1 failed'), false)
+    expect(isChunkLoadError(new Error('Request failed with 500'))).toBe(false)
+    expect(isChunkLoadError(new TypeError('x is not a function'))).toBe(false)
+    expect(isChunkLoadError(null)).toBe(false)
+    expect(isChunkLoadError('Loading chunk 1 failed')).toBe(false)
   })
 })
 
 describe('markChunkErrorReload', () => {
   test('allows one reload per path, then blocks repeats', () => {
     const storage = makeMemoryStorage()
-    assert.equal(markChunkErrorReload('/system-settings', storage), true)
-    assert.equal(markChunkErrorReload('/system-settings', storage), false)
+    expect(markChunkErrorReload('/system-settings', storage)).toBe(true)
+    expect(markChunkErrorReload('/system-settings', storage)).toBe(false)
     // A different stale route may still recover once.
-    assert.equal(markChunkErrorReload('/channels', storage), true)
+    expect(markChunkErrorReload('/channels', storage)).toBe(true)
   })
 
   test('returns false when storage is unavailable', () => {
@@ -76,6 +75,6 @@ describe('markChunkErrorReload', () => {
         throw new Error('denied')
       },
     }
-    assert.equal(markChunkErrorReload('/x', broken), false)
+    expect(markChunkErrorReload('/x', broken)).toBe(false)
   })
 })

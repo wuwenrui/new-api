@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 import {
   buildManualOrderQueryParams,
   buildManualStatusPayload,
@@ -30,25 +29,22 @@ function makeOrder(
 
 describe('buildCompletePayload', () => {
   test('keeps trade_no and integer amount', () => {
-    assert.deepEqual(buildCompletePayload('TN-001', 50), {
+    expect(buildCompletePayload('TN-001', 50)).toEqual({
       trade_no: 'TN-001',
       amount: 50,
     })
   })
 
   test('truncates fractional amounts to integers', () => {
-    assert.deepEqual(buildCompletePayload('TN-002', 12.9), {
+    expect(buildCompletePayload('TN-002', 12.9)).toEqual({
       trade_no: 'TN-002',
       amount: 12,
     })
   })
 
   test('normalizes non-finite amounts to zero', () => {
-    assert.equal(buildCompletePayload('TN-003', Number.NaN).amount, 0)
-    assert.equal(
-      buildCompletePayload('TN-004', Number.POSITIVE_INFINITY).amount,
-      0
-    )
+    expect(buildCompletePayload('TN-003', Number.NaN).amount).toBe(0)
+    expect(buildCompletePayload('TN-004', Number.POSITIVE_INFINITY).amount).toBe(0)
   })
 })
 
@@ -60,47 +56,47 @@ describe('findOrderIndexByTradeNo', () => {
   ]
 
   test('returns the index of the matching order', () => {
-    assert.equal(findOrderIndexByTradeNo(list, 'TN-002'), 1)
+    expect(findOrderIndexByTradeNo(list, 'TN-002')).toBe(1)
   })
 
   test('returns -1 when not found', () => {
-    assert.equal(findOrderIndexByTradeNo(list, 'TN-999'), -1)
+    expect(findOrderIndexByTradeNo(list, 'TN-999')).toBe(-1)
   })
 
   test('returns -1 for empty or missing lookup values', () => {
-    assert.equal(findOrderIndexByTradeNo(list, ''), -1)
-    assert.equal(findOrderIndexByTradeNo(list, undefined), -1)
-    assert.equal(findOrderIndexByTradeNo(list, null), -1)
+    expect(findOrderIndexByTradeNo(list, '')).toBe(-1)
+    expect(findOrderIndexByTradeNo(list, undefined)).toBe(-1)
+    expect(findOrderIndexByTradeNo(list, null)).toBe(-1)
   })
 
   test('returns -1 for an empty list', () => {
-    assert.equal(findOrderIndexByTradeNo([], 'TN-001'), -1)
+    expect(findOrderIndexByTradeNo([], 'TN-001')).toBe(-1)
   })
 })
 
 describe('previewQuota', () => {
   test('renders a positive integer amount', () => {
-    assert.equal(previewQuota(50), '50')
+    expect(previewQuota(50)).toBe('50')
   })
 
   test('prefixes an optional currency symbol', () => {
-    assert.equal(previewQuota(50, '$'), '$50')
+    expect(previewQuota(50, '$')).toBe('$50')
   })
 
   test('truncates fractional amounts', () => {
-    assert.equal(previewQuota(12.9), '12')
+    expect(previewQuota(12.9)).toBe('12')
   })
 
   test('renders zero placeholder for non-positive or invalid amounts', () => {
-    assert.equal(previewQuota(0), '0')
-    assert.equal(previewQuota(-5), '0')
-    assert.equal(previewQuota(Number.NaN, '$'), '$0')
+    expect(previewQuota(0)).toBe('0')
+    expect(previewQuota(-5)).toBe('0')
+    expect(previewQuota(Number.NaN, '$')).toBe('$0')
   })
 })
 
 describe('buildManualOrderQueryParams', () => {
   test('builds stable query params for history requests', () => {
-    assert.equal(
+    expect(
       buildManualOrderQueryParams({
         page: 2,
         pageSize: 50,
@@ -108,13 +104,14 @@ describe('buildManualOrderQueryParams', () => {
         status: 'success',
         startTimestamp: 1000,
         endTimestamp: 2000,
-      }),
+      })
+    ).toBe(
       'p=2&page_size=50&keyword=bob&status=success&start_timestamp=1000&end_timestamp=2000'
     )
   })
 
   test('omits empty filters and all status', () => {
-    assert.equal(
+    expect(
       buildManualOrderQueryParams({
         page: 1,
         pageSize: 20,
@@ -122,22 +119,21 @@ describe('buildManualOrderQueryParams', () => {
         status: 'all',
         startTimestamp: 0,
         endTimestamp: 0,
-      }),
-      'p=1&page_size=20'
-    )
+      })
+    ).toBe('p=1&page_size=20')
   })
 })
 
 describe('buildManualStatusPayload', () => {
   test('keeps trade numbers and defaults all to false', () => {
-    assert.deepEqual(buildManualStatusPayload(['TN-001']), {
+    expect(buildManualStatusPayload(['TN-001'])).toEqual({
       trade_nos: ['TN-001'],
       all: false,
     })
   })
 
   test('supports all orders', () => {
-    assert.deepEqual(buildManualStatusPayload(undefined, true), {
+    expect(buildManualStatusPayload(undefined, true)).toEqual({
       trade_nos: [],
       all: true,
     })
@@ -146,7 +142,7 @@ describe('buildManualStatusPayload', () => {
 
 describe('normalizeManualOrderSummary', () => {
   test('fills missing summary fields with zero values', () => {
-    assert.deepEqual(normalizeManualOrderSummary(undefined), {
+    expect(normalizeManualOrderSummary(undefined)).toEqual({
       total_count: 0,
       pending_count: 0,
       success_count: 0,

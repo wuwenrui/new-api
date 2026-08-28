@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import { FILTER_ALL, SORT_OPTIONS } from '../constants'
 import type { PricingModel } from '../types'
@@ -27,27 +26,25 @@ function pricingModel(
 
 describe('pricing channel filters', () => {
   test('keeps all models when channel filter is all', () => {
-    assert.deepEqual(
+    expect(
       filterByChannel(
         [pricingModel('a', [1]), pricingModel('b', [2])],
         FILTER_ALL
-      ).map((model) => model.model_name),
-      ['a', 'b']
-    )
+      ).map((model) => model.model_name)
+    ).toEqual(['a', 'b'])
   })
 
   test('keeps only models bound to the selected channel', () => {
-    assert.deepEqual(
+    expect(
       filterByChannel(
         [pricingModel('a', [1, 2]), pricingModel('b', [3])],
         '2'
-      ).map((model) => model.model_name),
-      ['a']
-    )
+      ).map((model) => model.model_name)
+    ).toEqual(['a'])
   })
 
   test('applies channel filter with the existing filter pipeline', () => {
-    assert.deepEqual(
+    expect(
       filterAndSortModels(
         [pricingModel('b-model', [2]), pricingModel('a-model', [1])],
         {
@@ -60,8 +57,7 @@ describe('pricing channel filters', () => {
           channel: '2',
           sortBy: SORT_OPTIONS.NAME,
         }
-      ).map((model) => model.model_name),
-      ['b-model']
-    )
+      ).map((model) => model.model_name)
+    ).toEqual(['b-model'])
   })
 })
