@@ -403,14 +403,17 @@ func TestProbeUpstreamPricingRetriesOnFailure(t *testing.T) {
 func TestProbeUpstreamPricingSkipsIncompleteTokenPrices(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"group_ratio":{"g":0.3},"data":[{"model_name":"incomplete","quota_type":0,"model_ratio":5,"completion_ratio":5,"cache_ratio":0.1},{"model_name":"free","quota_type":0,"model_ratio":0,"completion_ratio":0,"cache_ratio":0,"create_cache_ratio":0}]}`))
+		_, _ = w.Write([]byte(`{"success":true,"group_ratio":{"g":0.3},"data":[{"model_name":"no-cache-write","quota_type":0,"model_ratio":5,"completion_ratio":5,"cache_ratio":0.1},{"model_name":"negative-cache-write","quota_type":0,"model_ratio":5,"completion_ratio":5,"cache_ratio":0.1,"create_cache_ratio":-1},{"model_name":"free","quota_type":0,"model_ratio":0,"completion_ratio":0,"cache_ratio":0,"create_cache_ratio":0}]}`))
 	}))
 	defer srv.Close()
 
 	snapshot, err := probeUpstreamPricingOnce(context.Background(), UpstreamProbeConfig{BaseURL: srv.URL})
 
 	require.NoError(t, err)
-	assert.NotContains(t, snapshot.Models, "incomplete")
+	// 上游未配置缓存写入倍率的模型按 0 计入快照，不能整条丢弃
+	require.Contains(t, snapshot.Models, "no-cache-write")
+	assert.Zero(t, snapshot.Models["no-cache-write"].CreateCacheRatio)
+	assert.NotContains(t, snapshot.Models, "negative-cache-write")
 	assert.Contains(t, snapshot.Models, "free")
 }
 

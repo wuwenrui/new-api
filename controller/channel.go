@@ -992,6 +992,12 @@ func UpdateChannel(c *gin.Context) {
 	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
 
+	// 请求未携带 settings 时保留原有 other_settings：ValidateSettings 会把空输入
+	// 归一化成 "{}"，直接落库会清空 model_prices（采购价）等已有设置。
+	if _, settingsProvided := requestData["settings"]; !settingsProvided {
+		channel.OtherSettings = originChannel.OtherSettings
+	}
+
 	if channelHasSensitiveChanges(&channel, originChannel, requestData) &&
 		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite) {
 		common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)

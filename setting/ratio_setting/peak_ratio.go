@@ -32,11 +32,12 @@ type PeakWindow struct {
 
 // PeakRatioConfig 峰谷计价配置。
 type PeakRatioConfig struct {
-	Enabled    bool         `json:"enabled"`
-	Multiplier float64      `json:"multiplier"`
-	Timezone   string       `json:"timezone"`
-	Models     []string     `json:"models"`
-	Windows    []PeakWindow `json:"windows"`
+	Enabled        bool         `json:"enabled"`
+	WeekendEnabled bool         `json:"weekend_enabled"`
+	Multiplier     float64      `json:"multiplier"`
+	Timezone       string       `json:"timezone"`
+	Models         []string     `json:"models"`
+	Windows        []PeakWindow `json:"windows"`
 }
 
 var (
@@ -46,9 +47,11 @@ var (
 
 func defaultPeakRatioConfig() PeakRatioConfig {
 	return PeakRatioConfig{
-		Enabled:    false,
-		Multiplier: defaultPeakMultiplier,
-		Timezone:   defaultPeakTimezone,
+		Enabled: false,
+		// 兼容旧配置：未持久化该字段时保持原有周末计价行为。
+		WeekendEnabled: true,
+		Multiplier:     defaultPeakMultiplier,
+		Timezone:       defaultPeakTimezone,
 		// 预置 DeepSeek 系列前缀，管理员可增删。
 		Models: []string{"deepseek"},
 		// DeepSeek 官方高峰：北京时间 09:00-12:00 与 14:00-18:00。
@@ -105,6 +108,9 @@ func getPeakMultiplierAt(cfg PeakRatioConfig, modelName string, now time.Time) (
 		return 1.0, false
 	}
 	local := now.In(peakLocation(cfg.Timezone))
+	if !cfg.WeekendEnabled && (local.Weekday() == time.Saturday || local.Weekday() == time.Sunday) {
+		return 1.0, false
+	}
 	nowMinutes := local.Hour()*60 + local.Minute()
 	if !inAnyPeakWindow(cfg.Windows, nowMinutes) {
 		return 1.0, false

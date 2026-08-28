@@ -1147,15 +1147,23 @@ func probeUpstreamPricingOnce(ctx context.Context, cfg UpstreamProbeConfig) (ups
 		if name == "" || item.QuotaType != 0 ||
 			!validUpstreamRatio(item.ModelRatio) ||
 			!validUpstreamRatio(item.CompletionRatio) ||
-			!validUpstreamRatio(item.CacheRatio) ||
-			!validUpstreamRatio(item.CreateCacheRatio) {
+			!validUpstreamRatio(item.CacheRatio) {
 			continue
+		}
+		// 上游未配置缓存写入倍率（如 oo 的 claude-fable-5）时按 0 计，与计费侧语义一致；
+		// 缺失不应导致整个模型被排除出探测快照。
+		createCacheRatio := 0.0
+		if item.CreateCacheRatio != nil {
+			if !validUpstreamRatioValue(*item.CreateCacheRatio) {
+				continue
+			}
+			createCacheRatio = *item.CreateCacheRatio
 		}
 		snapshot.Models[name] = upstreamPricingModel{
 			ModelRatio:       *item.ModelRatio,
 			CompletionRatio:  *item.CompletionRatio,
 			CacheRatio:       *item.CacheRatio,
-			CreateCacheRatio: *item.CreateCacheRatio,
+			CreateCacheRatio: createCacheRatio,
 		}
 	}
 	return snapshot, nil

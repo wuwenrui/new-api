@@ -3,6 +3,9 @@ package ratio_setting
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func enabledCfg() PeakRatioConfig {
@@ -46,6 +49,49 @@ func TestGetPeakMultiplierAt_PeakHit(t *testing.T) {
 	if got != 2.0 || !isPeak {
 		t.Fatalf("peak afternoon: want (2.0,true), got (%v,%v)", got, isPeak)
 	}
+}
+
+func TestGetPeakMultiplierAt_WeekendSetting(t *testing.T) {
+	defaultCfg := enabledCfg()
+	require.True(t, defaultCfg.WeekendEnabled, "existing configurations must keep weekend peak pricing enabled")
+
+	tests := []struct {
+		name           string
+		day            int
+		weekendEnabled bool
+		wantMultiplier float64
+		wantPeak       bool
+	}{
+		{name: "weekday when weekends disabled", day: 20, weekendEnabled: false, wantMultiplier: 2.0, wantPeak: true},
+		{name: "saturday when weekends disabled", day: 18, weekendEnabled: false, wantMultiplier: 1.0, wantPeak: false},
+		{name: "sunday when weekends disabled", day: 19, weekendEnabled: false, wantMultiplier: 1.0, wantPeak: false},
+		{name: "saturday when weekends enabled", day: 18, weekendEnabled: true, wantMultiplier: 2.0, wantPeak: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := enabledCfg()
+			cfg.WeekendEnabled = tt.weekendEnabled
+			now := time.Date(2026, time.July, tt.day, 10, 0, 0, 0, beijingZone)
+
+			gotMultiplier, gotPeak := getPeakMultiplierAt(cfg, "deepseek-chat", now)
+
+			assert.Equal(t, tt.wantMultiplier, gotMultiplier)
+			assert.Equal(t, tt.wantPeak, gotPeak)
+		})
+	}
+
+	t.Run("weekend uses configured timezone", func(t *testing.T) {
+		cfg := enabledCfg()
+		cfg.WeekendEnabled = false
+		cfg.Windows = []PeakWindow{{Start: "00:00", End: "23:59"}}
+		fridayUTC := time.Date(2026, time.July, 17, 20, 0, 0, 0, time.UTC)
+
+		gotMultiplier, gotPeak := getPeakMultiplierAt(cfg, "deepseek-chat", fridayUTC)
+
+		assert.Equal(t, 1.0, gotMultiplier)
+		assert.False(t, gotPeak, "UTC Friday is already Saturday in the configured Beijing timezone")
+	})
 }
 
 func TestGetPeakMultiplierAt_OffPeakTime(t *testing.T) {
