@@ -173,6 +173,8 @@ func SetApiRouter(router *gin.Engine) {
 			skillAdminRoute.DELETE("/:id", controller.AdminDeleteSkill)
 		}
 
+		registerMarketplaceRoutes(apiRouter)
+
 		// Subscription billing (plans, purchase, admin management)
 		entitlementRoute := apiRouter.Group("/entitlements")
 		entitlementRoute.Use(middleware.TokenAuthReadOnly())

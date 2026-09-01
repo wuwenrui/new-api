@@ -332,6 +332,10 @@ func InitResources() error {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
 	}
+	if err = model.InitMarketplaceDB(); err != nil {
+		common.FatalLog("failed to initialize marketplace database: " + err.Error())
+		return err
+	}
 	if err = authz.Init(model.DB); err != nil {
 		common.FatalLog("failed to initialize authorization: " + err.Error())
 		return err
