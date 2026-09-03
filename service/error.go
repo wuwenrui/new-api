@@ -84,6 +84,16 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 	return claudeErr
 }
 
+// maskSensitiveUpstreamMessageForUser keeps the detailed upstream error for
+// admin/error logs while replacing the user-facing API message when it leaks
+// account balance or pre-consumption details.
+func maskSensitiveUpstreamMessageForUser(newApiErr *types.NewAPIError) {
+	if newApiErr == nil || !common.ContainsSensitiveAccountInfo(newApiErr.Error()) {
+		return
+	}
+	newApiErr.SetUserFacingMessage(common.MaskSensitiveAccountInfo(newApiErr.Error()))
+}
+
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
@@ -121,6 +131,7 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
+			maskSensitiveUpstreamMessageForUser(newApiErr)
 			return
 		}
 	}
@@ -134,6 +145,7 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
+	maskSensitiveUpstreamMessageForUser(newApiErr)
 	return
 }
 

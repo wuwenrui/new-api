@@ -143,3 +143,40 @@ func MaskEmail(email string) string {
 func MaskSensitiveInfo(str string) string {
 	return kitutil.MaskSensitiveInfo(str)
 }
+
+// sensitiveAccountPatterns match upstream/account error messages that must not
+// be forwarded verbatim to end users. They can leak another account's balance
+// or the internal pre-consumption estimate (which reveals upstream pricing).
+var sensitiveAccountPatterns = []string{
+	"预扣费额度",
+	"需要预扣费额度",
+	"insufficient balance",
+	"insufficient quota",
+	"pre-consum",
+}
+
+// ContainsSensitiveAccountInfo reports whether message contains text that
+// should not be exposed to ordinary users.
+func ContainsSensitiveAccountInfo(message string) bool {
+	if message == "" {
+		return false
+	}
+	lower := strings.ToLower(message)
+	for _, pattern := range sensitiveAccountPatterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
+
+// MaskSensitiveAccountInfo returns a generic user-safe message when the input
+// exposes upstream account balance/pre-consumption details; otherwise it
+// returns the input unchanged. Full details remain available to admin-only
+// callers who do not run this sanitizer.
+func MaskSensitiveAccountInfo(message string) string {
+	if !ContainsSensitiveAccountInfo(message) {
+		return message
+	}
+	return "上游服务暂时不可用，请稍后重试"
+}

@@ -88,14 +88,15 @@ const (
 )
 
 type NewAPIError struct {
-	Err            error
-	RelayError     any
-	skipRetry      bool
-	recordErrorLog *bool
-	errorType      ErrorType
-	errorCode      ErrorCode
-	StatusCode     int
-	Metadata       json.RawMessage
+	Err               error
+	RelayError        any
+	skipRetry         bool
+	recordErrorLog    *bool
+	errorType         ErrorType
+	errorCode         ErrorCode
+	userFacingMessage string
+	StatusCode        int
+	Metadata          json.RawMessage
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -177,6 +178,13 @@ func (e *NewAPIError) SetMessage(message string) {
 	e.Err = errors.New(message)
 }
 
+func (e *NewAPIError) SetUserFacingMessage(message string) {
+	if e == nil {
+		return
+	}
+	e.userFacingMessage = message
+}
+
 func (e *NewAPIError) ToOpenAIError() OpenAIError {
 	var result OpenAIError
 	switch e.errorType {
@@ -200,6 +208,9 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 			Param:   "",
 			Code:    e.errorCode,
 		}
+	}
+	if e.userFacingMessage != "" {
+		result.Message = e.userFacingMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)
@@ -229,6 +240,9 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			Message: e.Error(),
 			Type:    string(e.errorType),
 		}
+	}
+	if e.userFacingMessage != "" {
+		result.Message = e.userFacingMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)

@@ -116,6 +116,9 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
+		if common.ContainsSensitiveAccountInfo(logs[i].Content) {
+			logs[i].Content = common.MaskSensitiveAccountInfo(logs[i].Content)
+		}
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
@@ -123,8 +126,13 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "admin_info")
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
-			// delete(otherMap, "reject_reason")
-			// delete(otherMap, "stream_status")
+			// Remove channel routing metadata: channel names/ids can reveal the
+			// upstream supplier or internal routing used for a request.
+			delete(otherMap, "channel_id")
+			delete(otherMap, "channel_name")
+			delete(otherMap, "channel_type")
+			// Reject-reason is written by admins for internal diagnostics.
+			delete(otherMap, "reject_reason")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 	}

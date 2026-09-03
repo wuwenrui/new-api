@@ -122,6 +122,40 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 	require.Equal(t, message, newAPIError.Error())
 }
 
+func TestRelayErrorHandlerMasksSensitiveUpstreamMessageForUser(t *testing.T) {
+	body := `{"error":{"message":"预扣费额度失败, 用户剩余额度: $133.371238, 需要预扣费额度: $200.302440","type":"insufficient_quota","code":"insufficient_quota"}}`
+	resp := &http.Response{
+		StatusCode: http.StatusForbidden,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	// Admin/internal error keeps the full upstream detail for diagnostics.
+	require.Contains(t, newAPIError.Error(), "预扣费额度失败")
+	require.Contains(t, newAPIError.Error(), "$200.302440")
+	// The user-facing API message must not leak balance/pre-consumption.
+	userMessage := newAPIError.ToOpenAIError().Message
+	require.NotContains(t, userMessage, "预扣费额度")
+	require.NotContains(t, userMessage, "$200.302440")
+	require.Equal(t, "上游服务暂时不可用，请稍后重试", userMessage)
+}
+
+func TestRelayErrorHandlerKeepsNonSensitiveUpstreamMessage(t *testing.T) {
+	body := `{"error":{"message":"context length exceeded","type":"invalid_request_error","code":"context_length_exceeded"}}`
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, "context length exceeded", newAPIError.Error())
+	require.Equal(t, "context length exceeded", newAPIError.ToOpenAIError().Message)
+}
+
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
 	withDebugEnabled(t, true)
 
