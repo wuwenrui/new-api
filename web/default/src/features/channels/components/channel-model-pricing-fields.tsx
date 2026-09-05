@@ -33,6 +33,7 @@ import { Input } from '@/components/ui/input'
 import { getPricing } from '@/features/pricing/api'
 
 import type { ChannelFormValues } from '../lib/channel-form'
+import { ChannelSellingPrices } from './channel-selling-prices'
 
 type ModelPrice = {
   input?: number
@@ -146,91 +147,101 @@ export function ChannelModelPricingFields() {
   }
 
   return (
-    <div className='border-border/70 bg-muted/20 space-y-4 rounded-lg border p-4'>
-      <FormField
-        control={form.control}
-        name='upstream_group'
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('Upstream billing group')}</FormLabel>
-            <FormControl>
-              <Input
-                placeholder={t('For example: premium or ClaudeCode-Max')}
-                {...field}
-              />
-            </FormControl>
-            <FormDescription>
-              {t('The pricing group assigned by the upstream provider.')}
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <div>
-        <div className='mb-1 text-sm font-medium'>{t('Purchase prices')}</div>
-        <p className='text-muted-foreground mb-3 text-xs'>
-          {t(
-            'USD per 1M tokens. Enter 0 when the upstream does not charge for a token category.'
+    <div className='space-y-4'>
+      <div className='border-border/70 bg-muted/20 space-y-4 rounded-lg border p-4'>
+        <FormField
+          control={form.control}
+          name='upstream_group'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Upstream billing group')}</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder={t('For example: premium or ClaudeCode-Max')}
+                  {...field}
+                />
+              </FormControl>
+              <FormDescription>
+                {t('The pricing group assigned by the upstream provider.')}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
           )}
-        </p>
-        {modelPricesFieldState.error || hasIncompletePrice ? (
-          <p className='text-destructive mb-3 text-xs' role='alert'>
+        />
+
+        <div>
+          <div className='mb-1 text-sm font-medium'>{t('Purchase prices')}</div>
+          <p className='text-muted-foreground mb-3 text-xs'>
             {t(
-              'Input, output, cache read, and cache write prices are required for each maintained model.'
+              'USD per 1M tokens. Enter 0 when the upstream does not charge for a token category.'
             )}
           </p>
-        ) : null}
-        <div className='overflow-x-auto'>
-          <table className='w-full min-w-[760px] border-collapse text-sm'>
-            <thead>
-              <tr className='border-border border-b text-left'>
-                <th className='px-2 py-2 font-medium'>{t('Model')}</th>
-                <th className='px-2 py-2 font-medium'>{t('Upstream model')}</th>
-                <th className='px-2 py-2 font-medium'>{t('Input')}</th>
-                <th className='px-2 py-2 font-medium'>{t('Output')}</th>
-                <th className='px-2 py-2 font-medium'>{t('Cache Read')}</th>
-                <th className='px-2 py-2 font-medium'>{t('Cache Write')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {models.map((model) => {
-                const price = readPrice(prices[model])
-                const upstreamModel =
-                  typeof mapping[model] === 'string' ? mapping[model] : model
-                return (
-                  <tr
-                    key={model}
-                    className='border-border/60 border-b last:border-0'
-                  >
-                    <td className='px-2 py-2 font-mono text-xs'>{model}</td>
-                    <td className='text-muted-foreground px-2 py-2 font-mono text-xs'>
-                      {upstreamModel}
-                    </td>
-                    {(
-                      ['input', 'output', 'cache_read', 'cache_write'] as const
-                    ).map((field) => (
-                      <td key={field} className='px-2 py-2'>
-                        <Input
-                          aria-label={`${model} ${field}`}
-                          className='h-8 min-w-24 tabular-nums'
-                          min={0}
-                          step='any'
-                          type='number'
-                          value={price[field] ?? ''}
-                          onChange={(event) =>
-                            updatePrice(model, field, event.target.value)
-                          }
-                        />
+          {modelPricesFieldState.error || hasIncompletePrice ? (
+            <p className='text-destructive mb-3 text-xs' role='alert'>
+              {t(
+                'Input, output, cache read, and cache write prices are required for each maintained model.'
+              )}
+            </p>
+          ) : null}
+          <div className='overflow-x-auto'>
+            <table className='w-full min-w-[760px] border-collapse text-sm'>
+              <thead>
+                <tr className='border-border border-b text-left'>
+                  <th className='px-2 py-2 font-medium'>{t('Model')}</th>
+                  <th className='px-2 py-2 font-medium'>
+                    {t('Upstream model')}
+                  </th>
+                  <th className='px-2 py-2 font-medium'>{t('Input')}</th>
+                  <th className='px-2 py-2 font-medium'>{t('Output')}</th>
+                  <th className='px-2 py-2 font-medium'>{t('Cache Read')}</th>
+                  <th className='px-2 py-2 font-medium'>{t('Cache Write')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {models.map((model) => {
+                  const price = readPrice(prices[model])
+                  const upstreamModel =
+                    typeof mapping[model] === 'string' ? mapping[model] : model
+                  return (
+                    <tr
+                      key={model}
+                      className='border-border/60 border-b last:border-0'
+                    >
+                      <td className='px-2 py-2 font-mono text-xs'>{model}</td>
+                      <td className='text-muted-foreground px-2 py-2 font-mono text-xs'>
+                        {upstreamModel}
                       </td>
-                    ))}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      {(
+                        [
+                          'input',
+                          'output',
+                          'cache_read',
+                          'cache_write',
+                        ] as const
+                      ).map((field) => (
+                        <td key={field} className='px-2 py-2'>
+                          <Input
+                            aria-label={`${model} ${field}`}
+                            className='h-8 min-w-24 tabular-nums'
+                            min={0}
+                            step='any'
+                            type='number'
+                            value={price[field] ?? ''}
+                            onChange={(event) =>
+                              updatePrice(model, field, event.target.value)
+                            }
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
+      <ChannelSellingPrices />
     </div>
   )
 }

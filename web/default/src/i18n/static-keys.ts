@@ -19,6 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  // Channel selling-price validation and persistence errors
+  'Invalid pricing data',
+  'Use pricing management for per-request or tiered models.',
+  'Enter a positive input price and valid token prices and group multiplier.',
+  'The proposed output price conflicts with the system-locked output ratio.',
+  'Enter all four prices or a valid target margin from 0 to below 100%.',
+  'Invalid selling price.',
+  'Could not load selling prices.',
+  'Online prices changed. Refresh and recalculate before saving.',
+  'Could not save selling prices.',
+  'Could not verify the saved prices. Refresh before retrying.',
+
   // Header navigation
   'Home',
   'Console',
