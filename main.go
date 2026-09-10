@@ -224,9 +224,13 @@ func main() {
 	if port == "" {
 		port = strconv.Itoa(*common.Port)
 	}
+	// HOST pins the listener to one address. Unset keeps the historical
+	// all-interfaces bind; a local operator console sets it to 127.0.0.1 so an
+	// admin-only surface never needs to be reachable from the network.
+	var bind = common.GetEnvOrDefaultString("HOST", "")
 
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    bind + ":" + port,
 		Handler: server,
 	}
 

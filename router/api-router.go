@@ -268,6 +268,22 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		// Managed plugin catalog: the operator-owned allowlist the release
+		// publisher signs and the desktop product consumes. Root-only.
+		pluginCatalogRoute := apiRouter.Group("/plugin/catalog")
+		pluginCatalogRoute.Use(middleware.RootAuth())
+		{
+			pluginCatalogRoute.GET("", controller.GetPluginCatalog)
+			pluginCatalogRoute.POST("/owned", controller.UpsertPluginCatalogOwnedEntry)
+			pluginCatalogRoute.DELETE("/owned/:id", controller.DeletePluginCatalogOwnedEntry)
+			pluginCatalogRoute.GET("/owned/export", controller.ExportPluginCatalogOwnedRegistry)
+			pluginCatalogRoute.GET("/community/search", controller.SearchPluginCatalogCommunity)
+			pluginCatalogRoute.POST("/community", controller.UpsertPluginCatalogCommunityEntry)
+			pluginCatalogRoute.DELETE("/community/:id", controller.DeletePluginCatalogCommunityEntry)
+			pluginCatalogRoute.GET("/export", controller.ExportPluginCatalogRegistry)
+			pluginCatalogRoute.GET("/publish", controller.GetPluginCatalogPublishRequests)
+			pluginCatalogRoute.POST("/publish", controller.RequestPluginCatalogPublish)
+		}
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")

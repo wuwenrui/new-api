@@ -31,6 +31,7 @@ import {
   ListTodo,
   ReceiptText,
   MessageSquare,
+  PackageSearch,
   Radio,
   Scale,
   ServerCog,
@@ -198,6 +199,12 @@ export function useSidebarData(): SidebarData {
             title: t('System Info'),
             url: '/system-info',
             icon: ServerCog,
+            requiredRole: ROLE.SUPER_ADMIN,
+          },
+          {
+            title: t('Plugin Catalog'),
+            url: '/plugin-catalog',
+            icon: PackageSearch,
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {
