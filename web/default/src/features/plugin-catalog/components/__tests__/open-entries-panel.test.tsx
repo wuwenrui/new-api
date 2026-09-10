@@ -125,6 +125,19 @@ describe('plugin catalog open entries panel', () => {
     expect(handlers.onAddOwned).toHaveBeenCalledTimes(1)
   })
 
+  test('keeps a long description inside its own column', () => {
+    renderPanel()
+
+    const ownedTable = screen.getByText('立案助手').closest('table')
+    const description = screen.getByText('批量立案材料体检与填报')
+
+    // TableCell ships whitespace-nowrap, so a description that is not clamped
+    // paints over the neighbouring id and directory columns.
+    expect(ownedTable).toHaveClass('table-fixed')
+    expect(description).toHaveClass('line-clamp-2')
+    expect(description).toHaveClass('whitespace-normal')
+  })
+
   test('closes an open community plugin by reporting the disabled state', () => {
     const handlers = renderPanel()
 

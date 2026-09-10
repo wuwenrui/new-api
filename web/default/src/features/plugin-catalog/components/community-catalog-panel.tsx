@@ -66,33 +66,43 @@ export function CommunityCatalogPanel(props: CommunityCatalogPanelProps) {
     )
   } else {
     content = (
-      <Table>
+      <Table className='table-fixed'>
         <TableHeader>
           <TableRow>
-            <TableHead>{t('Plugin')}</TableHead>
-            <TableHead>{t('npm package')}</TableHead>
-            <TableHead>{t('Version')}</TableHead>
-            <TableHead>{t('Category')}</TableHead>
-            <TableHead>{t('Status')}</TableHead>
-            <TableHead className='text-right'>{t('Actions')}</TableHead>
+            <TableHead className='w-[30%]'>{t('Plugin')}</TableHead>
+            <TableHead className='w-[22%]'>{t('npm package')}</TableHead>
+            <TableHead className='w-[10%]'>{t('Version')}</TableHead>
+            <TableHead className='w-[10%]'>{t('Category')}</TableHead>
+            <TableHead className='w-[14%]'>{t('Status')}</TableHead>
+            <TableHead className='w-[14%] text-right'>{t('Actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {(resultsQuery.data ?? []).map((result) => (
             <TableRow key={result.repo}>
               <TableCell>
-                <div className='font-medium'>{result.name}</div>
-                {result.description ? (
-                  <div className='text-muted-foreground max-w-96 text-xs'>
-                    {result.description}
-                  </div>
-                ) : null}
+                <div className='flex min-w-0 flex-col gap-0.5'>
+                  <span className='truncate font-medium' title={result.name}>
+                    {result.name}
+                  </span>
+                  {result.description ? (
+                    <span
+                      className='text-muted-foreground line-clamp-2 text-xs whitespace-normal'
+                      title={result.description}
+                    >
+                      {result.description}
+                    </span>
+                  ) : null}
+                </div>
               </TableCell>
-              <TableCell className='font-mono text-xs'>
+              <TableCell
+                className='truncate font-mono text-xs'
+                title={result.packageName}
+              >
                 {result.packageName || '-'}
               </TableCell>
-              <TableCell>{result.version}</TableCell>
-              <TableCell>{result.category}</TableCell>
+              <TableCell className='truncate'>{result.version}</TableCell>
+              <TableCell className='truncate'>{result.category}</TableCell>
               <TableCell>
                 {result.alreadyOpen ? (
                   <Badge variant='secondary'>

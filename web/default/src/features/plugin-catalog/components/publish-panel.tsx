@@ -143,35 +143,46 @@ export function PublishPanel(props: PublishPanelProps) {
             {t('No release has been requested yet.')}
           </p>
         ) : (
-          <Table>
+          <Table className='table-fixed'>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('Requested at')}</TableHead>
-                <TableHead>{t('Requested by')}</TableHead>
-                <TableHead>{t('Registry revision')}</TableHead>
-                <TableHead>{t('Release note')}</TableHead>
-                <TableHead>{t('Status')}</TableHead>
+                <TableHead className='w-[14%]'>{t('Requested at')}</TableHead>
+                <TableHead className='w-[10%]'>{t('Requested by')}</TableHead>
+                <TableHead className='w-[12%]'>
+                  {t('Registry revision')}
+                </TableHead>
+                <TableHead className='w-[44%]'>{t('Release note')}</TableHead>
+                <TableHead className='w-[20%]'>{t('Status')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {requests.map((request) => (
                 <TableRow key={request.id}>
-                  <TableCell>
+                  <TableCell className='truncate'>
                     {formatTimestampToDate(request.requestedAt)}
                   </TableCell>
-                  <TableCell>{request.requestedBy}</TableCell>
-                  <TableCell className='font-mono'>
+                  <TableCell className='truncate'>
+                    {request.requestedBy}
+                  </TableCell>
+                  <TableCell className='truncate font-mono'>
                     {request.revision}
                   </TableCell>
                   <TableCell>
-                    <div>{request.note || '-'}</div>
-                    {request.detail ? (
-                      <div className='text-muted-foreground text-xs'>
-                        {request.detail}
-                      </div>
-                    ) : null}
+                    <div className='flex min-w-0 flex-col gap-0.5'>
+                      <span className='truncate' title={request.note}>
+                        {request.note || '-'}
+                      </span>
+                      {request.detail ? (
+                        <span
+                          className='text-muted-foreground line-clamp-2 text-xs whitespace-normal'
+                          title={request.detail}
+                        >
+                          {request.detail}
+                        </span>
+                      ) : null}
+                    </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className='truncate'>
                     <Badge
                       variant={STATUS_VARIANT[request.status] ?? 'outline'}
                     >

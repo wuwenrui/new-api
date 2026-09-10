@@ -77,33 +77,49 @@ export function OpenEntriesPanel(props: OpenEntriesPanelProps) {
             {t('No first-party plugins registered yet.')}
           </p>
         ) : (
-          <Table>
+          <Table className='table-fixed'>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('Plugin')}</TableHead>
-                <TableHead>{t('Plugin ID')}</TableHead>
-                <TableHead>{t('Plugin directory')}</TableHead>
-                <TableHead>{t('Category')}</TableHead>
-                <TableHead>{t('Include in the next release')}</TableHead>
-                <TableHead className='text-right'>{t('Actions')}</TableHead>
+                <TableHead className='w-[30%]'>{t('Plugin')}</TableHead>
+                <TableHead className='w-[14%]'>{t('Plugin ID')}</TableHead>
+                <TableHead className='w-[20%]'>
+                  {t('Plugin directory')}
+                </TableHead>
+                <TableHead className='w-[8%]'>{t('Category')}</TableHead>
+                <TableHead className='w-[16%]'>
+                  {t('Include in the next release')}
+                </TableHead>
+                <TableHead className='w-[12%] text-right'>
+                  {t('Actions')}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {owned.map((entry) => (
                 <TableRow key={entry.id}>
                   <TableCell>
-                    <div className='font-medium'>{entry.name}</div>
-                    <div className='text-muted-foreground max-w-80 text-xs'>
-                      {entry.description}
+                    <div className='flex min-w-0 flex-col gap-0.5'>
+                      <span className='truncate font-medium' title={entry.name}>
+                        {entry.name}
+                      </span>
+                      <span
+                        className='text-muted-foreground line-clamp-2 text-xs whitespace-normal'
+                        title={entry.description}
+                      >
+                        {entry.description}
+                      </span>
                     </div>
                   </TableCell>
-                  <TableCell className='text-muted-foreground font-mono text-xs'>
+                  <TableCell className='truncate font-mono text-xs'>
                     {entry.id}
                   </TableCell>
-                  <TableCell className='font-mono text-xs'>
+                  <TableCell
+                    className='truncate font-mono text-xs'
+                    title={entry.directory}
+                  >
                     {entry.directory}
                   </TableCell>
-                  <TableCell>{entry.category}</TableCell>
+                  <TableCell className='truncate'>{entry.category}</TableCell>
                   <TableCell>
                     <Switch
                       aria-label={`${t('Include in the next release')} ${entry.name}`}
@@ -164,28 +180,35 @@ export function OpenEntriesPanel(props: OpenEntriesPanelProps) {
             {t('No community plugin is open yet.')}
           </p>
         ) : (
-          <Table>
+          <Table className='table-fixed'>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('Plugin ID')}</TableHead>
-                <TableHead>{t('npm package')}</TableHead>
-                <TableHead>{t('Version')}</TableHead>
-                <TableHead>{t('Category')}</TableHead>
-                <TableHead>{t('Available to users')}</TableHead>
-                <TableHead className='text-right'>{t('Actions')}</TableHead>
+                <TableHead className='w-[16%]'>{t('Plugin ID')}</TableHead>
+                <TableHead className='w-[26%]'>{t('npm package')}</TableHead>
+                <TableHead className='w-[10%]'>{t('Version')}</TableHead>
+                <TableHead className='w-[10%]'>{t('Category')}</TableHead>
+                <TableHead className='w-[22%]'>
+                  {t('Available to users')}
+                </TableHead>
+                <TableHead className='w-[16%] text-right'>
+                  {t('Actions')}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {community.map((entry) => (
                 <TableRow key={entry.id}>
-                  <TableCell className='font-mono text-xs'>
+                  <TableCell className='truncate font-mono text-xs'>
                     {entry.id}
                   </TableCell>
-                  <TableCell className='font-mono text-xs'>
+                  <TableCell
+                    className='truncate font-mono text-xs'
+                    title={entry.packageName}
+                  >
                     {entry.packageName}
                   </TableCell>
-                  <TableCell>{entry.version}</TableCell>
-                  <TableCell>
+                  <TableCell className='truncate'>{entry.version}</TableCell>
+                  <TableCell className='truncate'>
                     <Badge variant='outline'>{entry.category}</Badge>
                   </TableCell>
                   <TableCell>

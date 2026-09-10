@@ -5823,6 +5823,7 @@
     "It disappears from this list and the next release stops packing it. Users who already installed it keep it until they uninstall.": "它会从清单里消失，下次发布不再打包它。已经装过的用户不受影响，除非自己卸载。",
     "Download first-party list": "下载自有插件清单",
     "Download community list": "下载社区开放清单",
-    "The release machine packs from approved.json and resolves community-approved.json into the same signed catalog.": "发布机用 approved.json 打包自有插件，把 community-approved.json 解析后写进同一份签名目录。"
+    "The release machine packs from approved.json and resolves community-approved.json into the same signed catalog.": "发布机用 approved.json 打包自有插件，把 community-approved.json 解析后写进同一份签名目录。",
+    "Plugin": "插件"
   }
 }
