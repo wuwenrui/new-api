@@ -13,13 +13,11 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/Calcium-Ion/go-epay/epay"
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -166,16 +164,11 @@ type manualTopUpNotification struct {
 }
 
 func getManualTopupMinTopup() int64 {
-	minTopup := operation_setting.ManualTopUpMinTopUp
-	if minTopup <= 0 {
-		minTopup = 1
+	minimum, _, err := manualTopUpUnits()
+	if err != nil {
+		return common.MaxWalletQuota
 	}
-	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		dMinTopup := decimal.NewFromInt(int64(minTopup))
-		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		minTopup = int(dMinTopup.Mul(dQuotaPerUnit).IntPart())
-	}
-	return int64(minTopup)
+	return minimum
 }
 
 func getManualTopUpMethod(paymentMethod string) (manualTopUpMethod, bool) {
@@ -469,90 +462,6 @@ func RequestEpay(c *gin.Context) {
 	}
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d money=%.2f uri=%q params=%q", id, tradeNo, req.PaymentMethod, req.Amount, payMoney, uri, common.GetJsonString(params)))
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri})
-}
-
-func RequestManualTopUp(c *gin.Context) {
-	var req ManualTopUpRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
-		return
-	}
-
-	if !isManualTopUpEnabled() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "当前管理员未配置人工充值"})
-		return
-	}
-
-	if req.Amount < getManualTopupMinTopup() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", getManualTopupMinTopup())})
-		return
-	}
-
-	manualMethod, ok := getManualTopUpMethod(req.PaymentMethod)
-	if !ok {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "支付方式不存在"})
-		return
-	}
-
-	id := c.GetInt("id")
-	group, err := model.GetUserGroup(id, true)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
-		return
-	}
-
-	payMoney := getPayMoney(req.Amount, group)
-	if payMoney < 0.01 {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
-		return
-	}
-
-	tradeNo := fmt.Sprintf("MANUSR%dNO%s%d", id, common.GetRandomString(6), time.Now().Unix())
-	topUp := &model.TopUp{
-		UserId:          id,
-		Amount:          normalizeTopUpAmountForStorage(req.Amount),
-		Money:           payMoney,
-		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
-		PaymentProvider: model.PaymentProviderManualTopUp,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
-	}
-	if err := topUp.Insert(); err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("人工充值 创建充值订单失败 user_id=%d trade_no=%s payment_method=%s amount=%d error=%q", id, tradeNo, req.PaymentMethod, req.Amount, err.Error()))
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
-		return
-	}
-
-	notification := buildManualTopUpNotification(manualTopUpNotificationInput{
-		UserID:        id,
-		TradeNo:       tradeNo,
-		PaymentName:   manualMethod.Name,
-		DisplayAmount: req.Amount,
-		PayMoney:      payMoney,
-	})
-	// fire-and-forget：优先通过 Bark 深链通知管理员，失败/未配置时回退到旧通知方式，
-	// 异步发送避免 Bark 网络调用阻塞用户请求。
-	gopool.Go(func() {
-		if !service.NotifyRechargePending(id, tradeNo, manualMethod.Name, req.Amount, payMoney) {
-			service.NotifyRootUser(dto.NotifyTypeManualTopUp, notification.Subject, notification.Content)
-		}
-	})
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("人工充值 充值订单创建成功 user_id=%d trade_no=%s payment_method=%s amount=%d money=%.2f", id, tradeNo, req.PaymentMethod, req.Amount, payMoney))
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "success",
-		"data": gin.H{
-			"trade_no":       tradeNo,
-			"amount":         topUp.Amount,
-			"display_amount": req.Amount,
-			"money":          payMoney,
-			"payment_method": manualMethod.Type,
-			"payment_name":   manualMethod.Name,
-			"qr_url":         manualMethod.QRCode,
-			"instructions":   operation_setting.ManualTopUpInstructions,
-		},
-	})
 }
 
 // tradeNo lock

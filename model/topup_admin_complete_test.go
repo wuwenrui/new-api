@@ -1,12 +1,47 @@
 package model
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// This exercises the actual settlement query, unlike SQLite concurrency tests
+// whose single connection serializes transactions even when FOR UPDATE is absent.
+func TestAdminCompleteManualTopUpRequestsRowLock(t *testing.T) {
+	for _, dialect := range []common.DatabaseType{common.DatabaseTypeMySQL, common.DatabaseTypePostgreSQL, common.DatabaseTypeSQLite} {
+		t.Run(string(dialect), func(t *testing.T) {
+			common.SetDatabaseTypes(dialect, common.DatabaseTypeSQLite)
+			t.Cleanup(func() { common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite) })
+			called := false
+			const callback = "test:manual-topup-lock"
+			require.NoError(t, DB.Callback().Query().Before("gorm:query").Register(callback, func(tx *gorm.DB) {
+				if tx.Statement.Table != "top_ups" {
+					return
+				}
+				called = true
+				locking, ok := tx.Statement.Clauses["FOR"].Expression.(clause.Locking)
+				if dialect == common.DatabaseTypeSQLite {
+					assert.False(t, ok)
+				} else {
+					assert.True(t, ok, "settlement must request an effective GORM v2 row lock")
+					assert.Equal(t, "UPDATE", locking.Strength)
+				}
+				// Do not execute MySQL/PostgreSQL SQL against the SQLite fixture.
+				tx.AddError(errors.New("stop after inspecting settlement query"))
+			}))
+			t.Cleanup(func() { require.NoError(t, DB.Callback().Query().Remove(callback)) })
+			require.Error(t, AdminCompleteManualTopUp("lock-query", 1, "127.0.0.1"))
+			assert.True(t, called)
+		})
+	}
+}
 
 // createManualTopUpForTest 在共享测试 DB 中插入一条 pending 人工充值订单及其用户。
 func createManualTopUpForTest(t *testing.T, tradeNo string, amount int64, money float64) *User {

@@ -64,6 +64,13 @@ func SetApiRouter(router *gin.Engine) {
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 
+		manualBilling := apiRouter.Group("/billing/token/manual-topup")
+		manualBilling.Use(middleware.CORS(), middleware.DisableCache(), middleware.TokenAuthReadOnly(), middleware.TokenManualTopUpAuth())
+		manualBilling.GET("/options", controller.GetTokenManualTopUpOptions)
+		manualBilling.POST("/quote", controller.QuoteTokenManualTopUp)
+		manualBilling.POST("/orders", middleware.CriticalRateLimit(), middleware.ManualTopUpWriteRateLimit(), controller.CreateTokenManualTopUp)
+		manualBilling.GET("/orders", controller.GetTokenManualTopUpOrders)
+
 		userRoute := apiRouter.Group("/user")
 		{
 			userRoute.POST("/register", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), controller.Register)
@@ -301,6 +308,9 @@ func SetApiRouter(router *gin.Engine) {
 			tokenRoute.POST("/batch/keys", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetTokenKeysBatch)
 		}
 
+		// Billing reads use the existing global API limit, not the shared critical
+		// write/login bucket needed for a subsequent manual recharge application.
+		apiRouter.GET("/usage/token/billing", middleware.CORS(), middleware.DisableCache(), middleware.TokenAuthReadOnly(), controller.GetTokenBilling)
 		usageRoute := apiRouter.Group("/usage")
 		usageRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{
